@@ -1,0 +1,28 @@
+{
+  "name": "@agent-gateway/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "build": "electron-vite build",
+    "dev": "electron-vite dev",
+    "lint": "eslint .",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && svelte-check --tsconfig ./tsconfig.web.json"
+  },
+  "dependencies": {
+    "@agent-gateway/shared": "workspace:*",
+    "@tanstack/svelte-query": "^6.1.38",
+    "ofetch": "^1.5.1",
+    "svatoms": "^0.2.0",
+    "svmarkdown": "^0.1.3"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "electron": "^43.2.0",
+    "electron-vite": "^5.0.0",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.4",
+    "vite": "^7.3.6"
+  }
+}

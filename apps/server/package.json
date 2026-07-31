@@ -1,0 +1,26 @@
+{
+  "name": "@agent-gateway/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-gateway/adapter-claude": "workspace:*",
+    "@agent-gateway/adapter-codex": "workspace:*",
+    "@agent-gateway/adapter-opencode": "workspace:*",
+    "@agent-gateway/runtime": "workspace:*",
+    "@agent-gateway/shared": "workspace:*",
+    "@fastify/cors": "^11.3.0",
+    "fastify": "^5.10.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.1"
+  }
+}
