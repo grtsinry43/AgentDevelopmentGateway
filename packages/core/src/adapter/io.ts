@@ -1,0 +1,159 @@
+import type { InteractionId } from '../ids.js'
+import type { RuntimeConnection } from './connection.js'
+
+/**
+ * User input for a turn (§9.3 `send`).
+ *
+ * `delivery` is a first-class scheduling primitive, not an adapter detail (OpenCode
+ * `Delivery`, cradle steer): `steer` injects into the RUNNING turn, `queue` defers to
+ * after it. Adapters lacking native steering fall back per `RuntimeCapabilities.steer`.
+ * `admitOnly` mirrors OpenCode `resume:false` — durably admit the input without executing.
+ */
+export interface UserInput {
+  text: string
+  delivery?: 'steer' | 'queue'
+  attachments?: InputAttachment[]
+  /** Admit to the log without scheduling execution (OpenCode `resume:false`). */
+  admitOnly?: boolean
+}
+
+export interface InputAttachment {
+  kind: 'file' | 'image'
+  path?: string
+  /** Base64 inline data, when the attachment isn't a path. */
+  data?: string
+}
+
+/**
+ * Receipt from `send`. OpenCode models `send` as DURABLE ADMISSION (input is written to
+ * the event log with a sequence before execution), so callers can correlate (docs/05 §7.2).
+ */
+export interface SendReceipt {
+  /** Sequence the input was admitted at (OpenCode `admittedSeq`). */
+  admittedSequence?: number
+  /** Turn this input started/steered, when known. */
+  turnId?: string
+}
+
+/**
+ * Scope a permission decision persists at. Converges Codex `PermissionGrantScope`
+ * (Turn|Session) and OpenCode `once|always`.
+ */
+export type PermissionScope = 'once' | 'turn' | 'session'
+
+/** Where a persisted rule is written (Claude `PermissionUpdateDestination`). */
+export type PersistDestination = 'session' | 'project' | 'user' | 'local'
+
+/** A rule to persist alongside an allow/deny (Claude `PermissionUpdate`). */
+export interface PersistRule {
+  rule: { toolName: string; ruleContent?: string }
+  destination: PersistDestination
+}
+
+/**
+ * Structured resolution for a pending interaction (§9.3 `resolveInteraction`).
+ *
+ * Far richer than allow/deny (docs/05 §6.2): permission `allow` can rewrite tool args
+ * (Claude `updatedInput`) and scope a grant; `deny` carries a model-facing message and
+ * can abort the turn (Codex Decline=continue vs Cancel=abortTurn). Questions answer with
+ * `Record<questionId, string[]>` (multi-select / free-text). `canceled` closes a pending
+ * request without an answer so it can't leak (cradle timedOut/aborted).
+ */
+export type InteractionResolution =
+  | ToolPermissionResolution
+  | QuestionResolution
+  | { kind: 'question_rejected'; id: InteractionId }
+  | PermissionGrantResolution
+  | HostDialogResolution
+  | ElicitationResolution
+  | { kind: 'canceled'; id: InteractionId; reason: 'timed_out' | 'aborted' | 'superseded' }
+
+export interface ToolPermissionResolution {
+  kind: 'tool_permission'
+  id: InteractionId
+  decision:
+    | { behavior: 'allow'; updatedInput?: unknown; scope?: PermissionScope }
+    | { behavior: 'deny'; message?: string; abortTurn?: boolean }
+  /** Persist a rule for future requests (Claude PermissionUpdate + destination). */
+  persistRule?: PersistRule
+}
+
+export interface QuestionResolution {
+  kind: 'question'
+  id: InteractionId
+  /** Per-question answers; array = multi-select / free-text (cradle answer shape). */
+  answers: Record<string, string[]>
+}
+
+export interface PermissionGrantResolution {
+  kind: 'permission_grant'
+  id: InteractionId
+  /** The granted profile (runtime-shaped; opaque to core). */
+  grantedProfile: unknown
+  scope: PermissionScope
+}
+
+export interface HostDialogResolution {
+  kind: 'host_dialog'
+  id: InteractionId
+  /** `cancelled` for unknown dialog kinds; otherwise the dialog result. */
+  outcome: { behavior: 'completed'; result: unknown } | { behavior: 'cancelled' }
+}
+
+export interface ElicitationResolution {
+  kind: 'elicitation'
+  id: InteractionId
+  outcome: { behavior: 'completed'; content: unknown } | { behavior: 'cancelled' }
+}
+
+export interface ModelSelection {
+  model: string
+  reasoningEffort?: string
+}
+
+/**
+ * Resume cursor — the three runtimes address resume differently (docs/05 §7.4):
+ * OpenCode by integer seq, Claude by message UUID (`resumeSessionAt`), Codex by rollout
+ * path, and cradle by an opaque provider-state snapshot.
+ */
+export type ResumeCursor =
+  | { by: 'sequence'; sequence: number }
+  | { by: 'message'; messageUuid: string }
+  | { by: 'rollout-path'; path: string }
+  | { by: 'snapshot'; providerStateSnapshot: string }
+
+/** Options for interrupting — Codex addresses a specific live turn (docs/05 §7.3). */
+export interface InterruptOptions {
+  turnId?: string
+  /** Optimistic-concurrency guard (Codex `expected_turn_id`). */
+  expectedTurnId?: string
+  /** Also cancel queued/pending-dispatch inputs (Claude `interrupt_cancel_queued_v1`). */
+  cancelQueued?: boolean
+}
+
+/** Input to create a new session (§9.3 `createSession`). */
+export interface CreateSessionInput {
+  projectPath: string
+  connection: RuntimeConnection
+  providerProfileId?: string
+  model?: ModelSelection
+  mode?: 'default' | 'plan'
+}
+
+/** Input to resume an existing session (§9.3 `resumeSession`). */
+export interface ResumeSessionInput {
+  runtimeSessionId: string
+  connection: RuntimeConnection
+  /** Where to resume from; shape varies per runtime (see {@link ResumeCursor}). */
+  cursor?: ResumeCursor
+  /** Opaque provider state for runtimes not reconstructable from the log (cradle). */
+  providerStateSnapshot?: string
+}
+
+/** Input to fork a session into a new branch (§9.3 `forkSession`). */
+export interface ForkSessionInput {
+  runtimeSessionId: string
+  connection: RuntimeConnection
+  /** Cut point for the fork (Codex `last_turn_id` / `before_turn_id`). */
+  forkPoint?: ResumeCursor
+}
