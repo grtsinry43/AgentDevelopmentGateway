@@ -41,6 +41,8 @@
 	--text-xl--line-height: 24px;
 	--text-2xl: 22px;
 	--text-2xl--line-height: 28px;
+	--text-display: 28px;
+	--text-display--line-height: 32px;
 
 	/* ── ink:暖灰基色 ── */
 	--color-ink-0: #ffffff;

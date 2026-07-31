@@ -10,6 +10,7 @@
 	import { launcher } from '$lib/features/project/launcher.svelte';
 	import NewProjectDialog from '$lib/features/project/components/NewProjectDialog.svelte';
 	import RecentProjectGrid from '$lib/features/project/components/RecentProjectGrid.svelte';
+	import LauncherEntryList from '$lib/features/launcher/components/LauncherEntryList.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
 	import Input from '$lib/ui/primitives/Input.svelte';
 	import DitheredGrid from '$lib/ui/common/DitheredGrid.svelte';
@@ -22,8 +23,6 @@
 	let dialogOpen = $state(false);
 	let dialogHostType = $state<'local' | 'ssh'>('local');
 	let searchInput = $state<HTMLInputElement | null>(null);
-	/** 网格实测列数,决定 ↑↓ 的步长。 */
-	let columns = $state(1);
 
 	// 首屏数据:异步拉取,不阻塞渲染 —— UI 先出壳,数据到了再填。
 	void launcher.load();
@@ -53,13 +52,13 @@
 			},
 			{ keys: 'backspace', label: '移除', run: () => void launcher.removeSelected() },
 			{ keys: 'mod+d', label: '置顶', run: () => void launcher.togglePinSelected() },
-			// 网格导航:↑↓ 跨行(步长 = 实测列数),←→ 跨列。vim 的 hjkl 同义。
-			{ keys: 'down', label: '', run: () => launcher.moveCursor(columns) },
-			{ keys: 'up', label: '', run: () => launcher.moveCursor(-columns) },
+			// 最近工程是单列列表,方向键与 vim 键都按一项移动。
+			{ keys: 'down', label: '', run: () => launcher.moveCursor(1) },
+			{ keys: 'up', label: '', run: () => launcher.moveCursor(-1) },
 			{ keys: 'right', label: '', run: () => launcher.moveCursor(1) },
 			{ keys: 'left', label: '', run: () => launcher.moveCursor(-1) },
-			{ keys: 'j', label: '', run: () => launcher.moveCursor(columns) },
-			{ keys: 'k', label: '', run: () => launcher.moveCursor(-columns) },
+			{ keys: 'j', label: '', run: () => launcher.moveCursor(1) },
+			{ keys: 'k', label: '', run: () => launcher.moveCursor(-1) },
 			{ keys: 'l', label: '', run: () => launcher.moveCursor(1) },
 			{ keys: 'h', label: '', run: () => launcher.moveCursor(-1) },
 			{
@@ -86,20 +85,19 @@
 		不传 rows = 铺满这个容器的高度;mask 从右下角向左上衰减,越靠左上越稀。
 	-->
 	<div
-		class="launcher-grid-mask pointer-events-none absolute top-1/2 right-0 bottom-0 left-1/2 -z-10 opacity-[0.6]"
+		class="launcher-grid-mask pointer-events-none absolute top-1/2 right-0 bottom-0 left-1/2 -z-10 opacity-40"
 	>
 		<DitheredGrid density={0.4} glowRadius={140} fadeBottom={false} trackGlobal />
 	</div>
 
 	<!-- 顶部拖拽区:frameless 窗口需要一块可拖动的区域。macOS 的红绿灯就在这里。 -->
-	<header class="drag-region shrink-0 px-6 pt-8 pb-4">
+	<header class="drag-region shrink-0 px-7 pt-10 pb-6">
 		<div class="flex items-end justify-between gap-4">
 			<div class="no-drag">
-				<!-- 标题克制:不用大号粗体抢视觉,靠字距和层次表达 -->
-				<h1 class="text-lg leading-none font-medium tracking-tight text-strong">
+				<h1 class="text-display leading-none font-medium tracking-[-0.025em] text-strong">
 					Agent Development Gateway
 				</h1>
-				<p class="mt-1.5 text-xs text-faint">
+				<p class="mt-2 text-xs tracking-wide text-faint">
 					连接开发者、IDE、开发主机与多种 Coding Agent Runtime
 				</p>
 			</div>
@@ -114,34 +112,48 @@
 		</div>
 	</header>
 
-	<!-- 工具条:搜索 + 新建 -->
-	<div class="flex shrink-0 items-center gap-2 px-6 pb-3">
-		<span class="mr-auto text-xs tracking-wide text-muted">最近工程</span>
+	<main class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_17rem] gap-8 px-7 pb-4">
+		<section class="flex min-w-0 flex-col" aria-labelledby="recent-projects-heading">
+			<div class="flex shrink-0 items-center gap-2 pb-3">
+				<h2
+					id="recent-projects-heading"
+					class="mr-auto text-xs font-medium tracking-wide text-muted"
+				>
+					最近工程
+				</h2>
 
-		<Input
-			bind:element={searchInput}
-			value={launcher.query}
-			type="search"
-			placeholder="过滤名称或路径"
-			class="w-52"
-			oninput={(event) => launcher.setQuery((event.currentTarget as HTMLInputElement).value)}
-		>
-			{#snippet icon()}
-				<Icon name="search" size={12} />
-			{/snippet}
-		</Input>
+				<Input
+					bind:element={searchInput}
+					value={launcher.query}
+					type="search"
+					placeholder="过滤名称或路径"
+					class="w-44"
+					oninput={(event) => launcher.setQuery((event.currentTarget as HTMLInputElement).value)}
+				>
+					{#snippet icon()}
+						<Icon name="search" size={12} />
+					{/snippet}
+				</Input>
 
-		<Button variant="primary" onclick={() => openDialog('local')}>
-			{#snippet icon()}
-				<Icon name="plus" size={12} />
-			{/snippet}
-			新建
-		</Button>
-	</div>
+				<Button variant="primary" onclick={() => openDialog('local')}>
+					{#snippet icon()}
+						<Icon name="plus" size={12} />
+					{/snippet}
+					新建
+				</Button>
+			</div>
 
-	<!-- 工程网格。滚动容器在这里,让上面的标题与工具条固定。 -->
-	<main class="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pb-4">
-		<RecentProjectGrid oncolumnschange={(value) => (columns = value)} />
+			<div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+				<RecentProjectGrid />
+			</div>
+		</section>
+
+		<aside class="min-w-0 border-l border-subtle pl-6" aria-labelledby="workspace-heading">
+			<div class="mb-3 flex h-7 items-center">
+				<h2 id="workspace-heading" class="text-xs font-medium tracking-wide text-muted">工作台</h2>
+			</div>
+			<LauncherEntryList />
+		</aside>
 	</main>
 
 	<KeyHintBar />
