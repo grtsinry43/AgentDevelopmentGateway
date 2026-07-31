@@ -8,7 +8,6 @@ import type {
   InterruptOptions,
   ModelSelection,
   ResumeSessionInput,
-  SendReceipt,
   SendOptions,
   UserInput,
 } from './io.js'
@@ -69,8 +68,8 @@ export interface RuntimeAdapter {
   resumeSession(input: ResumeSessionInput): Promise<RuntimeSessionHandle>
   forkSession?(input: ForkSessionInput): Promise<RuntimeSessionHandle>
 
-  /** Durably admits input and (unless `admitOnly`) schedules a turn; returns a receipt. */
-  send(sessionId: SessionId, input: UserInput, options?: SendOptions): Promise<SendReceipt>
+  /** Deliver input that the runtime has already admitted and associated with a turn. */
+  send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void>
   interrupt(sessionId: SessionId, options?: InterruptOptions): Promise<void>
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>

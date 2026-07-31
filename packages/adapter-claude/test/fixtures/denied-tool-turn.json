@@ -1,0 +1,2252 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "cwd": "/private<fixture-cwd>",
+    "session_id": "<session_id-1>",
+    "tools": [
+      "Bash"
+    ],
+    "mcp_servers": [],
+    "model": "claude-opus-4-8[1m]",
+    "permissionMode": "default",
+    "slash_commands": [
+      "deep-research",
+      "design-sync",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "claude-api",
+      "run",
+      "run-skill-generator",
+      "agents",
+      "clear",
+      "color",
+      "compact",
+      "config",
+      "context",
+      "effort",
+      "fast",
+      "heapdump",
+      "init",
+      "mcp",
+      "model",
+      "__remote-workflow",
+      "workflow-launch-exec",
+      "reload-skills",
+      "rename",
+      "review",
+      "security-review",
+      "usage",
+      "insights",
+      "recap",
+      "goal",
+      "design",
+      "design-consent",
+      "design-revoke",
+      "team-onboarding"
+    ],
+    "apiKeySource": "none",
+    "claude_code_version": "2.1.220",
+    "output_style": "default",
+    "agents": [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup"
+    ],
+    "skills": [
+      "deep-research",
+      "design-sync",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "claude-api",
+      "run",
+      "run-skill-generator"
+    ],
+    "plugins": [],
+    "capabilities": [
+      "interrupt_receipt_v1",
+      "interrupt_cancel_queued_v1",
+      "msg_lifecycle_v1"
+    ],
+    "analytics_disabled": false,
+    "product_feedback_disabled": false,
+    "uuid": "<uuid-2>",
+    "memory_paths": {
+      "auto": "<home>/.claude/projects/-private-var-folders-zr-b9m2rg711s5dyml6fql6gj-c0000gn-T-agent-gateway-claude-fixture-TCNi6W/memory/"
+    },
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required"
+  },
+  {
+    "type": "system",
+    "subtype": "status",
+    "status": "requesting",
+    "uuid": "<uuid-3>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "message_start",
+      "message": {
+        "id": "<id-4>",
+        "type": "message",
+        "role": "assistant",
+        "model": "deepseek-v4-pro",
+        "content": [],
+        "stop_reason": null,
+        "stop_sequence": null,
+        "usage": {
+          "input_tokens": 1111,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "service_tier": "standard"
+        }
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-5>",
+    "ttft_ms": 365
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_start",
+      "index": 0,
+      "content_block": {
+        "type": "thinking",
+        "thinking": "",
+        "signature": ""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-6>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 1,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-7>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "The"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-8>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 3,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-9>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " user"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-10>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 5,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-11>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " wants"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-12>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 6,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-13>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " me"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-14>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 7,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-15>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " to"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-16>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 8,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-17>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " run"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-18>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 9,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-19>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " `"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-20>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 10,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-21>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "p"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-22>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 11,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-23>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "wd"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-24>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 12,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-25>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "`"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-26>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 14,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-27>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " exactly"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-28>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 16,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-29>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " once"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-30>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 17,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-31>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " and"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-32>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 19,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-33>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " then"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-34>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 21,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-35>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " report"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-36>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 22,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-37>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " the"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-38>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 24,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-39>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " denial"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-40>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 25,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-41>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "."
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-42>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 26,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-43>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " Let"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-44>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 27,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-45>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " me"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-46>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 28,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-47>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " do"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-48>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 30,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-49>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " that"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-50>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 31,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-51>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "."
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-52>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "signature_delta",
+        "signature": "ee9ded55-05e4-46ee-9506-ca850c80877c"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-53>"
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "id": "<id-4>",
+      "type": "message",
+      "role": "assistant",
+      "model": "deepseek-v4-pro",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The user wants me to run `pwd` exactly once and then report the denial. Let me do that.",
+          "signature": "ee9ded55-05e4-46ee-9506-ca850c80877c"
+        }
+      ],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1111,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 0,
+        "service_tier": "standard"
+      },
+      "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "<session_id-1>",
+    "uuid": "<uuid-54>",
+    "timestamp": "2026-07-31T16:29:54.634Z"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_stop",
+      "index": 0
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-55>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_start",
+      "index": 1,
+      "content_block": {
+        "type": "tool_use",
+        "id": "<id-56>",
+        "name": "Bash",
+        "input": {}
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-57>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "{"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-58>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-59>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "command"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-60>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-61>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": ": "
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-62>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-63>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "p"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-64>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "wd"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-65>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-66>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": ", "
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-67>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-68>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "description"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-69>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-70>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": ": "
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-71>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-72>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "Print"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-73>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": " working"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-74>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": " directory"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-75>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-76>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "input_json_delta",
+        "partial_json": "}"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-77>"
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "id": "<id-4>",
+      "type": "message",
+      "role": "assistant",
+      "model": "deepseek-v4-pro",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "<id-56>",
+          "name": "Bash",
+          "input": {
+            "command": "pwd",
+            "description": "Print working directory"
+          }
+        }
+      ],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1111,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 0,
+        "service_tier": "standard"
+      },
+      "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "<session_id-1>",
+    "uuid": "<uuid-78>",
+    "timestamp": "2026-07-31T16:29:54.930Z"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_stop",
+      "index": 1
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-79>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "message_delta",
+      "delta": {
+        "stop_reason": "tool_use",
+        "stop_sequence": null
+      },
+      "usage": {
+        "input_tokens": 1111,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 86,
+        "service_tier": "standard"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-80>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "message_stop"
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-81>"
+  },
+  {
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "content": "Denied by the fixture recorder; no command was executed.",
+          "is_error": true,
+          "tool_use_id": "<id-56>"
+        }
+      ]
+    },
+    "parent_tool_use_id": null,
+    "session_id": "<session_id-1>",
+    "uuid": "<uuid-82>",
+    "timestamp": "2026-07-31T16:29:54.945Z",
+    "tool_use_result": "Error: Denied by the fixture recorder; no command was executed.",
+    "tool_result_meta": [
+      {
+        "id": "<id-56>",
+        "non_execution_kind": "permission-rule"
+      }
+    ]
+  },
+  {
+    "type": "system",
+    "subtype": "status",
+    "status": "requesting",
+    "uuid": "<uuid-83>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "message_start",
+      "message": {
+        "id": "<id-84>",
+        "type": "message",
+        "role": "assistant",
+        "model": "deepseek-v4-pro",
+        "content": [],
+        "stop_reason": null,
+        "stop_sequence": null,
+        "usage": {
+          "input_tokens": 68,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 1152,
+          "output_tokens": 0,
+          "service_tier": "standard"
+        }
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-85>",
+    "ttft_ms": 540
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_start",
+      "index": 0,
+      "content_block": {
+        "type": "thinking",
+        "thinking": "",
+        "signature": ""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-86>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 1,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-87>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "The"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-88>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 3,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-89>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " command"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-90>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 4,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-91>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " was"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-92>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 6,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-93>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " denied"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-94>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 7,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-95>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " by"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-96>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 8,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-97>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " the"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-98>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 9,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-99>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " \""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-100>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 10,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-101>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "fi"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-102>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 12,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-103>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "xture"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-104>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 15,
+    "estimated_tokens_delta": 3,
+    "uuid": "<uuid-105>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " recorder"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-106>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 16,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-107>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "\"."
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-108>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 17,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-109>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " Let"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-110>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 18,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-111>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " me"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-112>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 20,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-113>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " report"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-114>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 22,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-115>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " this"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-116>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 24,
+    "estimated_tokens_delta": 2,
+    "uuid": "<uuid-117>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " denial"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-118>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 25,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-119>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " as"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-120>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 28,
+    "estimated_tokens_delta": 3,
+    "uuid": "<uuid-121>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": " requested"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-122>"
+  },
+  {
+    "type": "system",
+    "subtype": "thinking_tokens",
+    "estimated_tokens": 29,
+    "estimated_tokens_delta": 1,
+    "uuid": "<uuid-123>",
+    "session_id": "<session_id-1>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "thinking_delta",
+        "thinking": "."
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-124>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 0,
+      "delta": {
+        "type": "signature_delta",
+        "signature": "6f337ec6-681b-4e07-a476-76377b43987b"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-125>"
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "id": "<id-84>",
+      "type": "message",
+      "role": "assistant",
+      "model": "deepseek-v4-pro",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The command was denied by the \"fixture recorder\". Let me report this denial as requested.",
+          "signature": "6f337ec6-681b-4e07-a476-76377b43987b"
+        }
+      ],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 68,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 1152,
+        "output_tokens": 0,
+        "service_tier": "standard"
+      },
+      "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "<session_id-1>",
+    "uuid": "<uuid-126>",
+    "timestamp": "2026-07-31T16:29:56.577Z"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_stop",
+      "index": 0
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-127>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_start",
+      "index": 1,
+      "content_block": {
+        "type": "text",
+        "text": ""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-128>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "The"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-129>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " command"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-130>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " was"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-131>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " **"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-132>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "den"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-133>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "ied"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-134>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "**."
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-135>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " The"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-136>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " system"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-137>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " reported"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-138>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": ":"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-139>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " \""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-140>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "Den"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-141>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "ied"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-142>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " by"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-143>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " the"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-144>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " fixture"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-145>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " recorder"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-146>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": ";"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-147>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " no"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-148>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " command"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-149>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " was"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-150>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " executed"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-151>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": ".\""
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-152>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " The"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-153>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " `"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-154>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "p"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-155>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "wd"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-156>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "`"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-157>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " command"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-158>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " did"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-159>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " not"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-160>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": " run"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-161>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_delta",
+      "index": 1,
+      "delta": {
+        "type": "text_delta",
+        "text": "."
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-162>"
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "id": "<id-84>",
+      "type": "message",
+      "role": "assistant",
+      "model": "deepseek-v4-pro",
+      "content": [
+        {
+          "type": "text",
+          "text": "The command was **denied**. The system reported: \"Denied by the fixture recorder; no command was executed.\" The `pwd` command did not run."
+        }
+      ],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 68,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 1152,
+        "output_tokens": 0,
+        "service_tier": "standard"
+      },
+      "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "<session_id-1>",
+    "uuid": "<uuid-163>",
+    "timestamp": "2026-07-31T16:29:56.880Z"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "content_block_stop",
+      "index": 1
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-164>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "message_delta",
+      "delta": {
+        "stop_reason": "end_turn",
+        "stop_sequence": null
+      },
+      "usage": {
+        "input_tokens": 68,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 1152,
+        "output_tokens": 54,
+        "service_tier": "standard"
+      }
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-165>"
+  },
+  {
+    "type": "stream_event",
+    "event": {
+      "type": "message_stop"
+    },
+    "session_id": "<session_id-1>",
+    "parent_tool_use_id": null,
+    "uuid": "<uuid-166>"
+  },
+  {
+    "is_error": false,
+    "duration_api_ms": 4527,
+    "num_turns": 2,
+    "stop_reason": "end_turn",
+    "session_id": "<session_id-1>",
+    "total_cost_usd": 0.010367999999999999,
+    "usage": {
+      "input_tokens": 1179,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1152,
+      "output_tokens": 140,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5": {
+        "inputTokens": 357,
+        "outputTokens": 8,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000397,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty"
+      },
+      "claude-opus-4-8[1m]": {
+        "inputTokens": 1179,
+        "outputTokens": 140,
+        "cacheReadInputTokens": 1152,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.009971,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "canonicalModel": "claude-opus-4-8",
+        "provider": "firstParty"
+      }
+    },
+    "permission_denials": [
+      {
+        "tool_name": "Bash",
+        "tool_use_id": "<id-56>",
+        "tool_input": {
+          "command": "pwd",
+          "description": "Print working directory"
+        }
+      }
+    ],
+    "terminal_reason": "completed",
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required",
+    "subtype": "success",
+    "api_error_status": null,
+    "result": "The command was **denied**. The system reported: \"Denied by the fixture recorder; no command was executed.\" The `pwd` command did not run.",
+    "ttft_ms": 1602,
+    "ttft_stream_ms": 371,
+    "time_to_request_ms": 7,
+    "type": "result",
+    "duration_ms": 3851,
+    "uuid": "<uuid-167>"
+  }
+]

@@ -7,7 +7,14 @@ import type { ResumeCursor } from '../adapter/io.js'
  * `SDKSessionStateChangedMessage` has `requires_action`; both say WHY a session is blocked.
  * When `waiting`, the pending InteractionRequest(s) explain what it's waiting on.
  */
-export type SessionStatus = 'idle' | 'running' | 'waiting' | 'interrupted' | 'error'
+export type SessionStatus =
+  | 'starting'
+  | 'idle'
+  | 'running'
+  | 'waiting'
+  | 'interrupted'
+  | 'error'
+  | 'closed'
 
 /** AgentSession — one Agent session bound to a project + host + adapter (§7.3). */
 export interface AgentSession {

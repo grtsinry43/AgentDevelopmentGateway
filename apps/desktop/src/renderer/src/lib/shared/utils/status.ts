@@ -21,6 +21,7 @@ interface StatusVisual {
 }
 
 export const SESSION_STATUS: Record<SessionStatus, StatusVisual> = {
+	starting: { dot: 'bg-status-connecting', text: 'text-status-connecting', label: '启动中' },
 	idle: { dot: 'bg-status-idle', text: 'text-status-idle', label: '空闲' },
 	running: { dot: 'bg-status-running', text: 'text-status-running', label: '运行中' },
 	waiting: { dot: 'bg-status-waiting', text: 'text-status-waiting', label: '等待输入' },
@@ -29,7 +30,8 @@ export const SESSION_STATUS: Record<SessionStatus, StatusVisual> = {
 		text: 'text-status-interrupted',
 		label: '已中断'
 	},
-	error: { dot: 'bg-status-error', text: 'text-status-error', label: '错误' }
+	error: { dot: 'bg-status-error', text: 'text-status-error', label: '错误' },
+	closed: { dot: 'bg-status-offline', text: 'text-status-offline', label: '已关闭' }
 };
 
 export const TURN_STATUS: Record<TurnStatus, StatusVisual> = {
@@ -61,5 +63,5 @@ export const HOST_STATUS: Record<HostStatus, StatusVisual> = {
 
 /** 状态是否应该显示脉冲动画(只有真正在推进的状态才动)。 */
 export function isLiveStatus(status: SessionStatus | TurnStatus | ToolCallStatus): boolean {
-	return status === 'running';
+	return status === 'starting' || status === 'running';
 }

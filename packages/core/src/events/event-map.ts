@@ -1,4 +1,5 @@
-import type { NativeRef, RuntimeEventEnvelope } from './envelope.js'
+import type { TurnId } from '../ids.js'
+import type { EventAttribution, NativeRef, RuntimeEventEnvelope } from './envelope.js'
 import type { RuntimeExtensionPayload } from './extension.js'
 import type {
   ChangesUpdatedPayload,
@@ -116,11 +117,17 @@ export type RuntimeEvent = {
 }[RuntimeEventType]
 
 /**
- * What an adapter emits (pre-envelope): just `type` + `payload` + optional `nativeRef`.
- * The runtime layer is the single authority that stamps `id`/`sequence`/`sessionId`/
- * `adapterId`/`timestamp` (append-only correctness, §8.3), turning this into a
- * {@link RuntimeEvent}.
+ * What an adapter emits before the runtime seals the event. An adapter may echo the
+ * runtime-assigned turn id and add provider-derived attribution, but the runtime remains
+ * the single authority for `id`/`sequence`/`sessionId`/`adapterId`/`timestamp`
+ * (append-only correctness, §8.3).
  */
 export type AdapterEvent<K extends RuntimeEventType = RuntimeEventType> = {
-  [P in K]: { type: P; payload: RuntimeEventMap[P]; nativeRef?: NativeRef }
+  [P in K]: {
+    type: P
+    payload: RuntimeEventMap[P]
+    turnId?: TurnId
+    attribution?: EventAttribution
+    nativeRef?: NativeRef
+  }
 }[K]

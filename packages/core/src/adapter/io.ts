@@ -1,4 +1,4 @@
-import type { InteractionId } from '../ids.js'
+import type { InteractionId, SessionId, TurnId } from '../ids.js'
 import type { SessionContext, TurnContext } from '../domain/context.js'
 import type { RuntimeConnection } from './connection.js'
 
@@ -20,6 +20,8 @@ export interface UserInput {
 
 /** Runtime-prepared context accompanying one send without becoming user-authored input. */
 export interface SendOptions {
+  /** Gateway turn assigned by the runtime before provider delivery. */
+  turnId: TurnId
   context?: TurnContext
 }
 
@@ -30,15 +32,11 @@ export interface InputAttachment {
   data?: string
 }
 
-/**
- * Receipt from `send`. OpenCode models `send` as DURABLE ADMISSION (input is written to
- * the event log with a sequence before execution), so callers can correlate (docs/05 §7.2).
- */
-export interface SendReceipt {
-  /** Sequence the input was admitted at (OpenCode `admittedSeq`). */
-  admittedSequence?: number
-  /** Turn this input started/steered, when known. */
-  turnId?: string
+/** Receipt returned by the runtime after durable input admission. */
+export interface InputAdmissionReceipt {
+  admittedSequence: number
+  /** Turn started or steered by this input, when one was scheduled. */
+  turnId?: TurnId
 }
 
 /**
@@ -139,6 +137,8 @@ export interface InterruptOptions {
 
 /** Input to create a new session (§9.3 `createSession`). */
 export interface CreateSessionInput {
+  /** Gateway session id assigned by the runtime before the adapter starts provider work. */
+  sessionId: SessionId
   projectPath: string
   connection: RuntimeConnection
   providerProfileId?: string
@@ -150,6 +150,10 @@ export interface CreateSessionInput {
 
 /** Input to resume an existing session (§9.3 `resumeSession`). */
 export interface ResumeSessionInput {
+  /** Existing Gateway session id whose provider session is being resumed. */
+  sessionId: SessionId
+  /** Authoritative project path; provider session lookup must not infer it from process cwd. */
+  projectPath: string
   runtimeSessionId: string
   connection: RuntimeConnection
   /** Where to resume from; shape varies per runtime (see {@link ResumeCursor}). */
@@ -162,6 +166,10 @@ export interface ResumeSessionInput {
 
 /** Input to fork a session into a new branch (§9.3 `forkSession`). */
 export interface ForkSessionInput {
+  /** New Gateway session id assigned to the fork by the runtime. */
+  sessionId: SessionId
+  /** Authoritative source project path for locating and forking provider state. */
+  projectPath: string
   runtimeSessionId: string
   connection: RuntimeConnection
   /** Cut point for the fork (Codex `last_turn_id` / `before_turn_id`). */

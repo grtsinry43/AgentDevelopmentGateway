@@ -649,6 +649,10 @@ interface RuntimeAdapter {
 }
 ```
 
+`ResumeSessionInput` 与 `ForkSessionInput` 必须携带 Runtime 权威状态中的
+`projectPath`。Adapter 不得以 server 的 `process.cwd()` 或仅存在于内存中的映射
+推断 provider session 所属项目；该约束保证本地/远程 host 以及 server 重启后的恢复一致。
+
 Adapter SDK 还应提供：
 
 - 公共 Schema 与类型
