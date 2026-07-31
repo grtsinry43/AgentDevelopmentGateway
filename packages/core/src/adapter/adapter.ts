@@ -9,6 +9,7 @@ import type {
   ModelSelection,
   ResumeSessionInput,
   SendReceipt,
+  SendOptions,
   UserInput,
 } from './io.js'
 import type {
@@ -69,7 +70,7 @@ export interface RuntimeAdapter {
   forkSession?(input: ForkSessionInput): Promise<RuntimeSessionHandle>
 
   /** Durably admits input and (unless `admitOnly`) schedules a turn; returns a receipt. */
-  send(sessionId: SessionId, input: UserInput): Promise<SendReceipt>
+  send(sessionId: SessionId, input: UserInput, options?: SendOptions): Promise<SendReceipt>
   interrupt(sessionId: SessionId, options?: InterruptOptions): Promise<void>
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>

@@ -1,4 +1,5 @@
 import type { InteractionId } from '../ids.js'
+import type { SessionContext, TurnContext } from '../domain/context.js'
 import type { RuntimeConnection } from './connection.js'
 
 /**
@@ -15,6 +16,11 @@ export interface UserInput {
   attachments?: InputAttachment[]
   /** Admit to the log without scheduling execution (OpenCode `resume:false`). */
   admitOnly?: boolean
+}
+
+/** Runtime-prepared context accompanying one send without becoming user-authored input. */
+export interface SendOptions {
+  context?: TurnContext
 }
 
 export interface InputAttachment {
@@ -138,6 +144,8 @@ export interface CreateSessionInput {
   providerProfileId?: string
   model?: ModelSelection
   mode?: 'default' | 'plan'
+  /** Stable, resolved context foundation for the new runtime session. */
+  context?: SessionContext
 }
 
 /** Input to resume an existing session (§9.3 `resumeSession`). */
@@ -148,6 +156,8 @@ export interface ResumeSessionInput {
   cursor?: ResumeCursor
   /** Opaque provider state for runtimes not reconstructable from the log (cradle). */
   providerStateSnapshot?: string
+  /** The pinned context snapshot to restore alongside the provider session. */
+  context?: SessionContext
 }
 
 /** Input to fork a session into a new branch (§9.3 `forkSession`). */
@@ -156,4 +166,6 @@ export interface ForkSessionInput {
   connection: RuntimeConnection
   /** Cut point for the fork (Codex `last_turn_id` / `before_turn_id`). */
   forkPoint?: ResumeCursor
+  /** New stable context, for example when continuing under refreshed rules. */
+  context?: SessionContext
 }

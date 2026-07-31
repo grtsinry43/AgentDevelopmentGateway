@@ -25,6 +25,8 @@ export type RuntimeFeature =
   | 'extension.hooks'
   | 'extension.plugins'
   | 'mcp.dynamic'
+  | 'context.session_injection'
+  | 'context.turn_injection'
   | 'context.compaction'
   | 'changes.revert'
 
