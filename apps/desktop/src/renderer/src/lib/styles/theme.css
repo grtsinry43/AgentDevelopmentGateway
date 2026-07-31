@@ -1,0 +1,319 @@
+/**
+ * 设计 token 单一来源。
+ *
+ * 命名沿用 grtblog 的 ink/jade/cinnabar/amber/bamboo 体系,但按控制台需要收紧:
+ * radius 3px、正文 12px、间距刻度更密,并补上 blog 不需要的 diff 与语义状态色。
+ *
+ * 硬规则:枚举(SessionStatus / ToolCallStatus / …)到颜色的映射只能出现在这里
+ * 和 shared/utils 的映射表里,组件内禁止内联 `status === 'error' ? 'text-red-500'`。
+ */
+
+@import 'tailwindcss';
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+	/*
+	 * ── 字体 ──
+	 * 拉丁走 Google Sans;中文在 macOS 上让位给苹方(系统字观感与渲染都更好),
+	 * 其他平台回落 Noto Sans SC。等宽是 Victor Mono —— 控制台里它是一等公民,
+	 * 不只用于代码块。衬线只在需要「高级感」的地方显式启用,不做正文默认。
+	 * 字体文件由 styles/fonts.css 经 fontsource 本地自托管。
+	 */
+	--font-sans:
+		'Google Sans Variable', 'PingFang SC', 'Noto Sans SC Variable', system-ui, -apple-system,
+		BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+	--font-serif: 'Noto Serif SC Variable', 'Songti SC', Georgia, serif;
+	--font-mono: 'Victor Mono Variable', 'SF Mono', Menlo, 'Cascadia Code', ui-monospace, monospace;
+
+	/* ── 字号 ── 密排:正文落在 12px,11px 用于元信息 ── */
+	--text-2xs: 10px;
+	--text-2xs--line-height: 14px;
+	--text-xs: 11px;
+	--text-xs--line-height: 15px;
+	--text-sm: 12px;
+	--text-sm--line-height: 17px;
+	--text-base: 13px;
+	--text-base--line-height: 19px;
+	--text-lg: 15px;
+	--text-lg--line-height: 21px;
+	--text-xl: 18px;
+	--text-xl--line-height: 24px;
+	--text-2xl: 22px;
+	--text-2xl--line-height: 28px;
+
+	/* ── ink:暖灰基色 ── */
+	--color-ink-0: #ffffff;
+	--color-ink-50: #fafaf9;
+	--color-ink-100: #f5f5f4;
+	--color-ink-200: #e7e5e4;
+	--color-ink-300: #d6d3d1;
+	--color-ink-400: #a8a29e;
+	--color-ink-500: #78716c;
+	--color-ink-600: #57534e;
+	--color-ink-700: #44403c;
+	--color-ink-750: #373330;
+	--color-ink-800: #292524;
+	--color-ink-850: #211d1c;
+	--color-ink-900: #1c1917;
+	--color-ink-950: #0c0a09;
+
+	/* ── jade:主色 ── */
+	--color-jade-50: #f0fdfa;
+	--color-jade-100: #ccfbf1;
+	--color-jade-200: #99f6e4;
+	--color-jade-300: #5eead4;
+	--color-jade-400: #2dd4bf;
+	--color-jade-500: #14b8a6;
+	--color-jade-600: #0d9488;
+	--color-jade-700: #0f766e;
+	--color-jade-800: #115e59;
+	--color-jade-900: #134e4a;
+	--color-jade-950: #042f2e;
+
+	/* ── cinnabar:错误 / 危险 ── */
+	--color-cinnabar-50: #fef2f2;
+	--color-cinnabar-100: #fee2e2;
+	--color-cinnabar-200: #fecaca;
+	--color-cinnabar-300: #fca5a5;
+	--color-cinnabar-400: #f87171;
+	--color-cinnabar-500: #ef4444;
+	--color-cinnabar-600: #dc2626;
+	--color-cinnabar-700: #b91c1c;
+	--color-cinnabar-800: #991b1b;
+	--color-cinnabar-900: #7f1d1d;
+	--color-cinnabar-950: #450a0a;
+
+	/* ── amber:警告 / 等待 ── */
+	--color-amber-50: #fffbeb;
+	--color-amber-100: #fef3c7;
+	--color-amber-200: #fde68a;
+	--color-amber-300: #fcd34d;
+	--color-amber-400: #fbbf24;
+	--color-amber-500: #f59e0b;
+	--color-amber-600: #d97706;
+	--color-amber-700: #b45309;
+	--color-amber-800: #92400e;
+	--color-amber-900: #78350f;
+	--color-amber-950: #451a03;
+
+	/* ── bamboo:成功 / 完成 ── */
+	--color-bamboo-50: #f0fdf4;
+	--color-bamboo-100: #dcfce7;
+	--color-bamboo-200: #bbf7d0;
+	--color-bamboo-300: #86efac;
+	--color-bamboo-400: #4ade80;
+	--color-bamboo-500: #22c55e;
+	--color-bamboo-600: #16a34a;
+	--color-bamboo-700: #15803d;
+	--color-bamboo-800: #166534;
+	--color-bamboo-900: #14532d;
+	--color-bamboo-950: #052e16;
+
+	/* ── iris:信息 / 推理 ── blog 没有,控制台需要区分 reasoning 与正文 ── */
+	--color-iris-100: #e0e7ff;
+	--color-iris-300: #a5b4fc;
+	--color-iris-400: #818cf8;
+	--color-iris-500: #6366f1;
+	--color-iris-600: #4f46e5;
+	--color-iris-900: #312e81;
+
+	/* ── 密排间距刻度 ── Tailwind 默认 4px 步进对密排 UI 太粗 ── */
+	--spacing-hair: 1px;
+	--spacing-dense: 2px;
+	--spacing-tight: 3px;
+	/* 列表行高:22px 能在 720px 高的窗口里放 ~28 行 */
+	--spacing-row: 22px;
+	--spacing-row-lg: 28px;
+
+	/* ── 圆角 ── 控制台整体方正 ── */
+	--radius-default: 3px;
+	--radius-panel: 6px;
+	--radius-card: 10px;
+
+	/* ── 毛玻璃与阴影 ── */
+	--blur-glass: 20px;
+	--shadow-glass: 0 8px 32px 0 rgb(120 113 108 / 0.06);
+	--shadow-glass-dark: 0 8px 32px 0 rgb(0 0 0 / 0.45);
+	--shadow-subtle: 0 1px 2px 0 rgb(28 25 23 / 0.05);
+	--shadow-float: 0 12px 32px -8px rgb(28 25 23 / 0.14);
+	--shadow-deep: 0 24px 48px -12px rgb(0 0 0 / 0.4);
+	--shadow-glow-jade: 0 0 24px -6px rgb(45 212 191 / 0.28);
+}
+
+/**
+ * ── 语义 token ──
+ *
+ * 上面是调色板(原材料),这里是语义层(用途)。组件应尽量用语义 token,
+ * 这样换主题只改这一段。亮暗两套值在 `.dark` 下覆盖。
+ */
+:root {
+	/* 表面层级:从最底到最上 */
+	--surface-base: var(--color-ink-100);
+	--surface-panel: var(--color-ink-50);
+	--surface-raised: var(--color-ink-0);
+	--surface-overlay: rgb(255 255 255 / 0.72);
+	--surface-hover: rgb(120 113 108 / 0.07);
+	--surface-active: rgb(120 113 108 / 0.12);
+	--surface-selected: rgb(13 148 136 / 0.1);
+
+	/* 文本层级 */
+	--text-strong: var(--color-ink-900);
+	--text-normal: var(--color-ink-700);
+	--text-muted: var(--color-ink-500);
+	--text-faint: var(--color-ink-400);
+	--text-accent: var(--color-jade-700);
+	--text-on-accent: #ffffff;
+
+	/* 描边层级 */
+	--border-subtle: rgb(120 113 108 / 0.14);
+	--border-default: var(--color-ink-200);
+	--border-strong: var(--color-ink-300);
+	--border-accent: var(--color-jade-500);
+
+	/* 焦点环 —— 键盘优先的应用里焦点必须始终清晰可见 */
+	--focus-ring: var(--color-jade-500);
+
+	/* 毛玻璃 */
+	--glass-bg: rgb(255 255 255 / 0.55);
+	--glass-border: rgb(255 255 255 / 0.7);
+	--glass-shadow: var(--shadow-glass);
+
+	/* SessionStatus / TurnStatus 语义色(core domain/session.ts 的枚举) */
+	--status-idle: var(--color-ink-400);
+	--status-running: var(--color-jade-500);
+	--status-waiting: var(--color-amber-500);
+	--status-interrupted: var(--color-ink-500);
+	--status-error: var(--color-cinnabar-500);
+	--status-completed: var(--color-bamboo-600);
+	--status-declined: var(--color-ink-400);
+	--status-pending: var(--color-ink-400);
+
+	/* Host status(core domain/host.ts) */
+	--status-online: var(--color-bamboo-500);
+	--status-offline: var(--color-ink-400);
+	--status-connecting: var(--color-amber-500);
+
+	/* diff */
+	--diff-add-bg: rgb(34 197 94 / 0.12);
+	--diff-add-fg: var(--color-bamboo-700);
+	--diff-add-gutter: var(--color-bamboo-500);
+	--diff-remove-bg: rgb(239 68 68 / 0.1);
+	--diff-remove-fg: var(--color-cinnabar-700);
+	--diff-remove-gutter: var(--color-cinnabar-500);
+	--diff-context-fg: var(--color-ink-500);
+
+	/* 推理块 —— 视觉上要弱于正文,但可辨识 */
+	--reasoning-fg: var(--color-iris-600);
+	--reasoning-bg: rgb(99 102 241 / 0.06);
+
+	/* 终端输出 */
+	--terminal-bg: var(--color-ink-950);
+	--terminal-fg: var(--color-ink-200);
+}
+
+.dark {
+	--surface-base: var(--color-ink-950);
+	--surface-panel: var(--color-ink-900);
+	--surface-raised: var(--color-ink-850);
+	--surface-overlay: rgb(28 25 23 / 0.78);
+	--surface-hover: rgb(255 255 255 / 0.05);
+	--surface-active: rgb(255 255 255 / 0.09);
+	--surface-selected: rgb(45 212 191 / 0.12);
+
+	--text-strong: var(--color-ink-100);
+	--text-normal: var(--color-ink-300);
+	--text-muted: var(--color-ink-400);
+	--text-faint: var(--color-ink-500);
+	--text-accent: var(--color-jade-300);
+	--text-on-accent: var(--color-ink-950);
+
+	--border-subtle: rgb(255 255 255 / 0.07);
+	--border-default: var(--color-ink-800);
+	--border-strong: var(--color-ink-700);
+	--border-accent: var(--color-jade-400);
+
+	--focus-ring: var(--color-jade-400);
+
+	--glass-bg: rgb(28 25 23 / 0.5);
+	--glass-border: rgb(255 255 255 / 0.08);
+	--glass-shadow: var(--shadow-glass-dark);
+
+	--status-idle: var(--color-ink-500);
+	--status-running: var(--color-jade-400);
+	--status-waiting: var(--color-amber-400);
+	--status-interrupted: var(--color-ink-400);
+	--status-error: var(--color-cinnabar-400);
+	--status-completed: var(--color-bamboo-400);
+	--status-declined: var(--color-ink-500);
+	--status-pending: var(--color-ink-500);
+
+	--status-online: var(--color-bamboo-400);
+	--status-offline: var(--color-ink-500);
+	--status-connecting: var(--color-amber-400);
+
+	--diff-add-bg: rgb(34 197 94 / 0.14);
+	--diff-add-fg: var(--color-bamboo-300);
+	--diff-add-gutter: var(--color-bamboo-500);
+	--diff-remove-bg: rgb(239 68 68 / 0.14);
+	--diff-remove-fg: var(--color-cinnabar-300);
+	--diff-remove-gutter: var(--color-cinnabar-500);
+	--diff-context-fg: var(--color-ink-400);
+
+	--reasoning-fg: var(--color-iris-300);
+	--reasoning-bg: rgb(129 140 248 / 0.08);
+
+	--terminal-bg: #080706;
+	--terminal-fg: var(--color-ink-300);
+}
+
+/**
+ * 把语义 token 注册成 Tailwind 工具类,这样组件里可以写
+ * `bg-surface-panel text-muted border-subtle` 而不是 `bg-[var(--surface-panel)]`。
+ */
+@theme inline {
+	--color-surface-base: var(--surface-base);
+	--color-surface-panel: var(--surface-panel);
+	--color-surface-raised: var(--surface-raised);
+	--color-surface-overlay: var(--surface-overlay);
+	--color-surface-hover: var(--surface-hover);
+	--color-surface-active: var(--surface-active);
+	--color-surface-selected: var(--surface-selected);
+
+	--color-strong: var(--text-strong);
+	--color-normal: var(--text-normal);
+	--color-muted: var(--text-muted);
+	--color-faint: var(--text-faint);
+	--color-accent: var(--text-accent);
+	--color-on-accent: var(--text-on-accent);
+
+	--color-subtle: var(--border-subtle);
+	--color-line: var(--border-default);
+	--color-line-strong: var(--border-strong);
+	--color-line-accent: var(--border-accent);
+
+	--color-focus: var(--focus-ring);
+
+	--color-status-idle: var(--status-idle);
+	--color-status-running: var(--status-running);
+	--color-status-waiting: var(--status-waiting);
+	--color-status-interrupted: var(--status-interrupted);
+	--color-status-error: var(--status-error);
+	--color-status-completed: var(--status-completed);
+	--color-status-declined: var(--status-declined);
+	--color-status-pending: var(--status-pending);
+	--color-status-online: var(--status-online);
+	--color-status-offline: var(--status-offline);
+	--color-status-connecting: var(--status-connecting);
+
+	--color-diff-add-bg: var(--diff-add-bg);
+	--color-diff-add-fg: var(--diff-add-fg);
+	--color-diff-remove-bg: var(--diff-remove-bg);
+	--color-diff-remove-fg: var(--diff-remove-fg);
+
+	--color-reasoning-fg: var(--reasoning-fg);
+	--color-reasoning-bg: var(--reasoning-bg);
+
+	--color-terminal-bg: var(--terminal-bg);
+	--color-terminal-fg: var(--terminal-fg);
+}

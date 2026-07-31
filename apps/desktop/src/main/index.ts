@@ -1,37 +1,32 @@
 import { app, BrowserWindow } from 'electron'
-import { join } from 'node:path'
+import { registerIpcHandlers } from './ipc/index.js'
+import { openLauncher } from './windows/launcher.js'
+import { setOnLastProjectClosed } from './windows/project.js'
 
-function createWindow(): void {
-  const window = new BrowserWindow({
-    height: 720,
-    width: 1080,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: true
-    }
+/** 单实例:第二次启动应该聚焦已有 Launcher,而不是开出第二个应用。 */
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    void openLauncher()
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  // 关掉最后一个工程窗口后回到 Launcher —— 否则应用还活着但没有任何入口。
+  setOnLastProjectClosed(() => {
+    if (BrowserWindow.getAllWindows().length === 0) void openLauncher()
+  })
+
+  app.whenReady().then(async () => {
+    registerIpcHandlers()
+    await openLauncher()
+
+    app.on('activate', () => {
+      // macOS:dock 图标点击时,没有任何窗口才开 Launcher
+      if (BrowserWindow.getAllWindows().length === 0) void openLauncher()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
 }
-
-app.whenReady().then(() => {
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})

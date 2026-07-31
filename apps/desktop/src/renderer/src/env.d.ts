@@ -1,12 +1,11 @@
 /// <reference types="svelte" />
 /// <reference types="vite/client" />
 
-interface ImportMetaEnv {
-  readonly RENDERER_VITE_API_BASE_URL?: string
-}
+import type { DesktopBridge } from '$contract/bridge';
 
-interface Window {
-  desktop: {
-    platform: string
-  }
+declare global {
+	interface Window {
+		/** preload 通过 contextBridge 暴露。渲染进程只应通过 $lib/shared/bridge 访问。 */
+		gateway: DesktopBridge;
+	}
 }

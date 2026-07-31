@@ -1,0 +1,23 @@
+dist/
+out/
+node_modules/
+.turbo/
+pnpm-lock.yaml
+reference/
+.agents/
+agent-development-gateway-requirements(1).md
+
+# 既有代码使用 2 空格 + 无分号风格,与新前端的 tab 风格不同。
+# 现在不做全仓重排(会把 core 的未提交改动淹没在纯格式化 diff 里)。
+# 若要统一,单独开一个「格式化」提交,把下面几行删掉再跑 pnpm format。
+packages/
+apps/server/
+apps/desktop/src/main/
+apps/desktop/src/preload/
+apps/desktop/electron.vite.config.ts
+eslint.config.js
+apps/desktop/svelte.config.mjs
+apps/desktop/tsconfig.json
+apps/desktop/tsconfig.node.json
+tsconfig.base.json
+turbo.json

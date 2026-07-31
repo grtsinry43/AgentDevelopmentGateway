@@ -1,0 +1,127 @@
+/**
+ * 全局 base 样式。只做三件事:reset、桌面应用行为约束、滚动条。
+ * 组件级样式一律走 Tailwind 类名,不在这里堆。
+ */
+
+@import './fonts.css';
+@import './theme.css';
+
+@layer base {
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+
+	html,
+	body {
+		height: 100%;
+		margin: 0;
+		padding: 0;
+	}
+
+	body {
+		background-color: var(--surface-base);
+		color: var(--text-normal);
+		font-family: var(--font-sans);
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
+		font-synthesis: none;
+		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+
+		/* 桌面应用:不是网页。禁掉橡皮筋滚动、文本选中和原生右键菜单的默认预期 */
+		overflow: hidden;
+		overscroll-behavior: none;
+		cursor: default;
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	/* 只有明确标记为可选中的内容才允许选中(消息正文、终端输出、代码) */
+	.selectable,
+	input,
+	textarea,
+	[contenteditable='true'] {
+		user-select: text;
+		-webkit-user-select: text;
+		cursor: auto;
+	}
+
+	#app {
+		height: 100%;
+		isolation: isolate;
+	}
+
+	/* 键盘优先的应用:焦点必须永远可见。禁止任何地方 outline: none 而不给替代。 */
+	:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 1px;
+	}
+
+	/* 鼠标点击不该留下焦点环,键盘导航才留 —— :focus-visible 已经处理,
+	   这里只额外压掉鼠标按下时的高亮 */
+	:focus:not(:focus-visible) {
+		outline: none;
+	}
+
+	button {
+		font: inherit;
+		color: inherit;
+	}
+
+	::selection {
+		background: rgb(45 212 191 / 0.22);
+	}
+
+	/* 拖拽区域(frameless 窗口的标题栏) */
+	.drag-region {
+		app-region: drag;
+		-webkit-app-region: drag;
+	}
+	.no-drag {
+		app-region: no-drag;
+		-webkit-app-region: no-drag;
+	}
+}
+
+@layer utilities {
+	/* 密排列表的细滚动条:悬停才显形,不占视觉重量 */
+	.scroll-thin {
+		scrollbar-width: thin;
+		scrollbar-color: transparent transparent;
+	}
+	.scroll-thin:hover {
+		scrollbar-color: var(--border-strong) transparent;
+	}
+	.scroll-thin::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	.scroll-thin::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.scroll-thin::-webkit-scrollbar-thumb {
+		border: 2px solid transparent;
+		border-radius: 4px;
+		background-clip: content-box;
+		background-color: transparent;
+	}
+	.scroll-thin:hover::-webkit-scrollbar-thumb {
+		background-color: var(--border-strong);
+	}
+
+	.no-scrollbar {
+		scrollbar-width: none;
+	}
+	.no-scrollbar::-webkit-scrollbar {
+		display: none;
+	}
+
+	/* 长会话性能:视口外的 turn 跳过渲染(需求 §14.3) */
+	.content-auto {
+		content-visibility: auto;
+		contain-intrinsic-size: auto 200px;
+	}
+}

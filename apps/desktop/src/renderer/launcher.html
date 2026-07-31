@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<!--
+			CSP:渲染进程不该能加载任意远程资源或执行内联脚本。
+			`connect-src` 放开本地回环,给后续连接本地 Agent Server 用(需求 §19.1)。
+		-->
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
+		/>
+		<title>Agent Development Gateway</title>
+	</head>
+	<body>
+		<div id="app"></div>
+		<script type="module" src="/src/launcher/main.ts"></script>
+	</body>
+</html>

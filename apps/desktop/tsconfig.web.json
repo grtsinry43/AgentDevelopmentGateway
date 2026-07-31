@@ -1,11 +1,20 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "types": ["svelte", "vite/client"]
-  },
-  "include": ["src/renderer/**/*.d.ts", "src/renderer/**/*.svelte", "src/renderer/**/*.ts"]
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"allowJs": true,
+		"checkJs": true,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"types": ["svelte", "vite/client"],
+		"paths": {
+			"$lib/*": ["./src/renderer/src/lib/*"],
+			"$contract/*": ["./src/contract/*"]
+		}
+	},
+	"include": [
+		"src/renderer/**/*.d.ts",
+		"src/renderer/**/*.svelte",
+		"src/renderer/**/*.ts",
+		"src/contract/**/*.ts"
+	]
 }

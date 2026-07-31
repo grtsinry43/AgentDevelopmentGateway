@@ -1,0 +1,87 @@
+/**
+ * 字体。全部通过 fontsource 本地自托管 —— Electron 分发体积不敏感,但**不能**依赖
+ * Google Fonts CDN:离线可用是桌面应用的底线,而且 CSP 里我们只放行了 'self'。
+ *
+ * 可变字重优先(`@fontsource-variable/*`):一个文件覆盖 100-900,比多个静态字重
+ * 更小也更灵活。
+ *
+ * 栈的设计意图(见 theme.css 的 --font-* token):
+ *   拉丁 → Google Sans
+ *   中文 → macOS 上让位苹方(系统字更贴平台观感、渲染更好),其他平台回落 Noto Sans SC
+ *   等宽 → Victor Mono(代码、路径、token 计数、终端输出)
+ *   衬线 → Noto Serif SC,只在需要「高级感」处显式 font-serif,不做正文默认
+ *
+ * ── 为什么拉丁字体手写 @font-face 而不是整包 import ──
+ * fontsource 的 `wght.css` 会把全部 24 个子集(含 bengali / ethiopic / khmer …)
+ * 都声明进来。虽然 unicode-range 保证浏览器只下载用到的那几个,但打包器会把**所有**
+ * woff2 当作资源产物一并复制进 out/ —— 光 Google Sans 的 ethiopic 就 249 KB,
+ * 而这个应用永远不会渲染这些文字。所以拉丁只手写 latin + latin-ext 两个面。
+ *
+ * 中文字体是另一回事:它被切成 ~100 个按字频排的子集,无法「只要常用字」,
+ * 而且整包才是设计意图(生僻字也要能显示),所以整包 import。
+ */
+
+/* ── 拉丁:Google Sans(只要 latin / latin-ext) ── */
+@font-face {
+	font-family: 'Google Sans Variable';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('@fontsource-variable/google-sans/files/google-sans-latin-wght-normal.woff2')
+		format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Google Sans Variable';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('@fontsource-variable/google-sans/files/google-sans-latin-ext-wght-normal.woff2')
+		format('woff2-variations');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+/* ── 等宽:Victor Mono(只要 latin / latin-ext;斜体给注释用) ── */
+@font-face {
+	font-family: 'Victor Mono Variable';
+	font-style: normal;
+	font-weight: 100 700;
+	font-display: swap;
+	src: url('@fontsource-variable/victor-mono/files/victor-mono-latin-wght-normal.woff2')
+		format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Victor Mono Variable';
+	font-style: normal;
+	font-weight: 100 700;
+	font-display: swap;
+	src: url('@fontsource-variable/victor-mono/files/victor-mono-latin-ext-wght-normal.woff2')
+		format('woff2-variations');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+@font-face {
+	font-family: 'Victor Mono Variable';
+	font-style: italic;
+	font-weight: 100 700;
+	font-display: swap;
+	src: url('@fontsource-variable/victor-mono/files/victor-mono-latin-wght-italic.woff2')
+		format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ── 中文:整包(~100 个按字频切分的子集,浏览器按需下载) ── */
+@import '@fontsource-variable/noto-sans-sc/wght.css';
+@import '@fontsource-variable/noto-serif-sc/wght.css';
