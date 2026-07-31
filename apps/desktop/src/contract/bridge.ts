@@ -6,6 +6,15 @@
  */
 
 import type { ContextProfile, NewProjectInput, RecentProject } from './project.js';
+import type {
+	CreateSessionRequest,
+	CreateSessionResponse,
+	GatewayAdapterAvailability,
+	GatewaySession,
+	InputAdmissionReceipt,
+	RuntimeEventWire,
+	SendSessionInputRequest
+} from '@agent-gateway/shared';
 
 /** 窗口种类。renderer 一启动就要知道自己是谁。 */
 export type WindowKind = 'launcher' | 'project';
@@ -32,6 +41,13 @@ export const IPC = {
 	projectsTogglePin: 'projects:togglePin',
 	projectsOpen: 'projects:open',
 	projectsTouch: 'projects:touch',
+
+	sessionsList: 'sessions:list',
+	sessionsAdapters: 'sessions:adapters',
+	sessionsCreate: 'sessions:create',
+	sessionsSend: 'sessions:send',
+	sessionsWatch: 'sessions:watch',
+	sessionsUnwatch: 'sessions:unwatch',
 
 	contextProfilesList: 'contextProfiles:list',
 	contextProfilesSave: 'contextProfiles:save',
@@ -69,6 +85,14 @@ export type PushEvent =
 	 * 不能等下次手动刷新。
 	 */
 	| { kind: 'projects.changed'; projects: RecentProject[] }
+	| { kind: 'sessions.changed'; projectKey: string; sessions: GatewaySession[] }
+	| { kind: 'session.event'; event: RuntimeEventWire }
+	| {
+			kind: 'session.stream';
+			sessionId: string;
+			state: 'connecting' | 'connected' | 'closed' | 'error';
+			message?: string;
+	  }
 	/** 某工程的 ContextProfile 集合已变更。 */
 	| { kind: 'contextProfiles.changed'; projectKey: string };
 
@@ -148,6 +172,15 @@ export interface DesktopBridge {
 		open(key: string): Promise<void>;
 		/** 更新 lastOpenedAt。 */
 		touch(key: string): Promise<void>;
+	};
+
+	sessions: {
+		list(projectKey: string): Promise<GatewaySession[]>;
+		adapters(projectKey: string): Promise<GatewayAdapterAvailability[]>;
+		create(projectKey: string, input: CreateSessionRequest): Promise<CreateSessionResponse>;
+		send(sessionId: string, input: SendSessionInputRequest): Promise<InputAdmissionReceipt>;
+		watch(sessionId: string, afterSequence?: number): Promise<void>;
+		unwatch(sessionId: string): Promise<void>;
 	};
 
 	contextProfiles: {

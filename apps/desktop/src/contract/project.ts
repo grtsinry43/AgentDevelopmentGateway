@@ -22,6 +22,8 @@ export interface RecentProject {
 	hostId: string;
 	hostType: HostType;
 	path: string;
+	/** Server Project id 的可失效缓存；身份仍然是 hostId + path。 */
+	serverProjectId?: string;
 	createdAt: number;
 	lastOpenedAt: number;
 	/** 会话数快照,仅用于卡片展示。权威值来自 Server,这里是缓存(§4.1)。 */

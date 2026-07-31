@@ -1,14 +1,8 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC, type WorkspaceLayoutState } from '../../contract/bridge.js'
 import type { NewProjectInput } from '../../contract/project.js'
-import {
-  addProject,
-  findProject,
-  listRecentProjects,
-  removeProject,
-  togglePinProject,
-  touchProject
-} from '../store/recent-projects.js'
+import { findProject, listRecentProjects, removeProject, togglePinProject, touchProject } from '../store/recent-projects.js'
+import { registerRecentProject, resolveServerProject } from '../server/gateway.js'
 import { loadLayout, saveLayout } from '../store/window-state.js'
 import { closeLauncher, getLauncher } from '../windows/launcher.js'
 import { openProjectWindow } from '../windows/project.js'
@@ -38,7 +32,7 @@ export function registerProjectHandlers(): void {
   })
 
   ipcMain.handle(IPC.projectsAdd, async (_event, input: NewProjectInput) => {
-    const created = await addProject(input)
+    const created = await registerRecentProject(input)
     await announceProjects()
     return created
   })
@@ -61,10 +55,12 @@ export function registerProjectHandlers(): void {
   })
 
   ipcMain.handle(IPC.projectsOpen, async (_event, key: string) => {
-    const project = await findProject(key)
-    if (!project) throw new Error(`工程不存在: ${key}`)
+    const cached = await findProject(key)
+    if (!cached) throw new Error(`工程不存在: ${key}`)
+    const project =
+      cached.hostType === 'local' ? (await resolveServerProject(key)).recent : cached
 
-    await touchProject(key)
+    await touchProject(project.key)
     await openProjectWindow(project)
     await announceProjects()
 

@@ -5,10 +5,17 @@
 	 * 四个 tab 对应需求 §14.1 的左侧信息:会话列表、项目上下文(ContextProfile)、
 	 * Git 状态、文件树。这一阶段内容都是空态占位。
 	 */
+	import type { Snippet } from 'svelte';
 	import { cx } from '$lib/shared/utils/cx';
 	import { LEFT_TABS, layout, type LeftTab } from '$lib/features/workspace/layout.svelte';
 	import EmptyState from '$lib/ui/common/EmptyState.svelte';
 	import Icon, { type IconName } from '$lib/ui/icons/Icon.svelte';
+
+	interface Props {
+		sessions?: Snippet;
+	}
+
+	let { sessions }: Props = $props();
 
 	/**
 	 * tab 定义。用 Record 而不是数组 + find:后者在 `noUncheckedIndexedAccess` 下
@@ -52,11 +59,15 @@
 		{/each}
 	</nav>
 
-	<div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
-		<EmptyState title="{active.label}（待接入）" description={active.hint} compact>
-			{#snippet icon()}
-				<Icon name={active.icon} size={18} />
-			{/snippet}
-		</EmptyState>
-	</div>
+	{#if layout.leftTab === 'sessions' && sessions}
+		{@render sessions()}
+	{:else}
+		<div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+			<EmptyState title="{active.label}（待接入）" description={active.hint} compact>
+				{#snippet icon()}
+					<Icon name={active.icon} size={18} />
+				{/snippet}
+			</EmptyState>
+		</div>
+	{/if}
 </div>

@@ -1,7 +1,7 @@
 import type { RuntimeCapabilities } from '../domain/descriptor.js'
 import type { SessionStatus } from '../domain/session.js'
 import type { InteractionId, TurnId } from '../ids.js'
-import type { InteractionResolution } from '../adapter/io.js'
+import type { InteractionResolution, UserInput } from '../adapter/io.js'
 import type { ChangeSet } from '../model/change-set.js'
 import type { InteractionRequest } from '../model/interaction.js'
 import type { Plan, TaskItem } from '../model/task-plan.js'
@@ -144,6 +144,8 @@ export interface InputAdmittedPayload {
   admittedSequence: number
   turnId?: TurnId
   delivery?: 'steer' | 'queue'
+  /** Durable user-authored input used to rebuild the conversation after reconnect/restart. */
+  input: UserInput
 }
 /** Queue-item lifecycle so clients can show depth / reordering / 'steer applied'. */
 export interface InputQueueUpdatedPayload {

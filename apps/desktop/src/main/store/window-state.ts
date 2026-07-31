@@ -109,3 +109,21 @@ export async function saveLayout(
     layouts: { ...current.layouts, [projectKey]: layout }
   }))
 }
+
+/** Keeps per-project window/layout preferences when a legacy project key is rebound. */
+export async function migrateProjectState(previousKey: string, nextKey: string): Promise<void> {
+  if (previousKey === nextKey) return
+  await store.update((current) => {
+    const previousBoundsId = `project:${previousKey}`
+    const nextBoundsId = `project:${nextKey}`
+    const bounds = { ...current.bounds }
+    const layouts = { ...current.layouts }
+    if (bounds[previousBoundsId] && !bounds[nextBoundsId]) {
+      bounds[nextBoundsId] = bounds[previousBoundsId]
+    }
+    if (layouts[previousKey] && !layouts[nextKey]) layouts[nextKey] = layouts[previousKey]
+    delete bounds[previousBoundsId]
+    delete layouts[previousKey]
+    return { ...current, bounds, layouts }
+  })
+}

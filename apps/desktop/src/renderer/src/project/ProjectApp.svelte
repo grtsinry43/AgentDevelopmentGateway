@@ -13,12 +13,14 @@
 	import { LEFT_TABS, layout } from '$lib/features/workspace/layout.svelte';
 	import { registerWorkspacePanels } from '$lib/features/workspace/panels';
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
+	import ConversationPane from '$lib/features/session/components/ConversationPane.svelte';
+	import SessionSidebar from '$lib/features/session/components/SessionSidebar.svelte';
+	import { sessionWorkspace } from '$lib/features/session/session-workspace.svelte';
 	import DockStack from '$lib/ui/layout/DockStack.svelte';
 	import ResizeHandle from '$lib/ui/layout/ResizeHandle.svelte';
 	import StatusBar from '$lib/ui/layout/StatusBar.svelte';
 	import TitleBar from '$lib/ui/layout/TitleBar.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
-	import EmptyState from '$lib/ui/common/EmptyState.svelte';
 	import KeyHintBar from '$lib/ui/common/KeyHintBar.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 
@@ -35,16 +37,14 @@
 
 	// 布局:异步读回,读回前用默认值渲染 —— 不阻塞首帧
 	void layout.load();
+	// Session workspace owns push subscriptions and the selected Session SSE registration.
+	$effect(() => sessionWorkspace.start(projectKey));
 
 	/** 键盘聚焦的面板 id。⌘1..9 设置。 */
 	let focusedPanelId = $state<string | undefined>(undefined);
 
-	/**
-	 * 当前会话的 runtime capabilities。
-	 * 还没有会话层,先给 undefined —— availablePanels 会因此只返回无能力依赖的面板。
-	 * 接上会话后这里换成真实的 `RuntimeCapabilities.features`,面板自动按能力出现。
-	 */
-	const capabilities = $derived(undefined);
+	/** 当前会话声明的 runtime capabilities；面板只按能力门控。 */
+	const capabilities = $derived(sessionWorkspace.features);
 	const addablePanels = $derived(availablePanels(capabilities));
 
 	$effect(() =>
@@ -103,7 +103,11 @@
 				class="flex min-h-0 shrink-0 flex-col bg-surface-panel"
 				style:width="{layout.leftWidth}px"
 			>
-				<LeftSidebar />
+				<LeftSidebar>
+					{#snippet sessions()}
+						<SessionSidebar workspace={sessionWorkspace} />
+					{/snippet}
+				</LeftSidebar>
 			</aside>
 			<ResizeHandle
 				label="调整侧栏宽度"
@@ -112,16 +116,9 @@
 			/>
 		{/if}
 
-		<!-- 中间主区:会话在下一阶段接入 -->
+		<!-- 中间主区:Session 投影只展示用户文本、Agent 文本与状态边界。 -->
 		<main class="flex min-h-0 min-w-0 flex-1 flex-col">
-			<EmptyState
-				title="会话区（下一阶段）"
-				description="事件投影层与 Conversation / ToolCall / Permission 渲染将在这里接入。"
-			>
-				{#snippet icon()}
-					<Icon name="message" size={22} />
-				{/snippet}
-			</EmptyState>
+			<ConversationPane workspace={sessionWorkspace} />
 		</main>
 
 		<!-- 右侧 dock -->
@@ -157,7 +154,11 @@
 		{/if}
 	</div>
 
-	<StatusBar />
+	<StatusBar
+		status={sessionWorkspace.selectedSession?.status}
+		adapterId={sessionWorkspace.selectedSession?.adapterId}
+		model={sessionWorkspace.selectedSession?.model}
+	/>
 	<KeyHintBar />
 </div>
 

@@ -33,6 +33,6 @@ pnpm dev --filter=@agent-gateway/server
 pnpm dev --filter=@agent-gateway/desktop
 ```
 
-The server port can be changed with `PORT`. The desktop API base URL can be
-changed with `RENDERER_VITE_API_BASE_URL`; it defaults to
-`http://127.0.0.1:3000`.
+The server port can be changed with `PORT`. The current desktop milestone connects to the local
+Server at `http://127.0.0.1:3000` from the Electron main process; remote Server selection is not
+implemented yet.

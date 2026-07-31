@@ -4,3 +4,5 @@ export interface HealthResponse {
   service: typeof APP_NAME
   status: 'ok'
 }
+
+export * from './server-contract.js'

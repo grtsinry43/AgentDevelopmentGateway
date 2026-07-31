@@ -6,7 +6,13 @@ import { defineConfig } from 'electron-vite'
 const rendererRoot = resolve(import.meta.dirname, 'src/renderer')
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      // Shared is ESM-only. Bundle it into the CommonJS Electron main output instead of
+      // leaving a runtime `require('@agent-gateway/shared')` that Node cannot resolve.
+      externalizeDeps: { exclude: ['@agent-gateway/shared'] }
+    }
+  },
   preload: {
     build: {
       externalizeDeps: false

@@ -9,6 +9,7 @@ import {
   type WorkspaceLayoutState
 } from '../contract/bridge.js'
 import type { ContextProfile, NewProjectInput } from '../contract/project.js'
+import type { CreateSessionRequest, SendSessionInputRequest } from '@agent-gateway/shared'
 
 /**
  * 从 additionalArguments 读取主进程注入的启动数据。
@@ -72,6 +73,18 @@ const bridge: DesktopBridge = {
     togglePin: (key: string) => ipcRenderer.invoke(IPC.projectsTogglePin, key),
     open: (key: string) => ipcRenderer.invoke(IPC.projectsOpen, key),
     touch: (key: string) => ipcRenderer.invoke(IPC.projectsTouch, key)
+  },
+
+  sessions: {
+    list: (projectKey: string) => ipcRenderer.invoke(IPC.sessionsList, projectKey),
+    adapters: (projectKey: string) => ipcRenderer.invoke(IPC.sessionsAdapters, projectKey),
+    create: (projectKey: string, input: CreateSessionRequest) =>
+      ipcRenderer.invoke(IPC.sessionsCreate, projectKey, input),
+    send: (sessionId: string, input: SendSessionInputRequest) =>
+      ipcRenderer.invoke(IPC.sessionsSend, sessionId, input),
+    watch: (sessionId: string, afterSequence = 0) =>
+      ipcRenderer.invoke(IPC.sessionsWatch, sessionId, afterSequence),
+    unwatch: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsUnwatch, sessionId)
   },
 
   contextProfiles: {
