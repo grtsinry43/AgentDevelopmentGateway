@@ -4,6 +4,7 @@
 	import type { ConversationToolCall } from '../projection';
 	import DiffViewer from './DiffViewer.svelte';
 	import ToolActivityText from './ToolActivityText.svelte';
+	import ToolCallLeadingIcons from './ToolCallLeadingIcons.svelte';
 	import { formatToolDuration, isActiveTool, toolTarget } from './tool-display';
 
 	interface Props {
@@ -32,10 +33,7 @@
 	<summary
 		class="flex h-7 cursor-pointer list-none items-center gap-1.5 rounded-default px-1.5 text-muted marker:hidden hover:bg-surface-hover"
 	>
-		<span
-			class="inline-flex h-4 w-4 shrink-0 items-center justify-center text-2xs text-faint transition-transform group-open:rotate-90"
-			aria-hidden="true">▶</span
-		>
+		<ToolCallLeadingIcons kind={item.toolCall.kind} />
 		<span class="shrink-0 text-normal">{operation}</span>
 		<ToolActivityText text={target} {active} class="min-w-0 flex-1 truncate font-mono" />
 		{#if item.changeSet}

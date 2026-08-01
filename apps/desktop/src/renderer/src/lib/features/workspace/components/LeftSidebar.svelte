@@ -13,9 +13,11 @@
 
 	interface Props {
 		sessions?: Snippet;
+		git?: Snippet;
+		files?: Snippet;
 	}
 
-	let { sessions }: Props = $props();
+	let { sessions, git, files }: Props = $props();
 
 	/**
 	 * tab 定义。用 Record 而不是数组 + find:后者在 `noUncheckedIndexedAccess` 下
@@ -61,6 +63,10 @@
 
 	{#if layout.leftTab === 'sessions' && sessions}
 		{@render sessions()}
+	{:else if layout.leftTab === 'git' && git}
+		{@render git()}
+	{:else if layout.leftTab === 'files' && files}
+		{@render files()}
 	{:else}
 		<div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
 			<EmptyState title="{active.label}（待接入）" description={active.hint} compact>

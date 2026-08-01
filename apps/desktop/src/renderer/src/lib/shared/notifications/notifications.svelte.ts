@@ -1,3 +1,5 @@
+import { untrack } from 'svelte';
+
 export type NotificationSeverity = 'info' | 'warning' | 'error';
 
 export interface AppNotification {
@@ -32,27 +34,31 @@ class NotificationStore {
 	readonly toast = $derived(this.items.find((item) => item.id === this.toastId));
 
 	notify(input: NotificationInput): void {
-		const existing = input.key ? this.items.find((item) => item.key === input.key) : undefined;
-		const shouldToast = !input.key || !this.activeKeys.has(input.key);
-		const notification: AppNotification = {
-			id: existing?.id ?? crypto.randomUUID(),
-			...(input.key ? { key: input.key } : {}),
-			severity: input.severity,
-			title: input.title,
-			summary: input.summary,
-			...(input.detail ? { detail: input.detail } : {}),
-			createdAt: Date.now(),
-			read: false
-		};
-		this.items = [notification, ...this.items.filter((item) => item.id !== notification.id)].slice(
-			0,
-			100
-		);
-		if (input.key) this.activeKeys.add(input.key);
-		if (shouldToast) {
-			this.toastId = notification.id;
-			this.restartToastTimer();
-		}
+		// notify is intentionally safe to call from a reactive effect. Its internal
+		// read-modify-write cycle must not become a dependency of that caller.
+		untrack(() => {
+			const existing = input.key ? this.items.find((item) => item.key === input.key) : undefined;
+			const shouldToast = !input.key || !this.activeKeys.has(input.key);
+			const notification: AppNotification = {
+				id: existing?.id ?? crypto.randomUUID(),
+				...(input.key ? { key: input.key } : {}),
+				severity: input.severity,
+				title: input.title,
+				summary: input.summary,
+				...(input.detail ? { detail: input.detail } : {}),
+				createdAt: Date.now(),
+				read: false
+			};
+			this.items = [
+				notification,
+				...this.items.filter((item) => item.id !== notification.id)
+			].slice(0, 100);
+			if (input.key) this.activeKeys.add(input.key);
+			if (shouldToast) {
+				this.toastId = notification.id;
+				this.restartToastTimer();
+			}
+		});
 	}
 
 	resolve(key: string): void {

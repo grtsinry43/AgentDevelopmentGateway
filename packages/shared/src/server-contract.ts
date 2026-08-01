@@ -38,6 +38,174 @@ export const createProjectRequestSchema = z.strictObject({
 })
 export const projectListResponseSchema = z.strictObject({ projects: z.array(projectSchema) })
 
+export const workspaceRelativePathSchema = z.string().max(16_384)
+export const gitPathSchema = workspaceRelativePathSchema.refine((path) => path.length > 0, {
+  message: 'Git path cannot be empty',
+})
+export const workspaceFileKindSchema = z.enum(['file', 'directory', 'symlink'])
+export const workspaceFileNodeSchema = z.strictObject({
+  name: z.string().min(1),
+  path: workspaceRelativePathSchema,
+  kind: workspaceFileKindSchema,
+  generated: z.boolean(),
+})
+export const workspaceDirectoryQuerySchema = z.strictObject({
+  path: workspaceRelativePathSchema.default(''),
+})
+export const workspaceDirectoryResponseSchema = z.strictObject({
+  path: workspaceRelativePathSchema,
+  entries: z.array(workspaceFileNodeSchema),
+})
+export const workspaceFileSubscriptionParamsSchema = z.strictObject({
+  projectId: gatewayIdSchema,
+  subscriptionId: gatewayIdSchema,
+})
+export const workspaceFileSubscriptionSchema = z.strictObject({
+  directories: z.array(workspaceRelativePathSchema).max(2_048),
+})
+export const workspaceFileEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('workspace.files.resync'),
+    projectId: gatewayIdSchema,
+    subscriptionId: gatewayIdSchema,
+    timestamp: gatewayTimestampSchema,
+  }),
+  z.strictObject({
+    type: z.literal('workspace.files.invalidated'),
+    projectId: gatewayIdSchema,
+    subscriptionId: gatewayIdSchema,
+    paths: z.array(workspaceRelativePathSchema).min(1),
+    timestamp: gatewayTimestampSchema,
+  }),
+])
+
+export const gitChangeAreaSchema = z.enum(['conflict', 'staged', 'unstaged', 'untracked'])
+export const gitFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+  'type-changed',
+  'unmerged',
+  'untracked',
+])
+export const gitChangeSchema = z.strictObject({
+  path: gitPathSchema,
+  previousPath: gitPathSchema.optional(),
+  area: gitChangeAreaSchema,
+  status: gitFileStatusSchema,
+  additions: z.number().int().nonnegative().optional(),
+  deletions: z.number().int().nonnegative().optional(),
+  binary: z.boolean().optional(),
+})
+export const gitBranchSchema = z.strictObject({
+  name: z.string().min(1).optional(),
+  detached: z.boolean(),
+  oid: z.string().min(1).optional(),
+  upstream: z.string().min(1).optional(),
+  ahead: z.number().int().nonnegative(),
+  behind: z.number().int().nonnegative(),
+})
+export const gitRepositoryStateSchema = z.strictObject({
+  branch: gitBranchSchema,
+  changes: z.array(gitChangeSchema),
+  updatedAt: gatewayTimestampSchema,
+})
+export const gitPathsRequestSchema = z.strictObject({
+  paths: z.array(gitPathSchema).min(1).max(10_000),
+})
+export const gitDiffQuerySchema = z.strictObject({
+  path: gitPathSchema,
+  area: gitChangeAreaSchema,
+})
+export const gitCommitRequestSchema = z.strictObject({
+  message: z.string().trim().min(1).max(100_000),
+})
+export const gitCommitResponseSchema = z.strictObject({
+  oid: z.string().min(1),
+  summary: z.string(),
+})
+export const gitEventSchema = z.strictObject({
+  type: z.literal('workspace.git.changed'),
+  projectId: gatewayIdSchema,
+  timestamp: gatewayTimestampSchema,
+})
+
+export const terminalStatusSchema = z.enum(['running', 'exited'])
+export const terminalDescriptorSchema = z.strictObject({
+  id: gatewayIdSchema,
+  projectId: gatewayIdSchema,
+  title: z.string().min(1),
+  shell: z.string().min(1),
+  cwd: z.string().min(1),
+  status: terminalStatusSchema,
+  cols: z.number().int().min(2).max(500),
+  rows: z.number().int().min(1).max(300),
+  exitCode: z.number().int().nullable().optional(),
+  signal: z.number().int().nullable().optional(),
+  createdAt: gatewayTimestampSchema,
+  updatedAt: gatewayTimestampSchema,
+})
+export const terminalListResponseSchema = z.strictObject({
+  terminals: z.array(terminalDescriptorSchema),
+})
+export const createTerminalRequestSchema = z.strictObject({
+  cols: z.number().int().min(2).max(500).default(80),
+  rows: z.number().int().min(1).max(300).default(24),
+})
+export const projectTerminalParamsSchema = z.strictObject({ projectId: gatewayIdSchema })
+export const terminalParamsSchema = z.strictObject({ terminalId: gatewayIdSchema })
+export const terminalClientMessageSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('terminal.attach'),
+    afterSequence: z.number().int().nonnegative().optional(),
+    cols: z.number().int().min(2).max(500),
+    rows: z.number().int().min(1).max(300),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.input'),
+    data: z.string().min(1).max(1_048_576),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.resize'),
+    cols: z.number().int().min(2).max(500),
+    rows: z.number().int().min(1).max(300),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.ack'),
+    sequence: z.number().int().nonnegative(),
+  }),
+])
+export const terminalServerMessageSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('terminal.ready'),
+    terminal: terminalDescriptorSchema,
+    sequence: z.number().int().nonnegative(),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.snapshot'),
+    terminal: terminalDescriptorSchema,
+    sequence: z.number().int().nonnegative(),
+    data: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.output'),
+    sequence: z.number().int().positive(),
+    data: z.string().min(1),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.exit'),
+    exitCode: z.number().int().nullable(),
+    signal: z.number().int().nullable(),
+  }),
+  z.strictObject({
+    type: z.literal('terminal.error'),
+    code: z.string().min(1),
+    message: z.string().min(1),
+  }),
+])
+
 export const runtimeCapabilitiesSchema = z.strictObject({
   steer: z.enum(['native', 'queue-fallback', 'unsupported']),
   modelSwitch: z.enum(['in-session', 'restart-session', 'unsupported']),
@@ -186,6 +354,8 @@ export const fileChangeSchema = z.strictObject({
     })
     .optional(),
 })
+
+export const gitDiffResponseSchema = z.strictObject({ change: fileChangeSchema })
 
 export const changeSetSchema = z.strictObject({
   id: z.string().min(1),
@@ -507,6 +677,27 @@ export type GatewayAdapterId = z.infer<typeof adapterIdSchema>
 export type GatewayErrorResponse = z.infer<typeof gatewayErrorResponseSchema>
 export type GatewayServerInfo = z.infer<typeof serverInfoSchema>
 export type GatewayProject = z.infer<typeof projectSchema>
+export type WorkspaceFileKind = z.infer<typeof workspaceFileKindSchema>
+export type WorkspaceFileNode = z.infer<typeof workspaceFileNodeSchema>
+export type WorkspaceDirectoryResponse = z.infer<typeof workspaceDirectoryResponseSchema>
+export type WorkspaceFileSubscription = z.infer<typeof workspaceFileSubscriptionSchema>
+export type WorkspaceFileEvent = z.infer<typeof workspaceFileEventSchema>
+export type GitChangeArea = z.infer<typeof gitChangeAreaSchema>
+export type GitFileStatus = z.infer<typeof gitFileStatusSchema>
+export type GitChange = z.infer<typeof gitChangeSchema>
+export type GitBranch = z.infer<typeof gitBranchSchema>
+export type GitRepositoryState = z.infer<typeof gitRepositoryStateSchema>
+export type GitPathsRequest = z.infer<typeof gitPathsRequestSchema>
+export type GitDiffResponse = z.infer<typeof gitDiffResponseSchema>
+export type GitCommitRequest = z.infer<typeof gitCommitRequestSchema>
+export type GitCommitResponse = z.infer<typeof gitCommitResponseSchema>
+export type GitEvent = z.infer<typeof gitEventSchema>
+export type TerminalStatus = z.infer<typeof terminalStatusSchema>
+export type TerminalDescriptor = z.infer<typeof terminalDescriptorSchema>
+export type TerminalListResponse = z.infer<typeof terminalListResponseSchema>
+export type CreateTerminalRequest = z.infer<typeof createTerminalRequestSchema>
+export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>
+export type TerminalServerMessage = z.infer<typeof terminalServerMessageSchema>
 export type GatewayAdapterAvailability = z.infer<typeof adapterAvailabilitySchema>
 export type GatewaySession = z.infer<typeof sessionSchema>
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>

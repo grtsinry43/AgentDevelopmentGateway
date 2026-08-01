@@ -38,7 +38,8 @@ export function registerWorkspacePanels(): void {
 		type: 'terminal',
 		title: '终端',
 		icon: 'terminal',
-		component: TerminalPanel
+		component: TerminalPanel,
+		contentOverflow: 'hidden'
 		// 终端是 host 能力,与 runtime capability 无关
 	});
 

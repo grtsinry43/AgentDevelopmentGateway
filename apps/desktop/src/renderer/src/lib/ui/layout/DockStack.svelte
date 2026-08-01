@@ -80,6 +80,7 @@
 					collapsed={entry.state.collapsed}
 					ordinal={index + 1}
 					focused={entry.state.id === focusedId}
+					contentOverflow={entry.definition.contentOverflow}
 					ontoggle={() => layout.togglePanel(entry.state.id)}
 					onclose={() => layout.removePanel(entry.state.id)}
 				>

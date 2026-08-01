@@ -1,4 +1,5 @@
 import type { ToolCall } from '@agent-gateway/core';
+import type { IconName } from '$lib/ui/icons/Icon.svelte';
 import type { ConversationToolCall } from '../projection';
 
 export function isActiveTool(item: ConversationToolCall): boolean {
@@ -37,6 +38,27 @@ export function semanticToolLabel(kind: ToolCall['kind']): string {
 		generic: '调用'
 	};
 	return labels[kind] ?? '调用';
+}
+
+/** Provider-neutral tool kind to the compact visual vocabulary used by the timeline. */
+export function toolKindIcon(kind: ToolCall['kind']): IconName {
+	const icons: Record<ToolCall['kind'], IconName> = {
+		terminal: 'terminal',
+		'file-read': 'file-text',
+		'file-edit': 'pencil',
+		'file-diff': 'pencil',
+		'notebook-edit': 'pencil',
+		search: 'search',
+		web: 'globe',
+		subagent: 'agent',
+		'task-control': 'list',
+		todo: 'list',
+		plan: 'list',
+		mcp: 'plug',
+		worktree: 'git-branch',
+		generic: 'command'
+	};
+	return icons[kind];
 }
 
 export function truncatedJson(

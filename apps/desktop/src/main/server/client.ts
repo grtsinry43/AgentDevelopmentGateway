@@ -8,6 +8,13 @@ import {
   controlReceiptSchema,
   forkSessionRequestSchema,
   gatewayErrorResponseSchema,
+  gitCommitRequestSchema,
+  gitCommitResponseSchema,
+  gitDiffQuerySchema,
+  gitDiffResponseSchema,
+  gitEventSchema,
+  gitPathsRequestSchema,
+  gitRepositoryStateSchema,
   inputAdmissionReceiptSchema,
   interruptSessionRequestSchema,
   projectListResponseSchema,
@@ -23,6 +30,12 @@ import {
   serverInfoSchema,
   sessionListResponseSchema,
   sessionSchema,
+  workspaceDirectoryResponseSchema,
+  workspaceFileEventSchema,
+  workspaceFileSubscriptionSchema,
+  createTerminalRequestSchema,
+  terminalDescriptorSchema,
+  terminalListResponseSchema,
   type CreateSessionRequest,
   type CreateSessionResponse,
   type CloseSessionRequest,
@@ -31,6 +44,11 @@ import {
   type GatewayProject,
   type GatewayServerInfo,
   type GatewaySession,
+  type GitChangeArea,
+  type GitCommitResponse,
+  type GitDiffResponse,
+  type GitEvent,
+  type GitRepositoryState,
   type InputAdmissionReceipt,
   type InterruptSessionRequest,
   type ResolveInteractionRequest,
@@ -41,7 +59,11 @@ import {
   type SetExecutionSettingsRequest,
   type SetSessionModelRequest,
   type SetSessionTitleRequest,
-  type SetWorkModeRequest
+  type SetWorkModeRequest,
+  type WorkspaceDirectoryResponse,
+  type WorkspaceFileEvent
+  ,type CreateTerminalRequest
+  ,type TerminalDescriptor
 } from '@agent-gateway/shared'
 import { net } from 'electron'
 
@@ -104,6 +126,124 @@ export class GatewayServerClient {
   async sessions(projectId: string): Promise<GatewaySession[]> {
     return (await this.request(`/api/v1/projects/${projectId}/sessions`, sessionListResponseSchema))
       .sessions
+  }
+
+  workspaceDirectory(projectId: string, path: string): Promise<WorkspaceDirectoryResponse> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
+      workspaceDirectoryResponseSchema
+    )
+  }
+
+  gitStatus(projectId: string): Promise<GitRepositoryState> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/git`,
+      gitRepositoryStateSchema
+    )
+  }
+
+  gitDiff(projectId: string, path: string, area: GitChangeArea): Promise<GitDiffResponse> {
+    const query = gitDiffQuerySchema.parse({ path, area })
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/git/diff?path=${encodeURIComponent(query.path)}&area=${encodeURIComponent(query.area)}`,
+      gitDiffResponseSchema
+    )
+  }
+
+  stageGit(projectId: string, paths: string[]): Promise<void> {
+    return this.requestVoid(`/api/v1/projects/${encodeURIComponent(projectId)}/git/stage`, {
+      method: 'POST',
+      body: gitPathsRequestSchema.parse({ paths })
+    })
+  }
+
+  unstageGit(projectId: string, paths: string[]): Promise<void> {
+    return this.requestVoid(`/api/v1/projects/${encodeURIComponent(projectId)}/git/unstage`, {
+      method: 'POST',
+      body: gitPathsRequestSchema.parse({ paths })
+    })
+  }
+
+  commitGit(projectId: string, message: string): Promise<GitCommitResponse> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/git/commit`,
+      gitCommitResponseSchema,
+      { method: 'POST', body: gitCommitRequestSchema.parse({ message }) }
+    )
+  }
+
+  async *gitEvents(
+    projectId: string,
+    signal: AbortSignal,
+    onOpen?: () => void
+  ): AsyncGenerator<GitEvent> {
+    const response = await net.fetch(
+      `${this.baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/git/events`,
+      { signal, headers: { accept: 'text/event-stream' } }
+    )
+    if (!response.ok) throw await this.responseError(response)
+    if (!response.body) throw new Error('Server returned an empty Git event stream')
+    onOpen?.()
+    yield* parseEventStream(response.body, gitEventSchema)
+  }
+
+  async terminals(projectId: string): Promise<TerminalDescriptor[]> {
+    return (
+      await this.request(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/terminals`,
+        terminalListResponseSchema
+      )
+    ).terminals
+  }
+
+  createTerminal(projectId: string, input: CreateTerminalRequest): Promise<TerminalDescriptor> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/terminals`,
+      terminalDescriptorSchema,
+      { method: 'POST', body: createTerminalRequestSchema.parse(input) }
+    )
+  }
+
+  closeTerminal(terminalId: string): Promise<void> {
+    return this.requestVoid(`/api/v1/terminals/${encodeURIComponent(terminalId)}`, {
+      method: 'DELETE'
+    })
+  }
+
+  terminalWebSocketUrl(terminalId: string): string {
+    const url = new URL(
+      `/api/v1/terminals/${encodeURIComponent(terminalId)}/attach`,
+      this.baseUrl
+    )
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    return url.toString()
+  }
+
+  updateWorkspaceFileSubscription(
+    projectId: string,
+    subscriptionId: string,
+    directories: string[]
+  ): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      { method: 'PUT', body: workspaceFileSubscriptionSchema.parse({ directories }) }
+    )
+  }
+
+  async *workspaceFileEvents(
+    projectId: string,
+    subscriptionId: string,
+    signal: AbortSignal,
+    onOpen?: () => void
+  ): AsyncGenerator<WorkspaceFileEvent> {
+    const response = await net.fetch(
+      `${this.baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/files/subscriptions/${encodeURIComponent(subscriptionId)}/events`,
+      { signal, headers: { accept: 'text/event-stream' } }
+    )
+    if (!response.ok) throw await this.responseError(response)
+    if (!response.body) throw new Error('Server returned an empty workspace file event stream')
+    onOpen?.()
+    yield* parseEventStream(response.body, workspaceFileEventSchema)
   }
 
   session(sessionId: string): Promise<GatewaySession> {
@@ -201,13 +341,13 @@ export class GatewayServerClient {
     if (!response.body) throw new Error('Server returned an empty Session event stream')
 
     callbacks.onOpen?.()
-    yield* parseEventStream(response.body, callbacks.onActivity)
+    yield* parseEventStream(response.body, runtimeEventWireSchema, callbacks.onActivity)
   }
 
   private async request<T>(
     path: string,
     schema: Schema<T>,
-    options: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown } = {}
+    options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH'; body?: unknown } = {}
   ): Promise<T> {
     const response = await net.fetch(`${this.baseUrl}${path}`, {
       method: options.method ?? 'GET',
@@ -224,7 +364,7 @@ export class GatewayServerClient {
 
   private async requestVoid(
     path: string,
-    options: { method: 'POST' | 'PATCH'; body?: unknown }
+    options: { method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown }
   ): Promise<void> {
     const response = await net.fetch(`${this.baseUrl}${path}`, {
       method: options.method,
@@ -261,10 +401,11 @@ export class GatewayServerClient {
   }
 }
 
-async function* parseEventStream(
+async function* parseEventStream<T>(
   stream: ReadableStream<Uint8Array>,
+  schema: Schema<T>,
   onActivity?: () => void
-): AsyncGenerator<RuntimeEventWire> {
+): AsyncGenerator<T> {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -283,7 +424,7 @@ async function* parseEventStream(
           .filter((line) => line.startsWith('data:'))
           .map((line) => line.slice(5).trimStart())
           .join('\n')
-        if (data) yield runtimeEventWireSchema.parse(JSON.parse(data))
+        if (data) yield schema.parse(JSON.parse(data))
         boundary = buffer.indexOf('\n\n')
       }
     }

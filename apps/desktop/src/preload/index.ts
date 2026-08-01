@@ -13,6 +13,7 @@ import type {
   CloseSessionRequest,
   CreateSessionRequest,
   ForkSessionRequest,
+  GitChangeArea,
   InterruptSessionRequest,
   ResolveInteractionRequest,
   ResumeSessionRequest,
@@ -119,6 +120,57 @@ const bridge: DesktopBridge = {
     watch: (sessionId: string, afterSequence = 0) =>
       ipcRenderer.invoke(IPC.sessionsWatch, sessionId, afterSequence),
     unwatch: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsUnwatch, sessionId)
+  },
+
+  files: {
+    capabilities: (projectKey: string) => ipcRenderer.invoke(IPC.filesCapabilities, projectKey),
+    list: (projectKey: string, path: string) =>
+      ipcRenderer.invoke(IPC.filesList, projectKey, path),
+    watch: (projectKey: string, directories: string[]) =>
+      ipcRenderer.invoke(IPC.filesWatch, projectKey, directories),
+    updateWatch: (projectKey: string, directories: string[]) =>
+      ipcRenderer.invoke(IPC.filesUpdateWatch, projectKey, directories),
+    unwatch: (projectKey: string) => ipcRenderer.invoke(IPC.filesUnwatch, projectKey),
+    retry: (projectKey: string) => ipcRenderer.invoke(IPC.filesRetry, projectKey)
+  },
+
+  git: {
+    capabilities: (projectKey: string) => ipcRenderer.invoke(IPC.gitCapabilities, projectKey),
+    status: (projectKey: string) => ipcRenderer.invoke(IPC.gitStatus, projectKey),
+    diff: (projectKey: string, path: string, area: GitChangeArea) =>
+      ipcRenderer.invoke(IPC.gitDiff, projectKey, path, area),
+    stage: (projectKey: string, paths: string[]) =>
+      ipcRenderer.invoke(IPC.gitStage, projectKey, paths),
+    unstage: (projectKey: string, paths: string[]) =>
+      ipcRenderer.invoke(IPC.gitUnstage, projectKey, paths),
+    commit: (projectKey: string, message: string) =>
+      ipcRenderer.invoke(IPC.gitCommit, projectKey, message),
+    watch: (projectKey: string) => ipcRenderer.invoke(IPC.gitWatch, projectKey),
+    unwatch: (projectKey: string) => ipcRenderer.invoke(IPC.gitUnwatch, projectKey),
+    retry: (projectKey: string) => ipcRenderer.invoke(IPC.gitRetry, projectKey)
+  },
+
+  terminals: {
+    capabilities: (projectKey: string) =>
+      ipcRenderer.invoke(IPC.terminalsCapabilities, projectKey),
+    list: (projectKey: string) => ipcRenderer.invoke(IPC.terminalsList, projectKey),
+    create: (projectKey: string, cols: number, rows: number) =>
+      ipcRenderer.invoke(IPC.terminalsCreate, projectKey, { cols, rows }),
+    close: (terminalId: string) => ipcRenderer.invoke(IPC.terminalsClose, terminalId),
+    attach: (
+      terminalId: string,
+      afterSequence: number | undefined,
+      cols: number,
+      rows: number
+    ) => ipcRenderer.invoke(IPC.terminalsAttach, terminalId, afterSequence, cols, rows),
+    detach: (terminalId: string) => ipcRenderer.invoke(IPC.terminalsDetach, terminalId),
+    input: (terminalId: string, data: string) =>
+      ipcRenderer.invoke(IPC.terminalsInput, terminalId, data),
+    resize: (terminalId: string, cols: number, rows: number) =>
+      ipcRenderer.invoke(IPC.terminalsResize, terminalId, cols, rows),
+    acknowledge: (terminalId: string, sequence: number) =>
+      ipcRenderer.invoke(IPC.terminalsAck, terminalId, sequence),
+    retry: (terminalId: string) => ipcRenderer.invoke(IPC.terminalsRetry, terminalId)
   },
 
   contextProfiles: {

@@ -16,6 +16,8 @@
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
 	import ConversationPane from '$lib/features/session/components/ConversationPane.svelte';
 	import SessionSidebar from '$lib/features/session/components/SessionSidebar.svelte';
+	import FileTree from '$lib/features/files/components/FileTree.svelte';
+	import GitPanel from '$lib/features/git/components/GitPanel.svelte';
 	import { sessionWorkspace } from '$lib/features/session/session-workspace.svelte';
 	import DockStack from '$lib/ui/layout/DockStack.svelte';
 	import ResizeHandle from '$lib/ui/layout/ResizeHandle.svelte';
@@ -150,6 +152,12 @@
 				<LeftSidebar>
 					{#snippet sessions()}
 						<SessionSidebar workspace={sessionWorkspace} />
+					{/snippet}
+					{#snippet files()}
+						<FileTree {projectKey} />
+					{/snippet}
+					{#snippet git()}
+						<GitPanel {projectKey} />
 					{/snippet}
 				</LeftSidebar>
 			</aside>

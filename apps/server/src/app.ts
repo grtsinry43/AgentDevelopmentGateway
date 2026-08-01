@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { ClaudeAdapter } from '@agent-gateway/adapter-claude'
 import cors from '@fastify/cors'
+import websocket from '@fastify/websocket'
 import { APP_NAME, type HealthResponse } from '@agent-gateway/shared'
 import type { RuntimeAdapter } from '@agent-gateway/core'
 import Fastify, { type FastifyInstance } from 'fastify'
@@ -9,6 +10,7 @@ import { z } from 'zod'
 import { installErrorHandler } from './http/errors.js'
 import { errorResponseSchema } from './http/schemas.js'
 import { applicationPlugin } from './plugins/application.js'
+import type { TerminalPtyFactory } from './features/terminals/pty.js'
 
 const healthResponseSchema: z.ZodType<HealthResponse> = z.object({
   service: z.literal(APP_NAME),
@@ -21,6 +23,9 @@ export interface BuildServerOptions {
   databasePath?: string
   environment?: NodeJS.ProcessEnv
   logger?: boolean
+  terminalPtyFactory?: TerminalPtyFactory
+  terminalRetentionMs?: number
+  terminalOutputBufferBytes?: number
 }
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
@@ -29,8 +34,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   server.setSerializerCompiler(serializerCompiler)
   installErrorHandler(server)
 
+  server.register(websocket, {
+    options: { maxPayload: 1_048_576, perMessageDeflate: false }
+  })
+
   server.register(cors, {
-    methods: ['GET', 'POST', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     origin: ['null', /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/]
   })
 
@@ -44,7 +53,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   server.register(applicationPlugin, {
     adapters: options.adapters ?? [new ClaudeAdapter()],
     databasePath: options.databasePath ?? join(dataDirectory, 'gateway.sqlite'),
-    environment: stringEnvironment(options.environment ?? process.env)
+    environment: stringEnvironment(options.environment ?? process.env),
+    ...(options.terminalPtyFactory ? { terminalPtyFactory: options.terminalPtyFactory } : {}),
+    ...(options.terminalRetentionMs === undefined
+      ? {}
+      : { terminalRetentionMs: options.terminalRetentionMs }),
+    ...(options.terminalOutputBufferBytes === undefined
+      ? {}
+      : { terminalOutputBufferBytes: options.terminalOutputBufferBytes })
   })
 
   return server

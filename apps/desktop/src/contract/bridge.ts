@@ -12,6 +12,10 @@ import type {
 	CloseSessionRequest,
 	ForkSessionRequest,
 	GatewayAdapterAvailability,
+	GitChangeArea,
+	GitCommitResponse,
+	GitDiffResponse,
+	GitRepositoryState,
 	GatewaySession,
 	InputAdmissionReceipt,
 	InterruptSessionRequest,
@@ -23,7 +27,10 @@ import type {
 	SetExecutionSettingsRequest,
 	SetSessionModelRequest,
 	SetSessionTitleRequest,
-	SetWorkModeRequest
+	SetWorkModeRequest,
+	TerminalDescriptor,
+	TerminalServerMessage,
+	WorkspaceDirectoryResponse
 } from '@agent-gateway/shared';
 
 /** 窗口种类。renderer 一启动就要知道自己是谁。 */
@@ -68,6 +75,31 @@ export const IPC = {
 	sessionsSetExecution: 'sessions:setExecution',
 	sessionsWatch: 'sessions:watch',
 	sessionsUnwatch: 'sessions:unwatch',
+	filesCapabilities: 'files:capabilities',
+	filesList: 'files:list',
+	filesWatch: 'files:watch',
+	filesUpdateWatch: 'files:updateWatch',
+	filesUnwatch: 'files:unwatch',
+	filesRetry: 'files:retry',
+	gitCapabilities: 'git:capabilities',
+	gitStatus: 'git:status',
+	gitDiff: 'git:diff',
+	gitStage: 'git:stage',
+	gitUnstage: 'git:unstage',
+	gitCommit: 'git:commit',
+	gitWatch: 'git:watch',
+	gitUnwatch: 'git:unwatch',
+	gitRetry: 'git:retry',
+	terminalsCapabilities: 'terminals:capabilities',
+	terminalsList: 'terminals:list',
+	terminalsCreate: 'terminals:create',
+	terminalsClose: 'terminals:close',
+	terminalsAttach: 'terminals:attach',
+	terminalsDetach: 'terminals:detach',
+	terminalsInput: 'terminals:input',
+	terminalsResize: 'terminals:resize',
+	terminalsAck: 'terminals:ack',
+	terminalsRetry: 'terminals:retry',
 
 	contextProfilesList: 'contextProfiles:list',
 	contextProfilesSave: 'contextProfiles:save',
@@ -115,6 +147,34 @@ export type PushEvent =
 			attempt?: number;
 			retryAt?: number;
 	  }
+	| { kind: 'files.invalidated'; projectKey: string; paths: string[] }
+	| { kind: 'files.resync'; projectKey: string }
+	| {
+			kind: 'files.stream';
+			projectKey: string;
+			state: 'connecting' | 'connected' | 'retrying' | 'closed' | 'error';
+			message?: string;
+			attempt?: number;
+			retryAt?: number;
+	  }
+	| { kind: 'git.invalidated'; projectKey: string }
+	| {
+			kind: 'git.stream';
+			projectKey: string;
+			state: 'connecting' | 'connected' | 'retrying' | 'closed' | 'error';
+			message?: string;
+			attempt?: number;
+			retryAt?: number;
+	  }
+	| { kind: 'terminal.message'; terminalId: string; message: TerminalServerMessage }
+	| {
+			kind: 'terminal.stream';
+			terminalId: string;
+			state: 'connecting' | 'connected' | 'retrying' | 'closed' | 'error';
+			message?: string;
+			attempt?: number;
+			retryAt?: number;
+	  }
 	/** 某工程的 ContextProfile 集合已变更。 */
 	| { kind: 'contextProfiles.changed'; projectKey: string };
 
@@ -155,6 +215,14 @@ export interface WorkspaceLayoutState {
 	leftTab: string;
 	rightPanels: DockPanelState[];
 }
+
+export type GitStatusResult =
+	| { available: true; state: GitRepositoryState }
+	| {
+			available: false;
+			reason: 'not-repository' | 'git-unavailable';
+			message: string;
+	  };
 
 /**
  * `window.gateway` 的完整形状。preload 用 contextBridge 暴露它。
@@ -220,6 +288,45 @@ export interface DesktopBridge {
 		): Promise<RuntimeControlReceipt>;
 		watch(sessionId: string, afterSequence?: number): Promise<void>;
 		unwatch(sessionId: string): Promise<void>;
+	};
+
+	files: {
+		capabilities(projectKey: string): Promise<string[]>;
+		list(projectKey: string, path: string): Promise<WorkspaceDirectoryResponse>;
+		watch(projectKey: string, directories: string[]): Promise<void>;
+		updateWatch(projectKey: string, directories: string[]): Promise<void>;
+		unwatch(projectKey: string): Promise<void>;
+		retry(projectKey: string): Promise<void>;
+	};
+
+	git: {
+		capabilities(projectKey: string): Promise<string[]>;
+		status(projectKey: string): Promise<GitStatusResult>;
+		diff(projectKey: string, path: string, area: GitChangeArea): Promise<GitDiffResponse>;
+		stage(projectKey: string, paths: string[]): Promise<void>;
+		unstage(projectKey: string, paths: string[]): Promise<void>;
+		commit(projectKey: string, message: string): Promise<GitCommitResponse>;
+		watch(projectKey: string): Promise<void>;
+		unwatch(projectKey: string): Promise<void>;
+		retry(projectKey: string): Promise<void>;
+	};
+
+	terminals: {
+		capabilities(projectKey: string): Promise<string[]>;
+		list(projectKey: string): Promise<TerminalDescriptor[]>;
+		create(projectKey: string, cols: number, rows: number): Promise<TerminalDescriptor>;
+		close(terminalId: string): Promise<void>;
+		attach(
+			terminalId: string,
+			afterSequence: number | undefined,
+			cols: number,
+			rows: number
+		): Promise<void>;
+		detach(terminalId: string): Promise<void>;
+		input(terminalId: string, data: string): Promise<void>;
+		resize(terminalId: string, cols: number, rows: number): Promise<void>;
+		acknowledge(terminalId: string, sequence: number): Promise<void>;
+		retry(terminalId: string): Promise<void>;
 	};
 
 	contextProfiles: {

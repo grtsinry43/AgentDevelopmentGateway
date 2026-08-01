@@ -17,6 +17,7 @@
 		ontoggle: () => void;
 		onclose: () => void;
 		children: Snippet;
+		contentOverflow?: 'auto' | 'hidden';
 		class?: string;
 	}
 
@@ -29,6 +30,7 @@
 		ontoggle,
 		onclose,
 		children,
+		contentOverflow = 'auto',
 		class: className
 	}: Props = $props();
 </script>
@@ -37,7 +39,7 @@
 	class={cx(
 		'flex min-h-0 flex-col overflow-hidden',
 		// 折叠时只占标题栏高度,不参与 flex 伸缩
-		collapsed ? 'shrink-0' : 'min-h-16',
+		collapsed ? 'shrink-0' : 'min-h-16 flex-1',
 		focused && 'ring-1 ring-line-accent ring-inset',
 		className
 	)}
@@ -72,7 +74,12 @@
 	</header>
 
 	{#if !collapsed}
-		<div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+		<div
+			class:scroll-thin={contentOverflow === 'auto'}
+			class:overflow-y-auto={contentOverflow === 'auto'}
+			class:overflow-hidden={contentOverflow === 'hidden'}
+			class="min-h-0 flex-1"
+		>
 			{@render children()}
 		</div>
 	{/if}

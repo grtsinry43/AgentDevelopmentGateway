@@ -27,6 +27,8 @@ export interface PanelDefinition {
 	requiresFeature?: RuntimeFeature;
 	/** 默认高度权重。 */
 	defaultWeight?: number;
+	/** 面板内容的滚动策略。终端等自管理 viewport 的面板必须使用 hidden。 */
+	contentOverflow?: 'auto' | 'hidden';
 }
 
 const registry = new Map<string, PanelDefinition>();

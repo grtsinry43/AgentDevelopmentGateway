@@ -46,6 +46,21 @@
 		U+A720-A7FF;
 }
 
+/*
+ * ── 终端:Victor Mono Nerd Font Mono ──
+ *
+ * Nerd Fonts 不在 Fontsource 字体目录中。终端需要 patched 字体里的 Powerline、
+ * Devicons 等私用区字符,所以固定内置 Nerd Fonts v3.4.0 的 Regular Mono 版本。
+ * 只供 xterm 使用;编辑器与其他技术文本仍走下面体积更小的 variable font。
+ */
+@font-face {
+	font-family: 'VictorMono Nerd Font Mono Embedded';
+	font-style: normal;
+	font-weight: 400;
+	font-display: block;
+	src: url('../../assets/fonts/VictorMonoNerdFontMono-Regular.ttf') format('truetype');
+}
+
 /* ── 等宽:Victor Mono(只要 latin / latin-ext;斜体给注释用) ── */
 @font-face {
 	font-family: 'Victor Mono Variable';
