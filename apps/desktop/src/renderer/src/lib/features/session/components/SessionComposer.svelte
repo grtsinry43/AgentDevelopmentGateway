@@ -1,6 +1,9 @@
 <script lang="ts">
 	import Button from '$lib/ui/primitives/Button.svelte';
+	import MarkdownEditor from '$lib/ui/editor/MarkdownEditor.svelte';
 	import type { GatewayAdapterAvailability } from '@agent-gateway/shared';
+	import { Prec, type Extension } from '@codemirror/state';
+	import { EditorView, keymap } from '@codemirror/view';
 	import type { SessionWorkspaceState } from '../session-workspace.svelte';
 
 	interface Props {
@@ -25,6 +28,25 @@
 	const canSubmit = $derived(
 		text.trim().length > 0 && !workspace.sending && (!creating || Boolean(selectedAdapter))
 	);
+	const composerExtensions: Extension = [
+		Prec.highest(
+			keymap.of([
+				{
+					key: 'Enter',
+					run: (view) => {
+						if (view.composing) return false;
+						void submit();
+						return true;
+					}
+				}
+			])
+		),
+		EditorView.theme({
+			'.cm-gutters': { display: 'none' },
+			'.cm-content': { minHeight: '64px', padding: '8px 0' },
+			'.cm-scroller': { maxHeight: '160px' }
+		})
+	];
 
 	async function submit(): Promise<void> {
 		const value = text.trim();
@@ -40,12 +62,6 @@
 				: false
 			: await workspace.sendText(value);
 		if (accepted) text = '';
-	}
-
-	function handleKeydown(event: KeyboardEvent): void {
-		if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-		event.preventDefault();
-		void submit();
 	}
 </script>
 
@@ -85,17 +101,15 @@
 		</div>
 	{/if}
 
-	<div
-		class="rounded-panel border border-line bg-surface-raised shadow-subtle focus-within:border-line-accent"
-	>
-		<textarea
+	<div class="rounded-panel bg-surface-raised shadow-subtle">
+		<MarkdownEditor
 			bind:value={text}
-			rows="3"
 			placeholder={creating ? '输入第一条指令以创建会话…' : '继续这个会话…'}
-			disabled={workspace.sending || (creating && workspace.availableAdapters.length === 0)}
-			class="selectable block max-h-40 min-h-16 w-full resize-y bg-transparent px-2.5 py-2 text-sm leading-relaxed text-strong outline-none placeholder:text-faint"
-			onkeydown={handleKeydown}></textarea>
-		<div class="flex h-7 items-center border-t border-subtle px-2">
+			readOnly={workspace.sending || (creating && workspace.availableAdapters.length === 0)}
+			extensions={composerExtensions}
+			class="h-24 max-h-40 rounded-b-none"
+		/>
+		<div class="flex h-7 items-center rounded-b-panel border-x border-b border-line px-2">
 			<span class="text-2xs text-faint">Enter 发送 · Shift+Enter 换行</span>
 			<Button
 				variant="primary"
