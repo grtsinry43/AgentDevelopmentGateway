@@ -28,7 +28,13 @@ export async function openProjectWindow(project: RecentProject): Promise<Browser
   const bounds = await loadWindowBounds(boundsId, DEFAULT_SIZE)
 
   const window = new BrowserWindow({
-    ...baseWindowOptions({ kind: 'project', projectKey: project.key }),
+    ...baseWindowOptions({
+      kind: 'project',
+      projectKey: project.key,
+      hostId: project.hostId,
+      hostType: project.hostType,
+      projectPath: project.path
+    }),
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,

@@ -7,11 +7,11 @@
 	import GitChangeGroup from './GitChangeGroup.svelte';
 
 	interface Props {
-		projectKey: string;
+		workspace: GitWorkspace;
 	}
 
-	let { projectKey }: Props = $props();
-	const workspace = $derived(new GitWorkspace(projectKey));
+	let { workspace }: Props = $props();
+	const projectKey = $derived(workspace.projectKey);
 	let commitMessage = $state('');
 
 	const conflicts = $derived(
@@ -29,8 +29,6 @@
 	const canCommit = $derived(
 		staged.length > 0 && commitMessage.trim().length > 0 && workspace.activeOperation === undefined
 	);
-
-	$effect(() => workspace.start());
 
 	$effect(() => {
 		const detail = workspace.streamMessage;

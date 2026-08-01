@@ -5,7 +5,7 @@
  * 加 handler 时:先改这里,再改 `main/ipc/*` 与 `preload/index.ts`,类型会强制两边对齐。
  */
 
-import type { ContextProfile, NewProjectInput, RecentProject } from './project.js';
+import type { ContextProfile, HostType, NewProjectInput, RecentProject } from './project.js';
 import type {
 	CreateSessionRequest,
 	CreateSessionResponse,
@@ -33,18 +33,19 @@ import type {
 	WorkspaceDirectoryResponse
 } from '@agent-gateway/shared';
 
-/** 窗口种类。renderer 一启动就要知道自己是谁。 */
-export type WindowKind = 'launcher' | 'project';
-
 /**
  * 通过 `additionalArguments` 注入 preload 的窗口身份。
  * 这样 renderer 首帧就知道该渲染什么,不需要一次 IPC 往返(避免白屏闪烁)。
  */
-export interface WindowIdentity {
-	kind: WindowKind;
-	/** kind === 'project' 时存在 */
-	projectKey?: string;
-}
+export type WindowIdentity =
+	| { kind: 'launcher' }
+	| {
+			kind: 'project';
+			projectKey: string;
+			hostId: string;
+			hostType: HostType;
+			projectPath: string;
+	  };
 
 /** ipcMain.handle 的频道名。集中定义避免拼写漂移。 */
 export const IPC = {

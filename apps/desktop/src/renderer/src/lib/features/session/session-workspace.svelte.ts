@@ -1,5 +1,5 @@
 import { pushBus } from '$lib/shared/bridge/events';
-import type { RuntimeFeature } from '@agent-gateway/core';
+import type { Host, RuntimeFeature } from '@agent-gateway/core';
 import type {
 	GatewayAdapterAvailability,
 	GatewaySession,
@@ -80,6 +80,14 @@ class SessionWorkspace {
 			(adapter) => adapter.status === 'available' && adapter.installations.length > 0
 		)
 	);
+	readonly serverConnectionStatus = $derived.by<Host['status']>(() => {
+		if (!this.projectKey) return 'offline';
+		if (this.loading || (this.loadFailed && this.loadRetryAttempt < MAX_LOAD_ATTEMPTS)) {
+			return 'connecting';
+		}
+		if (this.loadFailed) return 'error';
+		return 'online';
+	});
 	readonly filteredSessions = $derived.by(() => {
 		const query = this.search.trim().toLocaleLowerCase();
 		return [...this.sessions]

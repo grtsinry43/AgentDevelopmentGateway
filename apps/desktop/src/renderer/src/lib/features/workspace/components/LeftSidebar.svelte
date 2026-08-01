@@ -12,12 +12,13 @@
 	import Icon, { type IconName } from '$lib/ui/icons/Icon.svelte';
 
 	interface Props {
+		tabs?: readonly LeftTab[];
 		sessions?: Snippet;
 		git?: Snippet;
 		files?: Snippet;
 	}
 
-	let { sessions, git, files }: Props = $props();
+	let { tabs = LEFT_TABS, sessions, git, files }: Props = $props();
 
 	/**
 	 * tab 定义。用 Record 而不是数组 + find:后者在 `noUncheckedIndexedAccess` 下
@@ -39,9 +40,9 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-	<!-- tab 条:图标 + 文字,密排。⌘⇧1..4 可切换(绑定在 ProjectApp)。 -->
+	<!-- tab 条:图标 + 文字,密排。快捷键序号跟随当前可见 tab。 -->
 	<nav class="flex h-7 shrink-0 items-stretch border-b border-subtle" aria-label="侧栏">
-		{#each LEFT_TABS as tab, index (tab)}
+		{#each tabs as tab, index (tab)}
 			<button
 				type="button"
 				class={cx(

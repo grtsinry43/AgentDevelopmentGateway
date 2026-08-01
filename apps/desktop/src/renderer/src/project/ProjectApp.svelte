@@ -7,7 +7,7 @@
 	 */
 	import { startThemeSync, theme } from '$lib/shared/theme/theme.svelte';
 	import { keymap } from '$lib/shared/keymap/keymap.svelte';
-	import { requireProjectKey, systemInfo } from '$lib/shared/bridge/desktop';
+	import { requireProjectIdentity, systemInfo } from '$lib/shared/bridge/desktop';
 	import { availablePanels } from '$lib/shared/registry/panels';
 	import { tildify } from '$lib/shared/utils/path';
 	import { notifications } from '$lib/shared/notifications/notifications.svelte';
@@ -18,31 +18,49 @@
 	import SessionSidebar from '$lib/features/session/components/SessionSidebar.svelte';
 	import FileTree from '$lib/features/files/components/FileTree.svelte';
 	import GitPanel from '$lib/features/git/components/GitPanel.svelte';
+	import { GitWorkspace } from '$lib/features/git/git-workspace.svelte';
 	import { sessionWorkspace } from '$lib/features/session/session-workspace.svelte';
 	import DockStack from '$lib/ui/layout/DockStack.svelte';
 	import ResizeHandle from '$lib/ui/layout/ResizeHandle.svelte';
 	import StatusBar from '$lib/ui/layout/StatusBar.svelte';
 	import TitleBar from '$lib/ui/layout/TitleBar.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
-	import KeyHintBar from '$lib/ui/common/KeyHintBar.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import NotificationCenter from '$lib/ui/notifications/NotificationCenter.svelte';
 
 	startThemeSync();
 	registerWorkspacePanels();
 
-	const projectKey = requireProjectKey();
-	// projectKey 形如 `hostId:path`。hostId 里不含冒号,所以第一个冒号就是分界。
-	const separator = projectKey.indexOf(':');
-	const hostId = projectKey.slice(0, separator);
-	const projectPath = projectKey.slice(separator + 1);
+	const projectIdentity = requireProjectIdentity();
+	const projectKey = projectIdentity.projectKey;
+	const projectPath = projectIdentity.projectPath;
 	const displayPath = $derived(tildify(projectPath, systemInfo.homeDir));
 	const projectName = $derived(displayPath.split(/[/\\]/).filter(Boolean).at(-1) ?? projectPath);
+	const hostLabel = $derived(
+		projectIdentity.hostType === 'local' ? 'Local' : projectIdentity.hostId
+	);
+	const gitWorkspace = new GitWorkspace(projectKey);
+	const visibleLeftTabs = $derived(
+		gitWorkspace.state ? LEFT_TABS : LEFT_TABS.filter((tab) => tab !== 'git')
+	);
 
 	// 布局:异步读回,读回前用默认值渲染 —— 不阻塞首帧
 	void layout.load();
 	// Session workspace owns push subscriptions and the selected Session SSE registration.
 	$effect(() => sessionWorkspace.start(projectKey));
+	$effect(() => gitWorkspace.start());
+
+	// A persisted Git selection must not leave an invisible active tab when the
+	// Server has conclusively reported that this project is not a repository.
+	$effect(() => {
+		if (
+			gitWorkspace.state === undefined &&
+			(gitWorkspace.status === 'unavailable' || gitWorkspace.status === 'error') &&
+			layout.leftTab === 'git'
+		) {
+			layout.setLeftTab('sessions');
+		}
+	});
 
 	$effect(() => {
 		const detail = sessionWorkspace.serverError;
@@ -92,13 +110,24 @@
 	/** 当前会话声明的 runtime capabilities；面板只按能力门控。 */
 	const capabilities = $derived(sessionWorkspace.features);
 	const addablePanels = $derived(availablePanels(capabilities));
+	const activeAdapter = $derived(
+		sessionWorkspace.adapters.find(
+			(adapter) => adapter.adapterId === sessionWorkspace.selectedSession?.adapterId
+		)
+	);
+	const agentLabel = $derived(
+		activeAdapter?.descriptor.displayName ?? sessionWorkspace.selectedSession?.adapterId
+	);
+	const branchLabel = $derived(
+		gitWorkspace.state?.branch.name ?? gitWorkspace.state?.branch.oid?.slice(0, 8)
+	);
 
 	$effect(() =>
 		keymap.pushScope('project', [
 			{ keys: 'mod+b', label: '侧栏', run: () => layout.toggleLeft() },
 			{ keys: 'mod+alt+b', label: '右侧面板', run: () => layout.toggleRight() },
 			// ⌘⇧1..4 切左侧 tab
-			...LEFT_TABS.map((tab, index) => ({
+			...visibleLeftTabs.map((tab, index) => ({
 				keys: `mod+shift+${index + 1}`,
 				label: '',
 				run: () => layout.setLeftTab(tab)
@@ -122,7 +151,7 @@
 <svelte:window onkeydown={(event) => keymap.dispatch(event)} />
 
 <div class="flex h-full flex-col overflow-hidden">
-	<TitleBar title={projectName} subtitle="{displayPath} @{hostId}">
+	<TitleBar title={projectName} subtitle="{displayPath} @{projectIdentity.hostId}">
 		{#snippet actions()}
 			<Button variant="icon" size="sm" title="切换侧栏 (⌘B)" onclick={() => layout.toggleLeft()}>
 				{#snippet icon()}
@@ -149,7 +178,7 @@
 				class="flex min-h-0 shrink-0 flex-col bg-surface-panel"
 				style:width="{layout.leftWidth}px"
 			>
-				<LeftSidebar>
+				<LeftSidebar tabs={visibleLeftTabs}>
 					{#snippet sessions()}
 						<SessionSidebar workspace={sessionWorkspace} />
 					{/snippet}
@@ -157,7 +186,7 @@
 						<FileTree {projectKey} />
 					{/snippet}
 					{#snippet git()}
-						<GitPanel {projectKey} />
+						<GitPanel workspace={gitWorkspace} />
 					{/snippet}
 				</LeftSidebar>
 			</aside>
@@ -207,12 +236,13 @@
 	</div>
 
 	<StatusBar
-		status={sessionWorkspace.selectedSession?.status}
-		adapterId={sessionWorkspace.selectedSession?.adapterId}
-		model={sessionWorkspace.selectedSession?.model}
+		hostType={projectIdentity.hostType}
+		{hostLabel}
+		branch={branchLabel}
+		{agentLabel}
+		connectionStatus={sessionWorkspace.serverConnectionStatus}
 	>
 		{#snippet trailing()}
-			<KeyHintBar class="h-full border-0 px-0" limit={4} />
 			<NotificationCenter />
 		{/snippet}
 	</StatusBar>

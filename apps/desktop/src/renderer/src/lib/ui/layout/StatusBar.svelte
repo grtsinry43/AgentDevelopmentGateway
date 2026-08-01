@@ -1,61 +1,98 @@
 <script lang="ts">
-	/**
-	 * 底部状态栏。展示会话状态 / runtime / 用量。
-	 *
-	 * 这一阶段还没有真实会话,所以字段都是可选的 —— 有值才显示,不占位。
-	 */
-	import { cx } from '$lib/shared/utils/cx';
+	import type { Host } from '@agent-gateway/core';
+	import type { HostType } from '$contract/project';
 	import type { Snippet } from 'svelte';
-	import { compactCount, costUsd } from '$lib/shared/utils/format';
-	import { SESSION_STATUS, isLiveStatus } from '$lib/shared/utils/status';
-	import Badge from '$lib/ui/primitives/Badge.svelte';
-	import type { AdapterId, AgentSession, Usage } from '@agent-gateway/core';
+	import { cx } from '$lib/shared/utils/cx';
+	import { HOST_STATUS } from '$lib/shared/utils/status';
+	import Icon from '$lib/ui/icons/Icon.svelte';
 
 	interface Props {
-		status?: AgentSession['status'];
-		adapterId?: AdapterId;
-		model?: string;
-		usage?: Usage;
+		hostType: HostType;
+		hostLabel: string;
+		branch?: string;
+		agentLabel?: string;
+		connectionStatus: Host['status'];
 		trailing?: Snippet;
 		class?: string;
 	}
 
-	let { status, adapterId, model, usage, trailing, class: className }: Props = $props();
+	let {
+		hostType,
+		hostLabel,
+		branch,
+		agentLabel,
+		connectionStatus,
+		trailing,
+		class: className
+	}: Props = $props();
 
-	// 状态 → 颜色的映射只存在于 shared/utils/status,不在组件里内联
-	const visual = $derived(status ? SESSION_STATUS[status] : undefined);
-	const tokens = $derived(usage?.totalTokens ?? usage?.inputTokens);
+	const connectionVisual = $derived(HOST_STATUS[connectionStatus]);
+	const connectionLabel = $derived(
+		connectionStatus === 'online'
+			? 'Gateway Server 已连接'
+			: connectionStatus === 'connecting'
+				? '正在连接 Gateway Server'
+				: connectionStatus === 'error'
+					? 'Gateway Server 连接异常'
+					: 'Gateway Server 已断开'
+	);
 </script>
 
 <footer
 	class={cx(
-		'flex h-7 shrink-0 items-center gap-2.5 border-t border-subtle px-2.5 text-2xs',
+		'flex h-7 shrink-0 items-center overflow-hidden border-t border-subtle text-2xs text-muted',
 		className
 	)}
 >
-	{#if visual && status}
-		<Badge dotClass={visual.dot} pulse={isLiveStatus(status)}>{visual.label}</Badge>
-	{:else}
-		<Badge dotClass="bg-status-idle">未连接</Badge>
-	{/if}
+	<div class="flex h-full min-w-0 items-center overflow-hidden">
+		<div class="flex h-full shrink-0 items-center gap-1.5 px-2.5" title={hostLabel}>
+			<Icon name={hostType === 'local' ? 'monitor' : 'server'} size={11} />
+			<span class="max-w-40 truncate font-mono text-normal">{hostLabel}</span>
+		</div>
 
-	{#if adapterId}
-		<span class="font-mono text-faint">{adapterId}</span>
-	{/if}
-
-	{#if model}
-		<span class="truncate text-faint">{model}</span>
-	{/if}
-
-	<div class="ml-auto flex shrink-0 items-center gap-2.5 text-faint">
-		{#if tokens !== undefined}
-			<span class="font-mono" title="token 用量">{compactCount(tokens)} tok</span>
+		{#if branch}
+			<div class="flex h-full min-w-0 items-center gap-1.5 px-2" title={`Git: ${branch}`}>
+				<Icon name="git-branch" size={11} />
+				<span class="max-w-44 truncate font-mono">{branch}</span>
+			</div>
 		{/if}
-		{#if usage?.costUsd !== undefined}
-			<span class="font-mono">{costUsd(usage.costUsd)}</span>
+
+		{#if agentLabel}
+			<div class="flex h-full min-w-0 items-center gap-1.5 px-2" title={`Agent: ${agentLabel}`}>
+				<Icon name="agent" size={11} />
+				<span class="max-w-40 truncate">{agentLabel}</span>
+			</div>
 		{/if}
 	</div>
-	{#if trailing}
-		{@render trailing()}
-	{/if}
+
+	<div class="ml-auto flex h-full shrink-0 items-center">
+		<span
+			class="flex h-full w-7 items-center justify-center"
+			title={connectionLabel}
+			aria-label={connectionLabel}
+		>
+			<span
+				class={cx(
+					'size-1.5 rounded-full',
+					connectionVisual.dot,
+					connectionStatus === 'connecting' && 'animate-pulse'
+				)}
+			></span>
+		</span>
+
+		<span title="设置（未开放）">
+			<button
+				type="button"
+				class="flex h-7 w-7 items-center justify-center text-faint disabled:opacity-45"
+				disabled
+				aria-label="设置（未开放）"
+			>
+				<Icon name="settings" size={12} />
+			</button>
+		</span>
+
+		{#if trailing}
+			{@render trailing()}
+		{/if}
+	</div>
 </footer>

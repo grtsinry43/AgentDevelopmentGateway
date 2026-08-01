@@ -5,7 +5,7 @@
  * 这样将来换传输(比如 Web 客户端走 HTTP 而非 IPC)只需要换这个文件的实现。
  */
 
-import type { DesktopBridge } from '$contract/bridge';
+import type { DesktopBridge, WindowIdentity } from '$contract/bridge';
 
 function resolveBridge(): DesktopBridge {
 	const bridge = (globalThis as { gateway?: DesktopBridge }).gateway;
@@ -28,8 +28,15 @@ export const systemInfo = desktop.info;
  * Project 窗口必需的 projectKey。在 Launcher 窗口里调用是编程错误。
  */
 export function requireProjectKey(): string {
-	if (identity.kind !== 'project' || !identity.projectKey) {
+	if (identity.kind !== 'project') {
 		throw new Error(`当前窗口不是 project 窗口(kind=${identity.kind})`);
 	}
 	return identity.projectKey;
+}
+
+export function requireProjectIdentity(): Extract<WindowIdentity, { kind: 'project' }> {
+	if (identity.kind !== 'project') {
+		throw new Error(`当前窗口不是 project 窗口(kind=${identity.kind})`);
+	}
+	return identity;
 }
