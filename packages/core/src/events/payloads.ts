@@ -4,7 +4,7 @@ import type { InteractionId, TurnId } from '../ids.js'
 import type { InteractionResolution, UserInput } from '../adapter/io.js'
 import type { ChangeSet } from '../model/change-set.js'
 import type { InteractionRequest } from '../model/interaction.js'
-import type { Plan, TaskItem } from '../model/task-plan.js'
+import type { Plan, TaskStateUpdate } from '../model/task-plan.js'
 import type { ToolCall } from '../model/tool-call.js'
 import type { TurnStatus } from '../model/turn.js'
 import type { RateLimitWindow, Usage } from '../model/usage.js'
@@ -178,7 +178,7 @@ export interface PlanUpdatedPayload {
   plan: Plan
 }
 export interface TaskUpdatedPayload {
-  tasks: TaskItem[]
+  update: TaskStateUpdate
 }
 export interface ChangesUpdatedPayload {
   changeSet: ChangeSet

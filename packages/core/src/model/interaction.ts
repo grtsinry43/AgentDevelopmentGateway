@@ -1,4 +1,6 @@
 import type { InteractionId, SessionId, ToolCallId, TurnId } from '../ids.js'
+import type { ToolKind } from './tool-call.js'
+import type { ChangeSet } from './change-set.js'
 
 /**
  * InteractionRequest — a mid-turn request that needs a client answer (§9.4).
@@ -37,6 +39,14 @@ export interface InteractionBase {
 // --- tool_permission ---
 export interface ToolPermissionRequest extends InteractionBase {
   kind: 'tool_permission'
+  /** Provider-neutral classification of the action being approved. */
+  toolKind: ToolKind
+  /** Native tool name for precise display and permission-rule matching. */
+  toolName: string
+  /** Immutable request snapshot; approval UIs must show what will actually run. */
+  input?: unknown
+  /** Provider-neutral preview for file mutations, when the adapter can derive it safely. */
+  proposedChangeSet?: ChangeSet
   prompt: string
   /** Multi-resource grant target (OpenCode `resources`). */
   resources?: string[]

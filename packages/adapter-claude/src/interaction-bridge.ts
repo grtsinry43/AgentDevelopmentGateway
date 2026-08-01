@@ -14,6 +14,8 @@ import type {
   PermissionUpdate,
 } from '@anthropic-ai/claude-agent-sdk'
 import type { AskUserQuestionInput } from '@anthropic-ai/claude-agent-sdk/sdk-tools'
+import { classifyClaudeTool } from './tool-kind.js'
+import { createClaudeProposedChangeSet } from './file-change.js'
 
 type EventSink = (event: AdapterEvent) => void
 type ClaudeQuestion = AskUserQuestionInput['questions'][number]
@@ -36,12 +38,19 @@ export class ClaudeInteractionBridge {
     private readonly sessionId: SessionId,
     private readonly currentTurnId: () => TurnId | undefined,
     private readonly emit: EventSink,
+    private readonly workspacePath = process.cwd(),
   ) {}
 
   readonly canUseTool: CanUseTool = async (toolName, input, options) => {
     const id = asInteractionId(options.requestId)
     if (this.pending.has(id)) throw new Error(`Duplicate Claude interaction request: ${id}`)
     const questions = toolName === 'AskUserQuestion' ? parseQuestions(input) : undefined
+    const toolKind = classifyClaudeTool(toolName)
+    const toolCallId = asToolCallId(options.toolUseID)
+    const proposedChangeSet =
+      toolKind === 'file-edit'
+        ? await createClaudeProposedChangeSet(toolName, input, toolCallId, this.workspacePath)
+        : undefined
 
     return new Promise<PermissionResult>((resolve) => {
       const onAbort = () => this.cancel(id, 'aborted', 'Claude canceled the interaction')
@@ -70,7 +79,7 @@ export class ClaudeInteractionBridge {
               kind: 'question',
               sessionId: this.sessionId,
               turnId: this.currentTurnId(),
-              toolCallId: asToolCallId(options.toolUseID),
+              toolCallId,
               createdAt: Date.now(),
               questions: questions.map(mapQuestion),
             },
@@ -89,8 +98,12 @@ export class ClaudeInteractionBridge {
             kind: 'tool_permission',
             sessionId: this.sessionId,
             turnId: this.currentTurnId(),
-            toolCallId: asToolCallId(options.toolUseID),
+            toolCallId,
             createdAt: Date.now(),
+            toolKind,
+            toolName,
+            input,
+            ...(proposedChangeSet ? { proposedChangeSet } : {}),
             prompt: options.title ?? options.description ?? `Claude wants to use ${toolName}`,
             resources: options.blockedPath ? [options.blockedPath] : undefined,
             availableDecisions: ['allow', 'deny'],

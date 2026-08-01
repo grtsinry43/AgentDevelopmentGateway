@@ -10,6 +10,7 @@
 	import { requireProjectKey, systemInfo } from '$lib/shared/bridge/desktop';
 	import { availablePanels } from '$lib/shared/registry/panels';
 	import { tildify } from '$lib/shared/utils/path';
+	import { notifications } from '$lib/shared/notifications/notifications.svelte';
 	import { LEFT_TABS, layout } from '$lib/features/workspace/layout.svelte';
 	import { registerWorkspacePanels } from '$lib/features/workspace/panels';
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
@@ -23,6 +24,7 @@
 	import Button from '$lib/ui/primitives/Button.svelte';
 	import KeyHintBar from '$lib/ui/common/KeyHintBar.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
+	import NotificationCenter from '$lib/ui/notifications/NotificationCenter.svelte';
 
 	startThemeSync();
 	registerWorkspacePanels();
@@ -39,6 +41,48 @@
 	void layout.load();
 	// Session workspace owns push subscriptions and the selected Session SSE registration.
 	$effect(() => sessionWorkspace.start(projectKey));
+
+	$effect(() => {
+		const detail = sessionWorkspace.serverError;
+		if (detail) {
+			notifications.notify({
+				key: 'server-connection',
+				severity: 'error',
+				title: '后端连接异常',
+				summary: '正在尝试重新连接 Gateway Server',
+				detail
+			});
+		} else {
+			notifications.resolve('server-connection');
+		}
+	});
+
+	$effect(() => {
+		const detail = sessionWorkspace.streamMessage;
+		const sessionId = sessionWorkspace.selectedSessionId;
+		if (detail && sessionId) {
+			notifications.notify({
+				key: `session-stream:${sessionId}`,
+				severity: sessionWorkspace.streamState === 'error' ? 'error' : 'warning',
+				title: '实时事件流异常',
+				summary: '普通操作仍可能可用，正在后台重新连接',
+				detail
+			});
+		} else if (sessionId) {
+			notifications.resolve(`session-stream:${sessionId}`);
+		}
+	});
+
+	$effect(() => {
+		const detail = sessionWorkspace.error;
+		if (!detail) return;
+		notifications.notify({
+			severity: 'error',
+			title: '操作失败',
+			summary: detail.split(/\r?\n/, 1)[0] ?? '操作未完成',
+			detail
+		});
+	});
 
 	/** 键盘聚焦的面板 id。⌘1..9 设置。 */
 	let focusedPanelId = $state<string | undefined>(undefined);
@@ -158,8 +202,12 @@
 		status={sessionWorkspace.selectedSession?.status}
 		adapterId={sessionWorkspace.selectedSession?.adapterId}
 		model={sessionWorkspace.selectedSession?.model}
-	/>
-	<KeyHintBar />
+	>
+		{#snippet trailing()}
+			<KeyHintBar class="h-full border-0 px-0" limit={4} />
+			<NotificationCenter />
+		{/snippet}
+	</StatusBar>
 </div>
 
 <!-- 非 macOS 平台没有原生 vibrancy,窗口底色必须不透明以免露出桌面 -->

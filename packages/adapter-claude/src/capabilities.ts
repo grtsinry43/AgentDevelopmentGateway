@@ -21,6 +21,7 @@ export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
     'interaction.permission': true,
     'interaction.question': true,
     'work-mode.plan': true,
+    'task.todo': true,
   },
   raw: [],
 }

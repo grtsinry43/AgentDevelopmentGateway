@@ -5,6 +5,7 @@
 	 * 这一阶段还没有真实会话,所以字段都是可选的 —— 有值才显示,不占位。
 	 */
 	import { cx } from '$lib/shared/utils/cx';
+	import type { Snippet } from 'svelte';
 	import { compactCount, costUsd } from '$lib/shared/utils/format';
 	import { SESSION_STATUS, isLiveStatus } from '$lib/shared/utils/status';
 	import Badge from '$lib/ui/primitives/Badge.svelte';
@@ -15,10 +16,11 @@
 		adapterId?: AdapterId;
 		model?: string;
 		usage?: Usage;
+		trailing?: Snippet;
 		class?: string;
 	}
 
-	let { status, adapterId, model, usage, class: className }: Props = $props();
+	let { status, adapterId, model, usage, trailing, class: className }: Props = $props();
 
 	// 状态 → 颜色的映射只存在于 shared/utils/status,不在组件里内联
 	const visual = $derived(status ? SESSION_STATUS[status] : undefined);
@@ -27,7 +29,7 @@
 
 <footer
 	class={cx(
-		'flex h-6 shrink-0 items-center gap-2.5 border-t border-subtle px-2.5 text-2xs',
+		'flex h-7 shrink-0 items-center gap-2.5 border-t border-subtle px-2.5 text-2xs',
 		className
 	)}
 >
@@ -53,4 +55,7 @@
 			<span class="font-mono">{costUsd(usage.costUsd)}</span>
 		{/if}
 	</div>
+	{#if trailing}
+		{@render trailing()}
+	{/if}
 </footer>

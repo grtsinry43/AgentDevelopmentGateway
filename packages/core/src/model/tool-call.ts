@@ -43,6 +43,24 @@ export interface ToolAttachment {
   mimeType?: string
 }
 
+export type ToolTargetKind = 'path' | 'command' | 'query' | 'url' | 'task' | 'resource'
+
+/**
+ * Provider-neutral, human-readable semantics prepared by an adapter for thin clients.
+ * Raw input/result remain available for runtime/debugging, but conversation renderers
+ * consume this shape instead of learning provider-specific JSON fields.
+ */
+export interface ToolPresentation {
+  target?: {
+    kind: ToolTargetKind
+    value: string
+  }
+  /** Human-readable result text, when the native result has a meaningful text channel. */
+  resultText?: string
+  /** One-line terminal/result summary suitable for a collapsed timeline row. */
+  resultSummary?: string
+}
+
 export interface ToolCall {
   id: ToolCallId
   /** Provider-agnostic classification; adapters must set this. */
@@ -52,6 +70,7 @@ export interface ToolCall {
   status: ToolCallStatus
   /** Parsed input once available; streamed incrementally via `tool.input_delta`. */
   input?: unknown
+  presentation?: ToolPresentation
 
   // --- three output channels (OpenCode ToolState, docs/05 §5.1) ---
   /** Model-facing text/result the runtime feeds back to the model. */

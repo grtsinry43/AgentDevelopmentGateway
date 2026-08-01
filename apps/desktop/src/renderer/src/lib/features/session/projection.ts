@@ -1,7 +1,23 @@
-import type { RuntimeFeature, SessionStatus } from '@agent-gateway/core';
-import type { RuntimeEventWire } from '@agent-gateway/shared';
+import type {
+	ChangeSet,
+	RuntimeFeature,
+	SessionExecutionState,
+	SessionStatus,
+	TaskState,
+	ToolCall,
+	Usage
+} from '@agent-gateway/core';
+import { applyTaskStateUpdate, cloneTaskState, createEmptyTaskState } from '@agent-gateway/core';
+import {
+	changesUpdatedPayloadSchema,
+	sessionExecutionStateSchema,
+	toolPresentationSchema,
+	taskUpdatedPayloadSchema,
+	type RuntimeEventWire
+} from '@agent-gateway/shared';
 
 export interface ConversationMessage {
+	itemKind: 'message';
 	id: string;
 	role: 'user' | 'assistant';
 	contentKind: 'text' | 'reasoning';
@@ -13,18 +29,63 @@ export interface ConversationMessage {
 	durationMs?: number;
 }
 
+export interface ConversationToolCall {
+	itemKind: 'tool';
+	id: string;
+	toolCall: ToolCall;
+	sequence: number;
+	turnId?: string;
+	startedAt: number;
+	durationMs?: number;
+	inputDelta?: string;
+	outputDelta?: string;
+	changeSet?: ChangeSet;
+}
+
+export interface ConversationChangeSet {
+	itemKind: 'changes';
+	id: string;
+	changeSet: ChangeSet;
+	sequence: number;
+	turnId?: string;
+}
+
+export type ConversationTimelineItem =
+	ConversationMessage | ConversationToolCall | ConversationChangeSet;
+
 export interface ConversationProjection {
 	messages: ConversationMessage[];
+	tools: ConversationToolCall[];
+	changes: ConversationChangeSet[];
+	changeSets: Record<string, ChangeSet>;
+	toolInputDeltas: Record<string, string>;
+	toolOutputDeltas: Record<string, string>;
 	lastSequence: number;
 	status?: SessionStatus;
 	title?: string;
 	features?: Partial<Record<RuntimeFeature, boolean>>;
+	usage?: Usage;
+	execution?: SessionExecutionState;
+	controlRevision?: number;
+	taskState: TaskState;
 	/** Known-but-not-rendered and unknown events remain available for future feature renderers. */
 	deferredEvents: RuntimeEventWire[];
 }
 
-export function emptyConversationProjection(): ConversationProjection {
-	return { messages: [], lastSequence: 0, deferredEvents: [] };
+export function emptyConversationProjection(
+	taskState: TaskState = createEmptyTaskState()
+): ConversationProjection {
+	return {
+		messages: [],
+		tools: [],
+		changes: [],
+		changeSets: {},
+		toolInputDeltas: {},
+		toolOutputDeltas: {},
+		lastSequence: 0,
+		taskState: cloneTaskState(taskState),
+		deferredEvents: []
+	};
 }
 
 export function projectRuntimeEvent(
@@ -43,6 +104,7 @@ export function projectRuntimeEvent(
 				messages: [
 					...current.messages,
 					{
+						itemKind: 'message',
 						id: `input-${event.sequence}`,
 						role: 'user',
 						contentKind: 'text',
@@ -139,6 +201,50 @@ export function projectRuntimeEvent(
 			const features = capabilityFeatures(event.payload);
 			return features ? { ...base, features } : defer(base, event);
 		}
+		case 'usage.updated': {
+			const usage = usagePayload(event.payload);
+			return usage ? { ...base, usage } : defer(base, event);
+		}
+		case 'session.execution_changed': {
+			const execution = executionPayload(event.payload);
+			const controlRevision = payloadNumber(event.payload, 'controlRevision');
+			return execution && controlRevision !== undefined
+				? { ...base, execution, controlRevision }
+				: defer(base, event);
+		}
+		case 'tool.input_delta': {
+			const toolCallId = payloadString(event.payload, 'toolCallId');
+			const delta = payloadString(event.payload, 'delta');
+			if (!toolCallId || delta === undefined) return defer(base, event);
+			return appendToolDelta(base, toolCallId, delta, 'input');
+		}
+		case 'tool.output_delta': {
+			const toolCallId = payloadString(event.payload, 'toolCallId');
+			const delta = payloadString(event.payload, 'delta');
+			if (!toolCallId || delta === undefined) return defer(base, event);
+			return appendToolDelta(base, toolCallId, delta, 'output');
+		}
+		case 'tool.started': {
+			const toolCall = toolCallPayload(event.payload);
+			if (!toolCall) return defer(base, event);
+			return upsertToolCall(base, event, toolCall, false);
+		}
+		case 'tool.completed': {
+			const toolCall = toolCallPayload(event.payload);
+			if (!toolCall) return defer(base, event);
+			return upsertToolCall(base, event, toolCall, true);
+		}
+		case 'changes.updated': {
+			const changeSet = changeSetPayload(event.payload);
+			if (!changeSet) return defer(base, event);
+			return upsertChangeSet(base, event, changeSet);
+		}
+		case 'task.updated': {
+			const parsed = taskUpdatedPayloadSchema.safeParse(event.payload);
+			return parsed.success
+				? { ...base, taskState: applyTaskStateUpdate(current.taskState, parsed.data.update) }
+				: defer(base, event);
+		}
 		default:
 			return defer(base, event);
 	}
@@ -158,6 +264,7 @@ function upsertAssistantBlock(
 	const index = findAssistantBlockIndex(current, event, contentKind, blockId, reconcileActiveTurn);
 	const existing = index >= 0 ? current.messages[index] : undefined;
 	const message: ConversationMessage = {
+		itemKind: 'message',
 		// Preserve the live block's UI identity when an authoritative snapshot renumbers it.
 		id: existing?.id ?? id,
 		role: 'assistant',
@@ -175,6 +282,111 @@ function upsertAssistantBlock(
 		...current,
 		messages: current.messages.map((entry, entryIndex) => (entryIndex === index ? message : entry))
 	};
+}
+
+function appendToolDelta(
+	current: ConversationProjection,
+	toolCallId: string,
+	delta: string,
+	channel: 'input' | 'output'
+): ConversationProjection {
+	const deltas = channel === 'input' ? current.toolInputDeltas : current.toolOutputDeltas;
+	const nextValue = `${deltas[toolCallId] ?? ''}${delta}`;
+	const nextDeltas = { ...deltas, [toolCallId]: nextValue };
+	return {
+		...current,
+		...(channel === 'input' ? { toolInputDeltas: nextDeltas } : { toolOutputDeltas: nextDeltas }),
+		tools: current.tools.map((item) =>
+			item.toolCall.id === toolCallId
+				? {
+						...item,
+						...(channel === 'input' ? { inputDelta: nextValue } : { outputDelta: nextValue })
+					}
+				: item
+		)
+	};
+}
+
+function upsertToolCall(
+	current: ConversationProjection,
+	event: RuntimeEventWire,
+	toolCall: ToolCall,
+	completed: boolean
+): ConversationProjection {
+	const index = current.tools.findIndex((item) => item.toolCall.id === toolCall.id);
+	const existing = index >= 0 ? current.tools[index] : undefined;
+	const item: ConversationToolCall = {
+		itemKind: 'tool',
+		id: `tool-${toolCall.id}`,
+		toolCall,
+		sequence: existing?.sequence ?? event.sequence,
+		...(event.turnId
+			? { turnId: event.turnId }
+			: existing?.turnId
+				? { turnId: existing.turnId }
+				: {}),
+		startedAt: existing?.startedAt ?? event.timestamp,
+		...(completed
+			? { durationMs: Math.max(0, event.timestamp - (existing?.startedAt ?? event.timestamp)) }
+			: {}),
+		...(current.toolInputDeltas[toolCall.id]
+			? { inputDelta: current.toolInputDeltas[toolCall.id] }
+			: {}),
+		...(current.toolOutputDeltas[toolCall.id]
+			? { outputDelta: current.toolOutputDeltas[toolCall.id] }
+			: {}),
+		...(findToolChangeSet(current, toolCall.id)
+			? { changeSet: findToolChangeSet(current, toolCall.id) }
+			: {})
+	};
+	if (index < 0) return { ...current, tools: [...current.tools, item] };
+	return {
+		...current,
+		tools: current.tools.map((entry, entryIndex) => (entryIndex === index ? item : entry))
+	};
+}
+
+function upsertChangeSet(
+	current: ConversationProjection,
+	event: RuntimeEventWire,
+	changeSet: ChangeSet
+): ConversationProjection {
+	const changeSets = { ...current.changeSets, [changeSet.id]: changeSet };
+	const tools = changeSet.toolCallId
+		? current.tools.map((item) =>
+				item.toolCall.id === changeSet.toolCallId ? { ...item, changeSet } : item
+			)
+		: current.tools;
+	if (changeSet.scope === 'tool' && changeSet.toolCallId) {
+		return { ...current, changeSets, tools };
+	}
+
+	const index = current.changes.findIndex((item) => item.changeSet.id === changeSet.id);
+	const item: ConversationChangeSet = {
+		itemKind: 'changes',
+		id: `changes-${changeSet.id}`,
+		changeSet,
+		sequence: index >= 0 ? (current.changes[index]?.sequence ?? event.sequence) : event.sequence,
+		...(event.turnId ? { turnId: event.turnId } : {})
+	};
+	return {
+		...current,
+		changeSets,
+		tools,
+		changes:
+			index < 0
+				? [...current.changes, item]
+				: current.changes.map((entry, entryIndex) => (entryIndex === index ? item : entry))
+	};
+}
+
+function findToolChangeSet(
+	current: ConversationProjection,
+	toolCallId: ToolCall['id']
+): ChangeSet | undefined {
+	return Object.values(current.changeSets).find(
+		(changeSet) => changeSet.scope === 'tool' && changeSet.toolCallId === toolCallId
+	);
 }
 
 function findAssistantBlockIndex(
@@ -226,6 +438,12 @@ function payloadString(payload: unknown, key: string): string | undefined {
 	return typeof payload[key] === 'string' ? payload[key] : undefined;
 }
 
+function payloadNumber(payload: unknown, key: string): number | undefined {
+	if (!isRecord(payload)) return undefined;
+	const value = payload[key];
+	return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 function sessionStatus(payload: unknown): SessionStatus | undefined {
 	const value = payloadString(payload, 'status');
 	return value && SESSION_STATUSES.has(value as SessionStatus)
@@ -245,6 +463,95 @@ function capabilityFeatures(
 	return Object.fromEntries(entries) as Partial<Record<RuntimeFeature, boolean>>;
 }
 
+function usagePayload(payload: unknown): Usage | undefined {
+	if (!isRecord(payload) || !isRecord(payload.usage)) return undefined;
+	const usage = payload.usage;
+	const numericEntries = [
+		'inputTokens',
+		'outputTokens',
+		'cachedInputTokens',
+		'cacheCreationInputTokens',
+		'reasoningTokens',
+		'totalTokens',
+		'costUsd',
+		'webSearchRequests',
+		'contextWindow'
+	] as const satisfies readonly (keyof Usage)[];
+	const normalized: Usage = {};
+	for (const key of numericEntries) {
+		const value = usage[key];
+		if (typeof value === 'number' && Number.isFinite(value)) normalized[key] = value;
+	}
+	return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function executionPayload(payload: unknown): SessionExecutionState | undefined {
+	if (!isRecord(payload)) return undefined;
+	const parsed = sessionExecutionStateSchema.safeParse(payload.execution);
+	return parsed.success ? parsed.data : undefined;
+}
+
+function changeSetPayload(payload: unknown): ChangeSet | undefined {
+	const parsed = changesUpdatedPayloadSchema.safeParse(payload);
+	return parsed.success ? (parsed.data.changeSet as ChangeSet) : undefined;
+}
+
+function toolCallPayload(payload: unknown): ToolCall | undefined {
+	if (!isRecord(payload) || !isRecord(payload.toolCall)) return undefined;
+	const value = payload.toolCall;
+	if (
+		typeof value.id !== 'string' ||
+		typeof value.name !== 'string' ||
+		typeof value.kind !== 'string' ||
+		typeof value.status !== 'string' ||
+		!TOOL_KINDS.has(value.kind as ToolCall['kind']) ||
+		!TOOL_STATUSES.has(value.status as ToolCall['status'])
+	) {
+		return undefined;
+	}
+	const error = toolError(value.error);
+	const presentation = toolPresentation(value.presentation);
+	return {
+		id: value.id as ToolCall['id'],
+		name: value.name,
+		kind: value.kind as ToolCall['kind'],
+		status: value.status as ToolCall['status'],
+		...('input' in value ? { input: value.input } : {}),
+		...(presentation ? { presentation } : {}),
+		...('result' in value ? { result: value.result } : {}),
+		...('structured' in value ? { structured: value.structured } : {}),
+		...(Array.isArray(value.outputPaths) &&
+		value.outputPaths.every((path) => typeof path === 'string')
+			? { outputPaths: value.outputPaths }
+			: {}),
+		...(typeof value.providerExecuted === 'boolean'
+			? { providerExecuted: value.providerExecuted }
+			: {}),
+		...(typeof value.prunedAt === 'number' ? { prunedAt: value.prunedAt } : {}),
+		...(error ? { error } : {})
+	};
+}
+
+function toolPresentation(value: unknown): ToolCall['presentation'] | undefined {
+	const parsed = toolPresentationSchema.safeParse(value);
+	return parsed.success ? parsed.data : undefined;
+}
+
+function toolError(value: unknown): ToolCall['error'] | undefined {
+	if (
+		!isRecord(value) ||
+		typeof value.code !== 'string' ||
+		!RUNTIME_ERROR_CODES.has(value.code as NonNullable<ToolCall['error']>['code']) ||
+		typeof value.message !== 'string'
+	) {
+		return undefined;
+	}
+	return {
+		code: value.code as NonNullable<ToolCall['error']>['code'],
+		message: value.message
+	};
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -257,4 +564,44 @@ const SESSION_STATUSES = new Set<SessionStatus>([
 	'interrupted',
 	'error',
 	'closed'
+]);
+
+const TOOL_KINDS = new Set<ToolCall['kind']>([
+	'terminal',
+	'file-read',
+	'file-edit',
+	'file-diff',
+	'notebook-edit',
+	'search',
+	'web',
+	'subagent',
+	'task-control',
+	'todo',
+	'plan',
+	'mcp',
+	'worktree',
+	'generic'
+]);
+
+const TOOL_STATUSES = new Set<ToolCall['status']>([
+	'pending',
+	'running',
+	'completed',
+	'declined',
+	'error'
+]);
+
+const RUNTIME_ERROR_CODES = new Set<NonNullable<ToolCall['error']>['code']>([
+	'connection',
+	'protocol',
+	'auth',
+	'rate_limit',
+	'budget_exhausted',
+	'max_turns',
+	'context_overflow',
+	'model_refusal',
+	'not_implemented',
+	'interrupted',
+	'declined',
+	'unknown'
 ]);

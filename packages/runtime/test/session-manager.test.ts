@@ -4,6 +4,7 @@ import {
   asInteractionId,
   asSessionId,
   asToolCallId,
+  asTurnId,
   type RuntimeEvent,
 } from '@agent-gateway/core'
 import { AdapterRegistry } from '../src/adapter-registry.js'
@@ -100,6 +101,101 @@ test('seals adapter events with immutable routing and monotonic cursors', async 
   assert.ok(events.every((event) => event.adapterId === 'claude-code'))
   assert.equal(manager.getSession(created.session.id).session.title, 'Runtime-owned title')
   assert.equal(manager.getSession(created.session.id).session.lastEventSequence, 3)
+})
+
+test('persists provider-neutral ChangeSet snapshots without rewriting their payload', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const persisted: RuntimeEvent[] = []
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]), {
+    append: (event) => persisted.push(event),
+    discardSession: () => undefined,
+  })
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+  const toolCallId = asToolCallId('edit-1')
+  const turnId = asTurnId('turn-1')
+  claude.emit(created.session.id, {
+    type: 'changes.updated',
+    turnId,
+    payload: {
+      changeSet: {
+        id: 'tool:edit-1',
+        intent: 'applied',
+        scope: 'tool',
+        status: 'completed',
+        toolCallId,
+        files: [
+          {
+            path: 'src/example.ts',
+            pathKind: 'workspace-relative',
+            kind: 'modify',
+            additions: 1,
+            deletions: 1,
+            hunks: [],
+          },
+        ],
+      },
+    },
+  })
+  await waitForEvents(manager, created.session.id, 3)
+
+  const event = manager.eventSnapshot(created.session.id).at(-1)
+  assert.equal(event?.type, 'changes.updated')
+  if (event?.type !== 'changes.updated') throw new Error('Missing persisted ChangeSet')
+  assert.equal(event.turnId, turnId)
+  assert.equal(event.payload.changeSet.toolCallId, toolCallId)
+  assert.deepEqual(persisted.at(-1), event)
+})
+
+test('reduces provider-neutral task snapshots, patches and dependency relations', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+
+  claude.emit(created.session.id, {
+    type: 'task.updated',
+    payload: {
+      update: {
+        kind: 'replace',
+        tasks: [
+          { id: 'task-1', title: 'Design contract', status: 'completed' },
+          { id: 'task-2', title: 'Build panel', status: 'pending' },
+        ],
+      },
+    },
+  })
+  claude.emit(created.session.id, {
+    type: 'task.updated',
+    payload: {
+      update: {
+        kind: 'patch',
+        id: 'task-2',
+        changes: { status: 'in_progress', activeText: 'Building panel' },
+        append: { blockedBy: ['task-1'], blocks: ['task-3', 'task-3'] },
+      },
+    },
+  })
+  await waitForEvents(manager, created.session.id, 4)
+
+  const state = manager.getSession(created.session.id).taskState
+  assert.equal(state.tasks[1]?.status, 'in_progress')
+  assert.equal(state.tasks[1]?.activeText, 'Building panel')
+  assert.deepEqual(state.tasks[1]?.blockedBy, ['task-1'])
+  assert.deepEqual(state.tasks[1]?.blocks, ['task-3'])
+
+  state.tasks[1]?.blockedBy?.push('mutated-outside-runtime')
+  assert.deepEqual(manager.getSession(created.session.id).taskState.tasks[1]?.blockedBy, ['task-1'])
 })
 
 test('durably admits input before delivering it to the bound adapter', async () => {
@@ -291,6 +387,9 @@ test('projects pending interactions and resumes event sequences without collisio
         sessionId: created.session.id,
         toolCallId: asToolCallId('tool-1'),
         createdAt: Date.now(),
+        toolKind: 'terminal',
+        toolName: 'Bash',
+        input: { command: 'pwd' },
         prompt: 'Allow tool?',
       },
     },
@@ -316,6 +415,7 @@ test('projects pending interactions and resumes event sequences without collisio
     adapterId: closed.adapterId,
     runtimeSessionId: closed.runtimeSessionId!,
     execution: closed.execution.configured,
+    taskState: manager.getSession(created.session.id).taskState,
   })
   await waitForLastSequence(manager, resumed.session.id, closed.lastEventSequence + 2)
   const resumedEvents = manager.eventSnapshot(resumed.session.id)

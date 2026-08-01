@@ -110,8 +110,10 @@ export type PushEvent =
 	| {
 			kind: 'session.stream';
 			sessionId: string;
-			state: 'connecting' | 'connected' | 'closed' | 'error';
+			state: 'connecting' | 'connected' | 'retrying' | 'closed' | 'error';
 			message?: string;
+			attempt?: number;
+			retryAt?: number;
 	  }
 	/** 某工程的 ContextProfile 集合已变更。 */
 	| { kind: 'contextProfiles.changed'; projectKey: string };

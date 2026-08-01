@@ -153,6 +153,110 @@ export const sessionExecutionStateSchema = z.strictObject({
   ),
 })
 
+export const diffLineSchema = z.strictObject({
+  kind: z.enum(['context', 'addition', 'deletion', 'no-newline']),
+  text: z.string(),
+  oldLine: z.number().int().positive().optional(),
+  newLine: z.number().int().positive().optional(),
+})
+
+export const diffHunkSchema = z.strictObject({
+  oldStart: z.number().int().nonnegative(),
+  oldLines: z.number().int().nonnegative(),
+  newStart: z.number().int().nonnegative(),
+  newLines: z.number().int().nonnegative(),
+  heading: z.string().optional(),
+  lines: z.array(diffLineSchema),
+})
+
+export const fileChangeSchema = z.strictObject({
+  path: z.string().min(1),
+  pathKind: z.enum(['workspace-relative', 'absolute']),
+  kind: z.enum(['create', 'modify', 'delete', 'rename']),
+  previousPath: z.string().min(1).optional(),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  patch: z.string().optional(),
+  hunks: z.array(diffHunkSchema),
+  binary: z.boolean().optional(),
+  truncation: z
+    .strictObject({
+      reason: z.enum(['line_limit', 'byte_limit', 'provider']),
+      omittedLines: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
+})
+
+export const changeSetSchema = z.strictObject({
+  id: z.string().min(1),
+  intent: z.enum(['proposed', 'applied']),
+  scope: z.enum(['tool', 'turn', 'session']),
+  status: z.enum(['running', 'completed', 'declined', 'error']),
+  toolCallId: z.string().min(1).optional(),
+  files: z.array(fileChangeSchema),
+})
+
+export const toolPresentationSchema = z.strictObject({
+  target: z
+    .strictObject({
+      kind: z.enum(['path', 'command', 'query', 'url', 'task', 'resource']),
+      value: z.string().min(1),
+    })
+    .optional(),
+  resultText: z.string().optional(),
+  resultSummary: z.string().optional(),
+})
+
+export const changesUpdatedPayloadSchema = z.strictObject({ changeSet: changeSetSchema })
+
+export const taskStatusSchema = z.enum(['pending', 'in_progress', 'completed', 'cancelled'])
+export const taskPrioritySchema = z.enum(['high', 'medium', 'low'])
+export const taskItemSchema = z.strictObject({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: taskStatusSchema,
+  description: z.string().optional(),
+  activeText: z.string().optional(),
+  priority: taskPrioritySchema.optional(),
+  owner: z.string().optional(),
+  blocks: z.array(z.string().min(1)).optional(),
+  blockedBy: z.array(z.string().min(1)).optional(),
+})
+export const taskStateSchema = z.strictObject({
+  tasks: z.array(taskItemSchema),
+  explanation: z.string().optional(),
+})
+const taskItemPatchSchema = taskItemSchema
+  .pick({
+    title: true,
+    status: true,
+    description: true,
+    activeText: true,
+    priority: true,
+    owner: true,
+  })
+  .partial()
+const taskRelationsAppendSchema = z.strictObject({
+  blocks: z.array(z.string().min(1)).optional(),
+  blockedBy: z.array(z.string().min(1)).optional(),
+})
+export const taskStateUpdateSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('replace'),
+    tasks: z.array(taskItemSchema),
+    explanation: z.string().optional(),
+  }),
+  z.strictObject({ kind: z.literal('upsert'), task: taskItemSchema }),
+  z.strictObject({
+    kind: z.literal('patch'),
+    id: z.string().min(1),
+    changes: taskItemPatchSchema,
+    append: taskRelationsAppendSchema.optional(),
+  }),
+  z.strictObject({ kind: z.literal('remove'), id: z.string().min(1) }),
+])
+export const taskUpdatedPayloadSchema = z.strictObject({ update: taskStateUpdateSchema })
+
 const interactionBaseSchema = z.strictObject({
   id: gatewayIdSchema,
   sessionId: gatewayIdSchema,
@@ -164,6 +268,25 @@ const interactionBaseSchema = z.strictObject({
 export const interactionRequestSchema = z.discriminatedUnion('kind', [
   interactionBaseSchema.extend({
     kind: z.literal('tool_permission'),
+    toolKind: z.enum([
+      'terminal',
+      'file-read',
+      'file-edit',
+      'file-diff',
+      'notebook-edit',
+      'search',
+      'web',
+      'subagent',
+      'task-control',
+      'todo',
+      'plan',
+      'mcp',
+      'worktree',
+      'generic',
+    ]),
+    toolName: z.string().min(1),
+    input: z.unknown().optional(),
+    proposedChangeSet: changeSetSchema.optional(),
     prompt: z.string(),
     resources: z.array(z.string()).optional(),
     availableDecisions: z.array(z.string()).optional(),
@@ -283,6 +406,7 @@ export const sessionSchema = z.strictObject({
   controlRevision: z.number().int().nonnegative(),
   capabilities: runtimeCapabilitiesSchema,
   pendingInteractions: z.array(interactionRequestSchema),
+  taskState: taskStateSchema,
   status: sessionStatusSchema,
   title: z.string().optional(),
   lastEventSequence: z.number().int().nonnegative(),
@@ -390,6 +514,7 @@ export type SendSessionInputRequest = z.infer<typeof sendSessionInputRequestSche
 export type InputAdmissionReceipt = z.infer<typeof inputAdmissionReceiptSchema>
 export type CreateSessionResponse = z.infer<typeof createSessionResponseSchema>
 export type RuntimeEventWire = z.infer<typeof runtimeEventWireSchema>
+export type ChangeSetWire = z.infer<typeof changeSetSchema>
 export type SessionExecutionSettingsWire = z.infer<typeof sessionExecutionSettingsSchema>
 export type InteractionResolutionWire = z.infer<typeof interactionResolutionSchema>
 export type RuntimeControlReceipt = z.infer<typeof controlReceiptSchema>

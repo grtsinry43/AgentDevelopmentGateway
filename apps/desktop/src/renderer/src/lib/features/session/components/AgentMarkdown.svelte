@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { Markdown } from 'svmarkdown';
 	import type { SvmdComponentMap, SvmdParseOptions, SvmdRenderOptions } from 'svmarkdown';
+	import { taskListPlugin } from '../markdown/task-list-plugin';
+	import AgentMarkdownCode from './AgentMarkdownCode.svelte';
 	import AgentMarkdownLink from './AgentMarkdownLink.svelte';
+	import AgentMarkdownListItem from './AgentMarkdownListItem.svelte';
 
 	interface Props {
 		content: string;
@@ -9,8 +12,13 @@
 
 	let { content }: Props = $props();
 
-	const components = { a: AgentMarkdownLink } satisfies SvmdComponentMap;
+	const components = {
+		a: AgentMarkdownLink,
+		code: AgentMarkdownCode,
+		li: AgentMarkdownListItem
+	} satisfies SvmdComponentMap;
 	const parseOptions = {
+		markdownItPlugins: [taskListPlugin],
 		markdownItOptions: {
 			html: false,
 			linkify: true,
@@ -116,30 +124,12 @@
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	.agent-markdown :global(code) {
+	.agent-markdown :global(code:not(.agent-code__content)) {
 		border-radius: var(--radius-default);
 		background: var(--surface-active);
 		padding: 0.1rem 0.3rem;
 		font-family: var(--font-mono);
 		font-size: 0.92em;
-	}
-
-	.agent-markdown :global(pre) {
-		max-width: 100%;
-		margin-block: 0.875rem;
-		overflow-x: auto;
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-default);
-		background: var(--surface-panel);
-		padding: 0.75rem;
-		line-height: 1.55;
-	}
-
-	.agent-markdown :global(pre code) {
-		border-radius: 0;
-		background: transparent;
-		padding: 0;
-		font-size: var(--text-xs);
 	}
 
 	.agent-markdown :global(table) {

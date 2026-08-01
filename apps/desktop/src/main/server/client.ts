@@ -191,7 +191,7 @@ export class GatewayServerClient {
     sessionId: string,
     afterSequence: number,
     signal: AbortSignal,
-    onOpen?: () => void
+    callbacks: { onOpen?: () => void; onActivity?: () => void } = {}
   ): AsyncGenerator<RuntimeEventWire> {
     const response = await net.fetch(
       `${this.baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/events?after=${afterSequence}`,
@@ -200,8 +200,8 @@ export class GatewayServerClient {
     if (!response.ok) throw await this.responseError(response)
     if (!response.body) throw new Error('Server returned an empty Session event stream')
 
-    onOpen?.()
-    yield* parseEventStream(response.body)
+    callbacks.onOpen?.()
+    yield* parseEventStream(response.body, callbacks.onActivity)
   }
 
   private async request<T>(
@@ -262,7 +262,8 @@ export class GatewayServerClient {
 }
 
 async function* parseEventStream(
-  stream: ReadableStream<Uint8Array>
+  stream: ReadableStream<Uint8Array>,
+  onActivity?: () => void
 ): AsyncGenerator<RuntimeEventWire> {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
@@ -276,6 +277,7 @@ async function* parseEventStream(
       while (boundary >= 0) {
         const frame = buffer.slice(0, boundary)
         buffer = buffer.slice(boundary + 2)
+        onActivity?.()
         const data = frame
           .split('\n')
           .filter((line) => line.startsWith('data:'))

@@ -11,6 +11,7 @@ import type {
   RuntimeEvent,
   SessionId,
   SessionExecutionSettings,
+  TaskState,
 } from '@agent-gateway/core'
 
 export interface RuntimeAdapterAvailability {
@@ -38,6 +39,7 @@ export interface RuntimeSessionSnapshot {
   connection: RuntimeConnection
   capabilities: RuntimeConnection['capabilities']
   pendingInteractions: InteractionRequest[]
+  taskState: TaskState
 }
 
 export interface RuntimeControlOptions {
@@ -54,6 +56,7 @@ export interface ResumeRuntimeSessionInput extends CreateRuntimeSessionInput {
   previousSession: AgentSession
   cursor?: import('@agent-gateway/core').ResumeCursor
   providerStateSnapshot?: string
+  taskState: TaskState
 }
 
 export interface ForkRuntimeSessionInput {

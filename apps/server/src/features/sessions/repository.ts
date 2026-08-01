@@ -1,7 +1,13 @@
-import { asSessionId, type AgentSession, type RuntimeCapabilities } from '@agent-gateway/core'
+import {
+  asSessionId,
+  type AgentSession,
+  type RuntimeCapabilities,
+  type TaskState
+} from '@agent-gateway/core'
 import {
   runtimeCapabilitiesSchema,
   sessionExecutionStateSchema,
+  taskStateSchema,
 } from '@agent-gateway/shared'
 import { z } from 'zod'
 import type { GatewayDatabase } from '../../infrastructure/database.js'
@@ -21,6 +27,7 @@ const sessionRowSchema = z.strictObject({
   effective_execution_settings_json: z.string(),
   execution_limitations_json: z.string(),
   capabilities_json: z.string(),
+  task_state_json: z.string(),
   control_revision: z.number().int().nonnegative(),
   status: z.enum(['starting', 'idle', 'running', 'waiting', 'interrupted', 'error', 'closed']),
   title: z.string().nullable(),
@@ -33,6 +40,7 @@ const sessionRowSchema = z.strictObject({
 export interface StoredSession {
   session: AgentSession
   capabilities: RuntimeCapabilities
+  taskState: TaskState
 }
 
 const activeStatuses = ['starting', 'idle', 'running', 'waiting'] as const
@@ -49,8 +57,8 @@ export class SessionRepository {
           model, reasoning_effort, mode, status, title, last_event_sequence,
           provider_state_snapshot, created_at, updated_at, work_mode,
           execution_settings_json, effective_execution_settings_json,
-          execution_limitations_json, capabilities_json, control_revision
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          execution_limitations_json, capabilities_json, control_revision, task_state_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         session.id,
@@ -72,11 +80,16 @@ export class SessionRepository {
         JSON.stringify(session.execution.effective),
         JSON.stringify(session.execution.limitations),
         JSON.stringify(stored.capabilities),
-        session.controlRevision
+        session.controlRevision,
+        JSON.stringify(stored.taskState)
       )
   }
 
-  updateSnapshot(session: AgentSession, capabilities?: RuntimeCapabilities): void {
+  updateSnapshot(
+    session: AgentSession,
+    capabilities?: RuntimeCapabilities,
+    taskState?: TaskState
+  ): void {
     this.database
       .prepare(
         `UPDATE sessions SET
@@ -84,7 +97,8 @@ export class SessionRepository {
           status = ?, title = ?, last_event_sequence = ?, provider_state_snapshot = ?,
           updated_at = ?, work_mode = ?, execution_settings_json = ?,
           effective_execution_settings_json = ?, execution_limitations_json = ?,
-          capabilities_json = COALESCE(?, capabilities_json), control_revision = ?
+          capabilities_json = COALESCE(?, capabilities_json), control_revision = ?,
+          task_state_json = COALESCE(?, task_state_json)
          WHERE id = ?`
       )
       .run(
@@ -103,6 +117,7 @@ export class SessionRepository {
         JSON.stringify(session.execution.limitations),
         capabilities ? JSON.stringify(capabilities) : null,
         session.controlRevision,
+        taskState ? JSON.stringify(taskState) : null,
         session.id
       )
   }
@@ -162,7 +177,7 @@ function sessionSelect(suffix: string): string {
     sessions.runtime_session_id, sessions.provider_profile_id, sessions.model,
     sessions.reasoning_effort, sessions.mode, sessions.work_mode,
     sessions.execution_settings_json, sessions.effective_execution_settings_json,
-    sessions.execution_limitations_json, sessions.capabilities_json,
+    sessions.execution_limitations_json, sessions.capabilities_json, sessions.task_state_json,
     sessions.control_revision, sessions.status, sessions.title,
     sessions.last_event_sequence, sessions.provider_state_snapshot,
     sessions.created_at, sessions.updated_at
@@ -181,6 +196,7 @@ function mapSession(row: unknown): StoredSession {
   const capabilities = runtimeCapabilitiesSchema.parse(
     parseJson(parsed.capabilities_json, 'runtime capabilities')
   )
+  const taskState = taskStateSchema.parse(parseJson(parsed.task_state_json, 'task state'))
   return {
     session: {
       id: asSessionId(parsed.id),
@@ -214,7 +230,8 @@ function mapSession(row: unknown): StoredSession {
       createdAt: parsed.created_at,
       updatedAt: parsed.updated_at
     },
-    capabilities
+    capabilities,
+    taskState
   }
 }
 

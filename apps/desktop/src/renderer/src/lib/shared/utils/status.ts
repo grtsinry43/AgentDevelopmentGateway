@@ -5,7 +5,13 @@
  * core 的枚举加值时,TypeScript 会在这里报缺 key —— 这是有意的编译期保护。
  */
 
-import type { AgentSession, Host, ToolCallStatus, TurnStatus } from '@agent-gateway/core';
+import type {
+	AgentSession,
+	Host,
+	TaskStatus,
+	ToolCallStatus,
+	TurnStatus
+} from '@agent-gateway/core';
 
 type SessionStatus = AgentSession['status'];
 type HostStatus = Host['status'];
@@ -52,6 +58,13 @@ export const TOOL_STATUS: Record<ToolCallStatus, StatusVisual> = {
 	// declined ≠ error:被用户/策略拒绝,不是执行失败(core model/tool-call.ts)
 	declined: { dot: 'bg-status-declined', text: 'text-status-declined', label: '已拒绝' },
 	error: { dot: 'bg-status-error', text: 'text-status-error', label: '出错' }
+};
+
+export const TASK_STATUS: Record<TaskStatus, StatusVisual> = {
+	pending: { dot: 'bg-status-pending', text: 'text-status-pending', label: '待处理' },
+	in_progress: { dot: 'bg-status-running', text: 'text-status-running', label: '进行中' },
+	completed: { dot: 'bg-status-completed', text: 'text-status-completed', label: '已完成' },
+	cancelled: { dot: 'bg-status-declined', text: 'text-status-declined', label: '已取消' }
 };
 
 export const HOST_STATUS: Record<HostStatus, StatusVisual> = {

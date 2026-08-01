@@ -32,6 +32,9 @@ test('blocks a tool request until runtime allows it and maps persisted rules', a
   if (request.payload.request.kind !== 'tool_permission') throw new Error('Expected tool permission request')
   assert.equal(request.payload.request.prompt, 'Run pwd')
   assert.equal(request.payload.request.turnId, turnId)
+  assert.equal(request.payload.request.toolKind, 'terminal')
+  assert.equal(request.payload.request.toolName, 'Bash')
+  assert.deepEqual(request.payload.request.input, { command: 'pwd' })
 
   bridge.resolve({
     kind: 'tool_permission',
@@ -118,6 +121,37 @@ test('maps AskUserQuestion answers to the SDK response shape', async () => {
   })
 })
 
+test('adds a proposed ChangeSet to a Write permission request', async () => {
+  const events: AdapterEvent[] = []
+  const bridge = new ClaudeInteractionBridge(
+    sessionId,
+    () => turnId,
+    (event) => events.push(event),
+    '/workspace',
+  )
+  const resultPromise = bridge.canUseTool(
+    'Write',
+    { file_path: '/workspace/proposed.ts', content: 'const proposed = true\n' },
+    {
+      signal: new AbortController().signal,
+      toolUseID: 'write-preview',
+      requestId: 'write-preview-request',
+    },
+  )
+  const request = await waitForPermissionRequest(events)
+
+  assert.equal(request.payload.request.kind, 'tool_permission')
+  if (request.payload.request.kind !== 'tool_permission') throw new Error('Expected permission')
+  assert.equal(request.payload.request.proposedChangeSet?.intent, 'proposed')
+  assert.equal(request.payload.request.proposedChangeSet?.files[0]?.additions, 1)
+  bridge.resolve({
+    kind: 'tool_permission',
+    id: request.payload.request.id,
+    decision: { behavior: 'deny' },
+  })
+  await resultPromise
+})
+
 test('cancels a pending request when Claude aborts it', async () => {
   const events: AdapterEvent[] = []
   const bridge = new ClaudeInteractionBridge(sessionId, () => turnId, (event) => events.push(event))
@@ -138,3 +172,12 @@ test('cancels a pending request when Claude aborts it', async () => {
   assert.equal(canceled?.payload.id, 'interaction-3' as InteractionId)
   assert.equal(canceled?.payload.reason, 'aborted')
 })
+
+async function waitForPermissionRequest(events: AdapterEvent[]) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const request = events.find((event) => event.type === 'interaction.permission_requested')
+    if (request?.type === 'interaction.permission_requested') return request
+    await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+  throw new Error('Timed out waiting for permission request')
+}

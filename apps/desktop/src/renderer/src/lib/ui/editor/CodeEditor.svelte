@@ -14,6 +14,7 @@
 		readOnly?: boolean;
 		placeholder?: string;
 		autofocus?: boolean;
+		appearance?: 'outlined' | 'bare';
 		extensions?: Extension;
 		class?: string;
 		onchange?: EditorChangeHandler;
@@ -26,6 +27,7 @@
 		readOnly = false,
 		placeholder = '',
 		autofocus = false,
+		appearance = 'outlined',
 		extensions = [],
 		class: className = '',
 		onchange,
@@ -61,9 +63,12 @@
 
 <div
 	class={[
-		'selectable min-h-0 overflow-hidden rounded-default border border-line bg-surface-raised focus-within:border-line-accent',
+		'selectable min-h-0 overflow-hidden bg-surface-raised',
+		appearance === 'outlined' &&
+			'rounded-default border border-line focus-within:border-line-accent',
 		className
 	]}
+	data-appearance={appearance}
 	data-readonly={readOnly || undefined}
 	{@attach attachEditor}
 ></div>

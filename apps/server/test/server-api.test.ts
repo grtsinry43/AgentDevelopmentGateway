@@ -164,6 +164,9 @@ test('serves the project and session lifecycle through validated HTTP contracts'
         sessionId: asSessionId(session.id),
         toolCallId: asToolCallId('tool-call'),
         createdAt: Date.now(),
+        toolKind: 'terminal',
+        toolName: 'Bash',
+        input: { command: 'pwd' },
         prompt: 'Allow test tool?',
         availableDecisions: ['allow', 'deny']
       }
@@ -171,7 +174,14 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   })
   await waitFor(async () => {
     const response = await first.inject({ method: 'GET', url: `/api/v1/sessions/${session.id}` })
-    return response.json<{ pendingInteractions: unknown[] }>().pendingInteractions.length === 1
+    const pending = response.json<{
+      pendingInteractions: Array<{ toolName?: string; input?: unknown }>
+    }>().pendingInteractions
+    return (
+      pending.length === 1 &&
+      pending[0]?.toolName === 'Bash' &&
+      JSON.stringify(pending[0]?.input) === JSON.stringify({ command: 'pwd' })
+    )
   })
 
   const resolvedInteraction = await first.inject({

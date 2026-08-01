@@ -308,6 +308,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
         }
         this.publish(sessionReference.current, event)
       },
+      input.projectPath,
     )
     const query = this.queryFactory({
       prompt: sdkInput,
@@ -351,7 +352,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       query,
       input: sdkInput,
       events,
-      mapper: new ClaudeMessageMapper(),
+      mapper: new ClaudeMessageMapper(input.projectPath),
       bridge,
       capabilities: cloneCapabilities(input.connection.capabilities),
       execution: {

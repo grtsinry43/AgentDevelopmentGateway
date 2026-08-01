@@ -26,6 +26,7 @@
 		"@tanstack/svelte-query": "^6.1.38",
 		"bits-ui": "^2.18.1",
 		"codemirror": "^6.0.2",
+		"highlight.js": "^11.11.1",
 		"ofetch": "^1.5.1",
 		"svatoms": "^0.2.0",
 		"svmarkdown": "^0.1.3"

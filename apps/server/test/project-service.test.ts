@@ -47,7 +47,8 @@ test('identifies projects by host and normalized absolute path', async (t) => {
       createdAt: Date.now(),
       updatedAt: Date.now()
     },
-    capabilities: fakeAdapter.descriptor.capabilities
+    capabilities: fakeAdapter.descriptor.capabilities,
+    taskState: { tasks: [] }
   })
   assert.throws(() => service.remove(created.id), /active sessions/)
 })

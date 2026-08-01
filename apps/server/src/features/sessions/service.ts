@@ -70,7 +70,8 @@ export class SessionService {
     })
     const stored: StoredSession = {
       session: snapshot.session,
-      capabilities: snapshot.capabilities
+      capabilities: snapshot.capabilities,
+      taskState: snapshot.taskState
     }
     let observer: Promise<void> | undefined
     try {
@@ -78,12 +79,16 @@ export class SessionService {
       observer = this.observe(snapshot.session.id)
       this.runtime.setSessionTitle(snapshot.session.id, titleFromInput(input.initialInput.text))
       const receipt = await this.runtime.send(snapshot.session.id, input.initialInput)
-      const current = this.runtime.getSession(snapshot.session.id).session
-      this.repository.updateSnapshot(current)
+      const current = this.runtime.getSession(snapshot.session.id)
+      this.repository.updateSnapshot(current.session, current.capabilities, current.taskState)
       return {
         session: toResponse(
-          { ...stored, session: current },
-          this.runtime.getSession(snapshot.session.id).pendingInteractions
+          {
+            session: current.session,
+            capabilities: current.capabilities,
+            taskState: current.taskState
+          },
+          current.pendingInteractions
         ),
         receipt
       }
@@ -136,7 +141,7 @@ export class SessionService {
     const sessionId = this.requireActive(id)
     const receipt = await this.runtime.closeSession(sessionId, body)
     const snapshot = this.runtime.getSession(sessionId)
-    this.repository.updateSnapshot(snapshot.session, snapshot.capabilities)
+    this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
     return receipt
   }
 
@@ -162,12 +167,17 @@ export class SessionService {
       execution: stored.session.execution.configured,
       runtimeSessionId: stored.session.runtimeSessionId,
       previousSession: stored.session,
-      providerStateSnapshot: stored.session.providerStateSnapshot
+      providerStateSnapshot: stored.session.providerStateSnapshot,
+      taskState: stored.taskState
     })
-    this.repository.updateSnapshot(snapshot.session, snapshot.capabilities)
+    this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
     this.observe(snapshot.session.id)
     return toResponse(
-      { session: snapshot.session, capabilities: snapshot.capabilities },
+      {
+        session: snapshot.session,
+        capabilities: snapshot.capabilities,
+        taskState: snapshot.taskState
+      },
       snapshot.pendingInteractions
     )
   }
@@ -179,7 +189,11 @@ export class SessionService {
       forkPoint: body.forkPoint,
       execution: body.execution
     })
-    const stored = { session: snapshot.session, capabilities: snapshot.capabilities }
+    const stored = {
+      session: snapshot.session,
+      capabilities: snapshot.capabilities,
+      taskState: snapshot.taskState
+    }
     try {
       this.repository.create(stored)
       this.observe(snapshot.session.id)
@@ -225,10 +239,17 @@ export class SessionService {
     if (!this.repository.findById(id)) {
       throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
     }
-    if (this.runtime.listSessions().some((snapshot) => snapshot.session.id === sessionId)) {
-      return this.runtime.events(sessionId, afterSequence)
-    }
-    return replay(this.eventsRepository.listAfter(id, afterSequence))
+    const history = this.eventsRepository.listAfter(id, afterSequence)
+    const active = this.runtime
+      .listSessions()
+      .some(
+        (snapshot) =>
+          snapshot.session.id === sessionId && liveStatuses.has(snapshot.session.status)
+      )
+    if (!active) return replay(history)
+
+    const tailCursor = history.at(-1)?.sequence ?? afterSequence
+    return replayThenFollow(history, this.runtime.events(sessionId, tailCursor))
   }
 
   list(projectId: string): SessionResponse[] {
@@ -242,7 +263,7 @@ export class SessionService {
   get(id: string): SessionResponse {
     const sessionId = asSessionId(id)
     const live = this.runtime.listSessions().find((snapshot) => snapshot.session.id === sessionId)
-    if (live) this.repository.updateSnapshot(live.session, live.capabilities)
+    if (live) this.repository.updateSnapshot(live.session, live.capabilities, live.taskState)
     const stored = this.repository.findById(id)
     if (!stored) throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
     return toResponse(stored, live?.pendingInteractions)
@@ -276,7 +297,7 @@ export class SessionService {
       for await (const event of this.runtime.events(sessionId)) {
         void event
         const snapshot = this.runtime.getSession(sessionId)
-        this.repository.updateSnapshot(snapshot.session, snapshot.capabilities)
+        this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
       }
     } catch (error) {
       this.reportObserverError(error, sessionId)
@@ -285,7 +306,7 @@ export class SessionService {
 
   private refreshRuntimeSnapshots(projectId: string): void {
     for (const snapshot of this.runtime.listSessions(projectId)) {
-      this.repository.updateSnapshot(snapshot.session, snapshot.capabilities)
+      this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
     }
   }
 
@@ -326,6 +347,14 @@ async function* replay(events: RuntimeEvent[]): AsyncGenerator<RuntimeEvent> {
   yield* events
 }
 
+async function* replayThenFollow(
+  history: RuntimeEvent[],
+  tail: AsyncIterable<RuntimeEvent>
+): AsyncGenerator<RuntimeEvent> {
+  yield* history
+  yield* tail
+}
+
 function titleFromInput(text: string): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0] ?? text.trim()
   return firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 79)}…`
@@ -355,6 +384,7 @@ function toResponse(
     controlRevision: session.controlRevision,
     capabilities: stored.capabilities,
     pendingInteractions,
+    taskState: stored.taskState,
     status: session.status,
     ...(session.title ? { title: session.title } : {}),
     lastEventSequence: session.lastEventSequence,

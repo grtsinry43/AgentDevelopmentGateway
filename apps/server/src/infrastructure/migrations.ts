@@ -91,6 +91,12 @@ const migrations: Migration[] = [
         effective_execution_settings_json = json_set(effective_execution_settings_json, '$.workMode', 'plan')
         WHERE mode = 'plan';
     `
+  },
+  {
+    version: 5,
+    sql: `
+      ALTER TABLE sessions ADD COLUMN task_state_json TEXT NOT NULL DEFAULT '{"tasks":[]}';
+    `
   }
 ]
 

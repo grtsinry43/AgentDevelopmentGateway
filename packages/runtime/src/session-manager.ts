@@ -4,7 +4,10 @@ import {
   asTurnId,
   cloneSessionExecutionSettings,
   cloneSessionExecutionState,
+  cloneTaskState,
   createDefaultSessionExecutionSettings,
+  createEmptyTaskState,
+  applyTaskStateUpdate,
   AdapterError,
   toRuntimeError,
   type AdapterEvent,
@@ -21,6 +24,7 @@ import {
   type SessionId,
   type SessionExecutionSettings,
   type TurnId,
+  type TaskState,
   type UserInput,
 } from '@agent-gateway/core'
 import { AdapterRegistry } from './adapter-registry.js'
@@ -48,6 +52,7 @@ interface ManagedSession {
   pendingInteractions: Map<InteractionId, InteractionRequest>
   admittedInputs: Map<string, InputAdmissionReceipt & { turnId: TurnId }>
   commandTail: Promise<void>
+  taskState: TaskState
 }
 
 /** Owns Gateway session identity, immutable adapter binding, and provider event consumption. */
@@ -105,6 +110,7 @@ export class RuntimeSessionManager {
       pendingInteractions: new Map(),
       admittedInputs: new Map(),
       commandTail: Promise.resolve(),
+      taskState: createEmptyTaskState(),
     }
     this.sessions.set(sessionId, managed)
 
@@ -207,6 +213,7 @@ export class RuntimeSessionManager {
       pendingInteractions: new Map(),
       admittedInputs: new Map(),
       commandTail: Promise.resolve(),
+      taskState: cloneTaskState(input.taskState),
     }
     this.sessions.set(input.sessionId, managed)
     try {
@@ -285,6 +292,7 @@ export class RuntimeSessionManager {
       pendingInteractions: new Map(),
       admittedInputs: new Map(),
       commandTail: Promise.resolve(),
+      taskState: cloneTaskState(source.taskState),
     }
     this.sessions.set(sessionId, managed)
     try {
@@ -549,6 +557,8 @@ export class RuntimeSessionManager {
         ...managed.connection,
         capabilities: cloneCapabilities(sealed.payload.capabilities),
       }
+    } else if (sealed.type === 'task.updated') {
+      managed.taskState = applyTaskStateUpdate(managed.taskState, sealed.payload.update)
     }
     managed.session = applyEvent(managed.session, sealed)
     return sealed
@@ -660,6 +670,7 @@ function snapshot(managed: ManagedSession): RuntimeSessionSnapshot {
     },
     capabilities: cloneCapabilities(managed.connection.capabilities),
     pendingInteractions: [...managed.pendingInteractions.values()].map((request) => structuredClone(request)),
+    taskState: cloneTaskState(managed.taskState),
   }
 }
 

@@ -25,7 +25,10 @@
 		| 'sun'
 		| 'moon'
 		| 'monitor'
-		| 'command';
+		| 'command'
+		| 'bell'
+		| 'copy'
+		| 'check';
 
 	interface Props {
 		name: IconName;
@@ -76,7 +79,10 @@
 		monitor: ['M2.5 3.5h11v7h-11z', 'M6 13h4', 'M8 10.5V13'],
 		command: [
 			'M5.5 2.5A1.5 1.5 0 1 1 4 4v8a1.5 1.5 0 1 1 1.5-1.5h5A1.5 1.5 0 1 1 12 12V4a1.5 1.5 0 1 1-1.5 1.5h-5z'
-		]
+		],
+		bell: ['M3.5 11h9l-1-1.5V6a3.5 3.5 0 0 0-7 0v3.5z', 'M6.5 13a1.5 1.5 0 0 0 3 0'],
+		copy: ['M5.5 5.5h7v7h-7z', 'M3.5 10.5h-1v-7h7v1'],
+		check: ['M3.5 8.5 6.5 11.5 12.5 4.5']
 	};
 
 	const d = $derived(paths[name] ?? []);
