@@ -231,7 +231,7 @@ export const runtimeCapabilitiesSchema = z.strictObject({
     .optional(),
 })
 
-const runtimeErrorSchema = z.strictObject({
+export const runtimeErrorSchema = z.strictObject({
   code: z.string(),
   message: z.string(),
   layer: z.string().optional(),
@@ -280,6 +280,53 @@ export const userTextInputSchema = z.strictObject({
   clientMessageId: gatewayIdSchema,
   text: z.string().trim().min(1),
   delivery: z.enum(['steer', 'queue']).optional(),
+})
+
+export const inputQueueEntrySchema = z.strictObject({
+  id: gatewayIdSchema,
+  input: userTextInputSchema,
+  requestedDelivery: z.enum(['steer', 'queue']),
+  effectiveDelivery: z.enum(['steer', 'queue']).optional(),
+  status: z.enum(['pending', 'delivered', 'failed', 'cancelled']),
+  admittedSequence: z.number().int().positive(),
+  position: z.number().int().nonnegative().optional(),
+  turnId: gatewayIdSchema.optional(),
+  error: runtimeErrorSchema.optional(),
+  createdAt: gatewayTimestampSchema,
+  updatedAt: gatewayTimestampSchema,
+})
+
+export const subagentRunSchema = z.strictObject({
+  id: gatewayIdSchema,
+  sessionId: gatewayIdSchema,
+  parentSubagentRunId: gatewayIdSchema.optional(),
+  parentToolCallId: z.string().min(1).optional(),
+  runtimeSubagentId: z.string().min(1).optional(),
+  agentName: z.string().min(1).optional(),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  prompt: z.string().optional(),
+  model: z
+    .strictObject({
+      model: z.string().min(1),
+      reasoningEffort: z.string().min(1).optional(),
+    })
+    .optional(),
+  executionMode: z.enum(['foreground', 'background']),
+  status: z.enum([
+    'starting',
+    'running',
+    'waiting',
+    'completed',
+    'failed',
+    'interrupted',
+    'cancelled',
+  ]),
+  resultSummary: z.string().optional(),
+  error: runtimeErrorSchema.optional(),
+  startedAt: gatewayTimestampSchema,
+  updatedAt: gatewayTimestampSchema,
+  completedAt: gatewayTimestampSchema.optional(),
 })
 
 export const permissionRuleSchema = z.strictObject({
@@ -577,6 +624,8 @@ export const sessionSchema = z.strictObject({
   capabilities: runtimeCapabilitiesSchema,
   pendingInteractions: z.array(interactionRequestSchema),
   taskState: taskStateSchema,
+  subagentRuns: z.array(subagentRunSchema),
+  inputQueue: z.array(inputQueueEntrySchema),
   status: sessionStatusSchema,
   title: z.string().optional(),
   lastEventSequence: z.number().int().nonnegative(),
@@ -600,7 +649,12 @@ export const sendSessionInputRequestSchema = z.strictObject({
 
 export const inputAdmissionReceiptSchema = z.strictObject({
   admittedSequence: z.number().int().positive(),
-  turnId: gatewayIdSchema,
+  turnId: gatewayIdSchema.optional(),
+})
+
+export const replaceQueuedInputRequestSchema = z.strictObject({ input: userTextInputSchema })
+export const reorderQueuedInputsRequestSchema = z.strictObject({
+  inputIds: z.array(gatewayIdSchema),
 })
 
 export const createSessionResponseSchema = z.strictObject({
@@ -703,6 +757,10 @@ export type GatewaySession = z.infer<typeof sessionSchema>
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>
 export type SendSessionInputRequest = z.infer<typeof sendSessionInputRequestSchema>
 export type InputAdmissionReceipt = z.infer<typeof inputAdmissionReceiptSchema>
+export type InputQueueEntryWire = z.infer<typeof inputQueueEntrySchema>
+export type SubagentRunWire = z.infer<typeof subagentRunSchema>
+export type ReplaceQueuedInputRequest = z.infer<typeof replaceQueuedInputRequestSchema>
+export type ReorderQueuedInputsRequest = z.infer<typeof reorderQueuedInputsRequestSchema>
 export type CreateSessionResponse = z.infer<typeof createSessionResponseSchema>
 export type RuntimeEventWire = z.infer<typeof runtimeEventWireSchema>
 export type ChangeSetWire = z.infer<typeof changeSetSchema>

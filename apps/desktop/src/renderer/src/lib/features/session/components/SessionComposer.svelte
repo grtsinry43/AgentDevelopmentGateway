@@ -7,6 +7,7 @@
 	import { EditorView, keymap } from '@codemirror/view';
 	import type { ExecutionPreset, SessionWorkspaceState } from '../session-workspace.svelte';
 	import InteractionTray from './InteractionTray.svelte';
+	import InputQueuePanel from './InputQueuePanel.svelte';
 
 	interface Props {
 		workspace: SessionWorkspaceState;
@@ -184,6 +185,10 @@
 				{workspace}
 			/>
 		{/key}
+	{/if}
+
+	{#if !creating && workspace.inputQueue.length > 0}
+		<InputQueuePanel {workspace} />
 	{/if}
 
 	<div class="min-h-0 flex-1">

@@ -8,6 +8,7 @@
 import type {
 	AgentSession,
 	Host,
+	SubagentRun,
 	TaskStatus,
 	ToolCallStatus,
 	TurnStatus
@@ -64,6 +65,20 @@ export const TASK_STATUS: Record<TaskStatus, StatusVisual> = {
 	pending: { dot: 'bg-status-pending', text: 'text-status-pending', label: '待处理' },
 	in_progress: { dot: 'bg-status-running', text: 'text-status-running', label: '进行中' },
 	completed: { dot: 'bg-status-completed', text: 'text-status-completed', label: '已完成' },
+	cancelled: { dot: 'bg-status-declined', text: 'text-status-declined', label: '已取消' }
+};
+
+export const SUBAGENT_STATUS: Record<SubagentRun['status'], StatusVisual> = {
+	starting: { dot: 'bg-status-connecting', text: 'text-status-connecting', label: '启动中' },
+	running: { dot: 'bg-status-running', text: 'text-status-running', label: '运行中' },
+	waiting: { dot: 'bg-status-waiting', text: 'text-status-waiting', label: '等待中' },
+	completed: { dot: 'bg-status-completed', text: 'text-status-completed', label: '已完成' },
+	failed: { dot: 'bg-status-error', text: 'text-status-error', label: '失败' },
+	interrupted: {
+		dot: 'bg-status-interrupted',
+		text: 'text-status-interrupted',
+		label: '已中断'
+	},
 	cancelled: { dot: 'bg-status-declined', text: 'text-status-declined', label: '已取消' }
 };
 

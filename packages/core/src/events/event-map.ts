@@ -12,6 +12,9 @@ import type {
   ContentTextStartedPayload,
   ContextCompactedPayload,
   InputAdmittedPayload,
+  InputCancelledPayload,
+  InputDispatchedPayload,
+  InputFailedPayload,
   InputQueueUpdatedPayload,
   InteractionCanceledPayload,
   InteractionDialogRequestedPayload,
@@ -30,6 +33,9 @@ import type {
   SessionModelChangedPayload,
   SessionStatusChangedPayload,
   SessionTitleChangedPayload,
+  SubagentCompletedPayload,
+  SubagentStartedPayload,
+  SubagentUpdatedPayload,
   TaskUpdatedPayload,
   ToolCompletedPayload,
   ToolInputDeltaPayload,
@@ -61,6 +67,10 @@ export interface RuntimeEventMap {
   'session.title_changed': SessionTitleChangedPayload
   'session.model_changed': SessionModelChangedPayload
   'session.execution_changed': SessionExecutionChangedPayload
+  // delegated agent execution
+  'subagent.started': SubagentStartedPayload
+  'subagent.updated': SubagentUpdatedPayload
+  'subagent.completed': SubagentCompletedPayload
   // turn
   'turn.started': TurnStartedPayload
   'turn.completed': TurnCompletedPayload
@@ -90,6 +100,9 @@ export interface RuntimeEventMap {
   'interaction.canceled': InteractionCanceledPayload
   // input scheduling
   'input.admitted': InputAdmittedPayload
+  'input.dispatched': InputDispatchedPayload
+  'input.failed': InputFailedPayload
+  'input.cancelled': InputCancelledPayload
   'input.queue_updated': InputQueueUpdatedPayload
   // task / plan / changes
   'plan.updated': PlanUpdatedPayload

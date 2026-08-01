@@ -13,6 +13,8 @@ import {
   type AdapterEvent,
   type AgentSession,
   type InputAdmissionReceipt,
+  type InputDelivery,
+  type InputQueueEntry,
   type InteractionId,
   type InteractionRequest,
   type InteractionResolution,
@@ -25,6 +27,7 @@ import {
   type SessionExecutionSettings,
   type TurnId,
   type TaskState,
+  type SubagentRun,
   type UserInput,
 } from '@agent-gateway/core'
 import { AdapterRegistry } from './adapter-registry.js'
@@ -50,7 +53,12 @@ interface ManagedSession {
   pump: Promise<void>
   disposing: boolean
   pendingInteractions: Map<InteractionId, InteractionRequest>
-  admittedInputs: Map<string, InputAdmissionReceipt & { turnId: TurnId }>
+  admittedInputs: Map<string, InputAdmissionReceipt>
+  inputQueue: InputQueueEntry[]
+  subagentRuns: Map<SubagentRun['id'], SubagentRun>
+  activeTurnId?: TurnId
+  inputDrainScheduled: boolean
+  inputDispatching: boolean
   commandTail: Promise<void>
   taskState: TaskState
 }
@@ -109,6 +117,10 @@ export class RuntimeSessionManager {
       disposing: false,
       pendingInteractions: new Map(),
       admittedInputs: new Map(),
+      inputQueue: [],
+      subagentRuns: new Map(),
+      inputDrainScheduled: false,
+      inputDispatching: false,
       commandTail: Promise.resolve(),
       taskState: createEmptyTaskState(),
     }
@@ -154,9 +166,15 @@ export class RuntimeSessionManager {
 
   async resumeSession(input: ResumeRuntimeSessionInput): Promise<RuntimeSessionSnapshot> {
     const existing = this.sessions.get(input.sessionId)
-    if (existing?.session.status === 'closed') this.sessions.delete(input.sessionId)
-    else if (existing) {
-      throw new Error(`Runtime session is already active: ${input.sessionId}`)
+    if (existing) {
+      if (existing.session.status === 'closed') {
+        this.sessions.delete(input.sessionId)
+      } else if (existing.session.status === 'error' || existing.session.status === 'interrupted') {
+        await this.disposeManagedSession(existing).catch(() => undefined)
+        this.sessions.delete(input.sessionId)
+      } else {
+        throw new Error(`Runtime session is already active: ${input.sessionId}`)
+      }
     }
     const adapter = this.registry.get(input.adapterId)
     if (!adapter.descriptor.capabilities.features['session.resume']) {
@@ -211,7 +229,16 @@ export class RuntimeSessionManager {
       pump: Promise.resolve(),
       disposing: false,
       pendingInteractions: new Map(),
-      admittedInputs: new Map(),
+      admittedInputs: new Map(
+        input.inputAdmissions.map(({ clientMessageId, receipt }) => [
+          clientMessageId,
+          { ...receipt },
+        ]),
+      ),
+      inputQueue: input.inputQueue.map(cloneInputQueueEntry),
+      subagentRuns: new Map(input.subagentRuns.map((run) => [run.id, cloneSubagentRun(run)])),
+      inputDrainScheduled: false,
+      inputDispatching: false,
       commandTail: Promise.resolve(),
       taskState: cloneTaskState(input.taskState),
     }
@@ -291,6 +318,10 @@ export class RuntimeSessionManager {
       disposing: false,
       pendingInteractions: new Map(),
       admittedInputs: new Map(),
+      inputQueue: [],
+      subagentRuns: new Map(),
+      inputDrainScheduled: false,
+      inputDispatching: false,
       commandTail: Promise.resolve(),
       taskState: cloneTaskState(source.taskState),
     }
@@ -429,7 +460,7 @@ export class RuntimeSessionManager {
   async send(
     sessionId: SessionId,
     input: UserInput,
-  ): Promise<InputAdmissionReceipt & { turnId: TurnId }> {
+  ): Promise<InputAdmissionReceipt> {
     return this.enqueue(sessionId, async (managed) => {
       if (managed.disposing || managed.session.status === 'closed') {
         throw new Error(`Cannot send to closed Runtime session: ${sessionId}`)
@@ -437,34 +468,86 @@ export class RuntimeSessionManager {
 
       const duplicate = managed.admittedInputs.get(input.clientMessageId)
       if (duplicate) return { ...duplicate }
-      const turnId = asTurnId(randomUUID())
       const admittedSequence = managed.session.lastEventSequence + 1
       const admittedInput = cloneUserInput(input)
+      const timestamp = Date.now()
+      const entry: InputQueueEntry = {
+        id: admittedInput.clientMessageId,
+        input: admittedInput,
+        requestedDelivery: admittedInput.delivery ?? 'queue',
+        status: 'pending',
+        admittedSequence,
+        position: managed.inputQueue.length,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
       this.append(managed, {
         type: 'input.admitted',
-        payload: {
-          admittedSequence,
-          turnId,
-          ...(input.delivery ? { delivery: input.delivery } : {}),
-          input: admittedInput,
-        },
-        turnId,
+        payload: { entry: cloneInputQueueEntry(entry) },
       })
-
-      try {
-        await managed.adapter.send(sessionId, admittedInput, { turnId })
-      } catch (error) {
-        this.append(managed, {
-          type: 'turn.failed',
-          payload: { turnId, error: toRuntimeError(error, 'protocol') },
-          turnId,
-        })
-        throw error
-      }
-
-      const receipt = { admittedSequence, turnId }
+      managed.inputQueue.push(entry)
+      this.publishInputQueue(managed)
+      const receipt = { admittedSequence }
       managed.admittedInputs.set(input.clientMessageId, receipt)
+      if (!admittedInput.admitOnly) this.scheduleInputDrain(managed)
       return receipt
+    })
+  }
+
+  async replaceQueuedInput(sessionId: SessionId, input: UserInput): Promise<void> {
+    return this.enqueue(sessionId, async (managed) => {
+      const entry = this.requirePendingInput(managed, input.clientMessageId)
+      entry.input = cloneUserInput(input)
+      entry.requestedDelivery = input.delivery ?? entry.requestedDelivery
+      entry.updatedAt = Date.now()
+      this.publishInputQueue(managed)
+      this.scheduleInputDrain(managed)
+    })
+  }
+
+  async reorderQueuedInputs(sessionId: SessionId, orderedIds: string[]): Promise<void> {
+    return this.enqueue(sessionId, async (managed) => {
+      if (
+        orderedIds.length !== managed.inputQueue.length ||
+        new Set(orderedIds).size !== orderedIds.length ||
+        orderedIds.some((id) => !managed.inputQueue.some((entry) => entry.id === id))
+      ) {
+        throw new Error('Queued input order must contain every pending input exactly once')
+      }
+      const byId = new Map(managed.inputQueue.map((entry) => [entry.id, entry]))
+      managed.inputQueue = orderedIds.map((id, position) => {
+        const entry = byId.get(id)
+        if (!entry) throw new Error(`Unknown queued input: ${id}`)
+        entry.position = position
+        entry.updatedAt = Date.now()
+        return entry
+      })
+      this.publishInputQueue(managed)
+    })
+  }
+
+  async cancelQueuedInput(sessionId: SessionId, inputId: string): Promise<void> {
+    return this.enqueue(sessionId, async (managed) => {
+      const entry = this.requirePendingInput(managed, inputId)
+      managed.inputQueue = managed.inputQueue.filter((candidate) => candidate.id !== inputId)
+      const cancelled: InputQueueEntry = {
+        ...cloneInputQueueEntry(entry),
+        status: 'cancelled',
+        updatedAt: Date.now(),
+      }
+      this.append(managed, { type: 'input.cancelled', payload: { entry: cancelled } })
+      this.publishInputQueue(managed)
+    })
+  }
+
+  async sendQueuedInputNow(sessionId: SessionId, inputId: string): Promise<void> {
+    return this.enqueue(sessionId, async (managed) => {
+      const entry = this.requirePendingInput(managed, inputId)
+      entry.requestedDelivery = 'steer'
+      entry.input = { ...entry.input, delivery: 'steer', admitOnly: false }
+      entry.updatedAt = Date.now()
+      this.publishInputQueue(managed)
+      this.scheduleInputDrain(managed)
     })
   }
 
@@ -513,8 +596,18 @@ export class RuntimeSessionManager {
     const failures = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason)
-    if (failures.length > 0) {
-      throw new AggregateError(failures, `Failed to dispose ${failures.length} Runtime session(s)`)
+    const adapterResults = await Promise.allSettled(
+      this.registry.list().map((adapter) => adapter.dispose?.() ?? Promise.resolve()),
+    )
+    const adapterFailures = adapterResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
+    const allFailures = [...failures, ...adapterFailures]
+    if (allFailures.length > 0) {
+      throw new AggregateError(
+        allFailures,
+        `Failed to dispose ${failures.length} Runtime session(s) and ${adapterFailures.length} adapter(s)`,
+      )
     }
   }
 
@@ -540,6 +633,121 @@ export class RuntimeSessionManager {
     }
   }
 
+  private scheduleInputDrain(managed: ManagedSession): void {
+    if (managed.inputDrainScheduled || managed.disposing) return
+    managed.inputDrainScheduled = true
+    queueMicrotask(() => {
+      void this.enqueue(managed.session.id, async (current) => {
+        current.inputDrainScheduled = false
+        await this.drainInputQueue(current)
+      }).catch((error: unknown) => {
+        if (managed.disposing) return
+        this.append(managed, {
+          type: 'runtime.warning',
+          payload: { error: toRuntimeError(error, 'protocol') },
+        })
+      })
+    })
+  }
+
+  private async drainInputQueue(managed: ManagedSession): Promise<void> {
+    if (
+      managed.inputDispatching ||
+      managed.inputQueue.length === 0 ||
+      managed.disposing ||
+      managed.session.status === 'closed' ||
+      managed.session.status === 'error' ||
+      managed.session.status === 'interrupted'
+    ) {
+      return
+    }
+
+    const activeTurnId = managed.activeTurnId
+    const hasActiveTurn =
+      activeTurnId !== undefined ||
+      managed.session.status === 'running' ||
+      managed.session.status === 'waiting'
+    const entry = hasActiveTurn
+      ? managed.inputQueue.find(
+          (candidate) => !candidate.input.admitOnly && candidate.requestedDelivery === 'steer',
+        )
+      : managed.inputQueue.find((candidate) => !candidate.input.admitOnly)
+    if (!entry) return
+
+    if (hasActiveTurn && managed.connection.capabilities.steer !== 'native') return
+    if (hasActiveTurn && !activeTurnId) return
+
+    const kind = hasActiveTurn ? 'steer' : 'start-turn'
+    const turnId = activeTurnId ?? asTurnId(randomUUID())
+    const effectiveDelivery: InputDelivery = hasActiveTurn ? 'steer' : 'queue'
+    managed.inputDispatching = true
+    try {
+      await managed.adapter.send(managed.session.id, cloneUserInput(entry.input), {
+        turnId,
+        kind,
+      })
+      managed.inputQueue = managed.inputQueue.filter((candidate) => candidate.id !== entry.id)
+      const delivered: InputQueueEntry = {
+        ...cloneInputQueueEntry(entry),
+        effectiveDelivery,
+        status: 'delivered',
+        turnId,
+        updatedAt: Date.now(),
+      }
+      this.append(managed, {
+        type: 'input.dispatched',
+        payload: { entry: delivered },
+        turnId,
+      })
+      this.publishInputQueue(managed)
+      if (hasActiveTurn) this.scheduleInputDrain(managed)
+    } catch (error) {
+      if (hasActiveTurn) {
+        entry.requestedDelivery = 'queue'
+        entry.input = { ...entry.input, delivery: 'queue' }
+        entry.updatedAt = Date.now()
+        this.publishInputQueue(managed)
+        this.append(managed, {
+          type: 'runtime.warning',
+          payload: { error: toRuntimeError(error, 'protocol') },
+          turnId,
+        })
+      } else {
+        managed.inputQueue = managed.inputQueue.filter((candidate) => candidate.id !== entry.id)
+        const failed: InputQueueEntry = {
+          ...cloneInputQueueEntry(entry),
+          effectiveDelivery,
+          status: 'failed',
+          turnId,
+          error: toRuntimeError(error, 'protocol'),
+          updatedAt: Date.now(),
+        }
+        this.append(managed, { type: 'input.failed', payload: { entry: failed }, turnId })
+        this.publishInputQueue(managed)
+      }
+    } finally {
+      managed.inputDispatching = false
+    }
+  }
+
+  private publishInputQueue(managed: ManagedSession): RuntimeEvent {
+    const now = Date.now()
+    for (const [position, entry] of managed.inputQueue.entries()) {
+      entry.position = position
+      entry.updatedAt = Math.max(entry.updatedAt, now)
+    }
+    return this.append(managed, {
+      type: 'input.queue_updated',
+      payload: { entries: managed.inputQueue.map(cloneInputQueueEntry) },
+    })
+  }
+
+  private requirePendingInput(managed: ManagedSession, inputId: string): InputQueueEntry {
+    const entry = managed.inputQueue.find((candidate) => candidate.id === inputId)
+    if (!entry) throw new Error(`Unknown queued input: ${inputId}`)
+    return entry
+  }
+
   private append(managed: ManagedSession, event: AdapterEvent): RuntimeEvent {
     const sealed = managed.events.append(event, (candidate) => this.eventSink?.append(candidate))
     if (
@@ -559,8 +767,25 @@ export class RuntimeSessionManager {
       }
     } else if (sealed.type === 'task.updated') {
       managed.taskState = applyTaskStateUpdate(managed.taskState, sealed.payload.update)
+    } else if (
+      sealed.type === 'subagent.started' ||
+      sealed.type === 'subagent.updated' ||
+      sealed.type === 'subagent.completed'
+    ) {
+      managed.subagentRuns.set(sealed.payload.run.id, cloneSubagentRun(sealed.payload.run))
+    } else if (sealed.type === 'turn.started') {
+      managed.activeTurnId = sealed.payload.turnId
+    } else if (
+      (sealed.type === 'turn.completed' || sealed.type === 'turn.failed') &&
+      managed.activeTurnId === sealed.payload.turnId
+    ) {
+      managed.activeTurnId = undefined
     }
     managed.session = applyEvent(managed.session, sealed)
+    if (sealed.type === 'session.status_changed' && sealed.payload.status === 'idle') {
+      managed.activeTurnId = undefined
+      this.scheduleInputDrain(managed)
+    }
     return sealed
   }
 
@@ -671,6 +896,8 @@ function snapshot(managed: ManagedSession): RuntimeSessionSnapshot {
     capabilities: cloneCapabilities(managed.connection.capabilities),
     pendingInteractions: [...managed.pendingInteractions.values()].map((request) => structuredClone(request)),
     taskState: cloneTaskState(managed.taskState),
+    subagentRuns: [...managed.subagentRuns.values()].map(cloneSubagentRun),
+    inputQueue: managed.inputQueue.map(cloneInputQueueEntry),
   }
 }
 
@@ -687,6 +914,22 @@ function cloneUserInput(input: UserInput): UserInput {
       ? { attachments: input.attachments.map((attachment) => ({ ...attachment })) }
       : {}),
     ...(input.admitOnly === undefined ? {} : { admitOnly: input.admitOnly }),
+  }
+}
+
+function cloneInputQueueEntry(entry: InputQueueEntry): InputQueueEntry {
+  return {
+    ...entry,
+    input: cloneUserInput(entry.input),
+    ...(entry.error ? { error: structuredClone(entry.error) } : {}),
+  }
+}
+
+function cloneSubagentRun(run: SubagentRun): SubagentRun {
+  return {
+    ...run,
+    ...(run.model ? { model: { ...run.model } } : {}),
+    ...(run.error ? { error: structuredClone(run.error) } : {}),
   }
 }
 

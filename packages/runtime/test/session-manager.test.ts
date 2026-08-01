@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   asInteractionId,
   asSessionId,
+  asSubagentRunId,
   asToolCallId,
   asTurnId,
   type RuntimeEvent,
@@ -213,27 +214,35 @@ test('durably admits input before delivering it to the bound adapter', async () 
   })
   await waitForEvents(manager, created.session.id, 2)
   claude.beforeSend = () => {
-    assert.equal(persisted.at(-1)?.type, 'input.admitted')
+    assert.deepEqual(
+      persisted.slice(-2).map((event) => event.type),
+      ['input.admitted', 'input.queue_updated'],
+    )
   }
 
   const receipt = await manager.send(created.session.id, {
     clientMessageId: 'message-1',
     text: 'Inspect the workspace',
   })
-  const admitted = manager.eventSnapshot(created.session.id).at(-1)
+  await waitForAdapterSends(claude, 1)
+  const events = manager.eventSnapshot(created.session.id)
+  const admitted = events.find((event) => event.type === 'input.admitted')
+  const dispatched = events.find((event) => event.type === 'input.dispatched')
 
   assert.equal(admitted?.type, 'input.admitted')
   if (admitted?.type !== 'input.admitted') throw new Error('Missing admitted input')
   assert.equal(admitted.sequence, receipt.admittedSequence)
-  assert.equal(admitted.payload.input.text, 'Inspect the workspace')
-  assert.equal(admitted.turnId, receipt.turnId)
-  assert.equal(claude.sendInputs[0]?.options.turnId, receipt.turnId)
+  assert.equal(admitted.payload.entry.input.text, 'Inspect the workspace')
+  assert.equal(dispatched?.type, 'input.dispatched')
+  if (dispatched?.type !== 'input.dispatched') throw new Error('Missing dispatched input')
+  assert.equal(dispatched.payload.entry.turnId, claude.sendInputs[0]?.options.turnId)
+  assert.equal(claude.sendInputs[0]?.options.kind, 'start-turn')
 
   manager.setSessionTitle(created.session.id, 'Inspect the workspace')
   assert.equal(manager.getSession(created.session.id).session.title, 'Inspect the workspace')
 })
 
-test('records a failed turn when adapter delivery rejects', async () => {
+test('records failed input delivery after durable admission', async () => {
   const claude = new FakeRuntimeAdapter('claude-code')
   const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
   const created = await manager.createSession({
@@ -245,15 +254,103 @@ test('records a failed turn when adapter delivery rejects', async () => {
   await waitForEvents(manager, created.session.id, 2)
   claude.sendError = new Error('delivery failed')
 
-  await assert.rejects(
-    manager.send(created.session.id, { clientMessageId: 'message-fail', text: 'Fail this turn' }),
-    /delivery failed/,
-  )
+  await manager.send(created.session.id, { clientMessageId: 'message-fail', text: 'Fail this turn' })
+  await waitForEventType(manager, created.session.id, 'input.failed')
 
   assert.deepEqual(
-    manager.eventSnapshot(created.session.id).slice(-2).map((event) => event.type),
-    ['input.admitted', 'turn.failed'],
+    manager.eventSnapshot(created.session.id).slice(-4).map((event) => event.type),
+    ['input.admitted', 'input.queue_updated', 'input.failed', 'input.queue_updated'],
   )
+})
+
+test('queues follow-ups while running and dispatches native steers into the active turn', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  claude.descriptor.capabilities.steer = 'native'
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+
+  await manager.send(created.session.id, { clientMessageId: 'initial', text: 'Start work' })
+  await waitForAdapterSends(claude, 1)
+  const activeTurnId = claude.sendInputs[0]?.options.turnId
+  assert.ok(activeTurnId)
+  claude.emit(created.session.id, {
+    type: 'turn.started',
+    payload: { turnId: activeTurnId },
+    turnId: activeTurnId,
+  })
+  claude.emit(created.session.id, {
+    type: 'session.status_changed',
+    payload: { status: 'running' },
+    turnId: activeTurnId,
+  })
+  await waitForStatusValue(manager, created.session.id, 'running')
+
+  await manager.send(created.session.id, { clientMessageId: 'queued', text: 'Run after this' })
+  await manager.send(created.session.id, {
+    clientMessageId: 'steer',
+    text: 'Prioritize tests',
+    delivery: 'steer',
+  })
+  await waitForAdapterSends(claude, 2)
+  assert.equal(claude.sendInputs[1]?.options.kind, 'steer')
+  assert.equal(claude.sendInputs[1]?.options.turnId, activeTurnId)
+  assert.deepEqual(manager.getSession(created.session.id).inputQueue.map((entry) => entry.id), ['queued'])
+
+  claude.emit(created.session.id, {
+    type: 'turn.completed',
+    payload: { turnId: activeTurnId, status: 'completed' },
+    turnId: activeTurnId,
+  })
+  claude.emit(created.session.id, {
+    type: 'session.status_changed',
+    payload: { status: 'idle' },
+    turnId: activeTurnId,
+  })
+  await waitForAdapterSends(claude, 3)
+  assert.equal(claude.sendInputs[2]?.input.clientMessageId, 'queued')
+  assert.equal(claude.sendInputs[2]?.options.kind, 'start-turn')
+  assert.deepEqual(manager.getSession(created.session.id).inputQueue, [])
+})
+
+test('projects complete subagent state snapshots independently from transcript events', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+  const runId = asSubagentRunId('subagent-1')
+  const startedAt = Date.now()
+  claude.emit(created.session.id, {
+    type: 'subagent.started',
+    payload: {
+      run: {
+        id: runId,
+        sessionId: created.session.id,
+        runtimeSubagentId: 'native-task-1',
+        title: 'Inspect runtime',
+        agentName: 'explorer',
+        executionMode: 'background',
+        status: 'running',
+        startedAt,
+        updatedAt: startedAt,
+      },
+    },
+  })
+  await waitForEventType(manager, created.session.id, 'subagent.started')
+  const projected = manager.getSession(created.session.id).subagentRuns[0]
+  assert.equal(projected?.runtimeSubagentId, 'native-task-1')
+  projected!.title = 'mutated outside runtime'
+  assert.equal(manager.getSession(created.session.id).subagentRuns[0]?.title, 'Inspect runtime')
 })
 
 test('cleans up failed creation and transitions a failed event pump to error', async () => {
@@ -364,6 +461,7 @@ test('serializes control changes, rejects stale revisions, and deduplicates clie
   const first = await manager.send(created.session.id, input)
   const duplicate = await manager.send(created.session.id, input)
   assert.deepEqual(duplicate, first)
+  await waitForAdapterSends(claude, 1)
   assert.equal(claude.sendInputs.length, 1)
 })
 
@@ -416,6 +514,9 @@ test('projects pending interactions and resumes event sequences without collisio
     runtimeSessionId: closed.runtimeSessionId!,
     execution: closed.execution.configured,
     taskState: manager.getSession(created.session.id).taskState,
+    subagentRuns: [],
+    inputQueue: [],
+    inputAdmissions: [],
   })
   await waitForLastSequence(manager, resumed.session.id, closed.lastEventSequence + 2)
   const resumedEvents = manager.eventSnapshot(resumed.session.id)
@@ -437,10 +538,42 @@ async function waitForEvents(
   throw new Error(`Timed out waiting for ${count} events`)
 }
 
+async function waitForAdapterSends(adapter: FakeRuntimeAdapter, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (adapter.sendInputs.length >= count) return
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  throw new Error(`Timed out waiting for ${count} adapter sends`)
+}
+
+async function waitForEventType(
+  manager: RuntimeSessionManager,
+  sessionId: ReturnType<typeof asSessionId>,
+  type: RuntimeEvent['type'],
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (manager.eventSnapshot(sessionId).some((event) => event.type === type)) return
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  throw new Error(`Timed out waiting for event ${type}`)
+}
+
 async function waitForStatus(
   manager: RuntimeSessionManager,
   sessionId: ReturnType<typeof asSessionId>,
   status: 'error',
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (manager.getSession(sessionId).session.status === status) return
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  throw new Error(`Timed out waiting for session status ${status}`)
+}
+
+async function waitForStatusValue(
+  manager: RuntimeSessionManager,
+  sessionId: ReturnType<typeof asSessionId>,
+  status: 'running' | 'idle',
 ): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (manager.getSession(sessionId).session.status === status) return

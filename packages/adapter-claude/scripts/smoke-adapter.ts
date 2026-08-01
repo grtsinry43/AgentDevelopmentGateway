@@ -21,7 +21,7 @@ try {
   await adapter.send(
     sessionId,
     { clientMessageId: 'gateway-adapter-smoke', text: 'Reply with exactly: gateway adapter smoke' },
-    { turnId },
+    { turnId, kind: 'start-turn' },
   )
 
   const eventTypes: string[] = []

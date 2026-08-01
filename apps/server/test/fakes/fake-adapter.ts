@@ -27,6 +27,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly resolutions: InteractionResolution[] = []
   interruptCount = 0
   sendError?: unknown
+  autoComplete = true
   private readonly streams = new Map<SessionId, FakeEventStream>()
 
   constructor(
@@ -103,12 +104,15 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
     if (this.sendError) return Promise.reject(this.sendError)
     this.sendCalls.push({ sessionId, input, options })
     const stream = this.requireStream(sessionId)
-    stream.push({ type: 'turn.started', payload: { turnId: options.turnId }, turnId: options.turnId })
-    stream.push({
-      type: 'session.status_changed',
-      payload: { status: 'running' },
-      turnId: options.turnId
-    })
+    if (options.kind === 'start-turn') {
+      stream.push({ type: 'turn.started', payload: { turnId: options.turnId }, turnId: options.turnId })
+      stream.push({
+        type: 'session.status_changed',
+        payload: { status: 'running' },
+        turnId: options.turnId
+      })
+    }
+    if (!this.autoComplete || options.kind === 'steer') return Promise.resolve()
     stream.push({
       type: 'content.text.started',
       payload: { blockId: `text-${options.turnId}` },

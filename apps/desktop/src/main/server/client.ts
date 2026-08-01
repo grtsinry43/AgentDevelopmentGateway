@@ -16,6 +16,8 @@ import {
   gitPathsRequestSchema,
   gitRepositoryStateSchema,
   inputAdmissionReceiptSchema,
+  reorderQueuedInputsRequestSchema,
+  replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
   projectListResponseSchema,
   projectSchema,
@@ -50,6 +52,8 @@ import {
   type GitEvent,
   type GitRepositoryState,
   type InputAdmissionReceipt,
+  type ReorderQueuedInputsRequest,
+  type ReplaceQueuedInputRequest,
   type InterruptSessionRequest,
   type ResolveInteractionRequest,
   type ResumeSessionRequest,
@@ -263,6 +267,38 @@ export class GatewayServerClient {
       method: 'POST',
       body: sendSessionInputRequestSchema.parse(input)
     })
+  }
+
+  replaceQueuedInput(
+    sessionId: string,
+    inputId: string,
+    input: ReplaceQueuedInputRequest
+  ): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/input-queue/${encodeURIComponent(inputId)}`,
+      { method: 'PATCH', body: replaceQueuedInputRequestSchema.parse(input) }
+    )
+  }
+
+  reorderQueuedInputs(sessionId: string, input: ReorderQueuedInputsRequest): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/input-queue/order`,
+      { method: 'PUT', body: reorderQueuedInputsRequestSchema.parse(input) }
+    )
+  }
+
+  cancelQueuedInput(sessionId: string, inputId: string): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/input-queue/${encodeURIComponent(inputId)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  sendQueuedInputNow(sessionId: string, inputId: string): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/input-queue/${encodeURIComponent(inputId)}/send`,
+      { method: 'POST' }
+    )
   }
 
   interruptSession(sessionId: string, input: InterruptSessionRequest): Promise<void> {

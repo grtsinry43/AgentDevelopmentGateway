@@ -10,10 +10,14 @@ import type {
 import { applyTaskStateUpdate, cloneTaskState, createEmptyTaskState } from '@agent-gateway/core';
 import {
 	changesUpdatedPayloadSchema,
+	inputQueueEntrySchema,
 	sessionExecutionStateSchema,
+	subagentRunSchema,
 	toolPresentationSchema,
 	taskUpdatedPayloadSchema,
-	type RuntimeEventWire
+	type InputQueueEntryWire,
+	type RuntimeEventWire,
+	type SubagentRunWire
 } from '@agent-gateway/shared';
 
 export interface ConversationMessage {
@@ -27,6 +31,7 @@ export interface ConversationMessage {
 	streaming: boolean;
 	startedAt?: number;
 	durationMs?: number;
+	subagentRunId?: string;
 }
 
 export interface ConversationToolCall {
@@ -40,6 +45,7 @@ export interface ConversationToolCall {
 	inputDelta?: string;
 	outputDelta?: string;
 	changeSet?: ChangeSet;
+	subagentRunId?: string;
 }
 
 export interface ConversationChangeSet {
@@ -48,15 +54,26 @@ export interface ConversationChangeSet {
 	changeSet: ChangeSet;
 	sequence: number;
 	turnId?: string;
+	subagentRunId?: string;
+}
+
+export interface ConversationSubagentRun {
+	itemKind: 'subagent';
+	id: string;
+	run: SubagentRunWire;
+	sequence: number;
+	turnId?: string;
 }
 
 export type ConversationTimelineItem =
-	ConversationMessage | ConversationToolCall | ConversationChangeSet;
+	ConversationMessage | ConversationToolCall | ConversationChangeSet | ConversationSubagentRun;
 
 export interface ConversationProjection {
 	messages: ConversationMessage[];
 	tools: ConversationToolCall[];
 	changes: ConversationChangeSet[];
+	subagents: ConversationSubagentRun[];
+	inputQueue: InputQueueEntryWire[];
 	changeSets: Record<string, ChangeSet>;
 	toolInputDeltas: Record<string, string>;
 	toolOutputDeltas: Record<string, string>;
@@ -73,12 +90,21 @@ export interface ConversationProjection {
 }
 
 export function emptyConversationProjection(
-	taskState: TaskState = createEmptyTaskState()
+	taskState: TaskState = createEmptyTaskState(),
+	subagentRuns: SubagentRunWire[] = [],
+	inputQueue: InputQueueEntryWire[] = []
 ): ConversationProjection {
 	return {
 		messages: [],
 		tools: [],
 		changes: [],
+		subagents: subagentRuns.map((run, index) => ({
+			itemKind: 'subagent',
+			id: `subagent-${run.id}`,
+			run,
+			sequence: Number.MAX_SAFE_INTEGER - subagentRuns.length + index
+		})),
+		inputQueue: [...inputQueue],
 		changeSets: {},
 		toolInputDeltas: {},
 		toolOutputDeltas: {},
@@ -115,6 +141,16 @@ export function projectRuntimeEvent(
 					}
 				]
 			};
+		}
+		case 'input.queue_updated': {
+			const entries = inputQueuePayload(event.payload);
+			return entries ? { ...base, inputQueue: entries } : defer(base, event);
+		}
+		case 'subagent.started':
+		case 'subagent.updated':
+		case 'subagent.completed': {
+			const run = subagentPayload(event.payload);
+			return run ? upsertSubagent(base, event, run) : defer(base, event);
 		}
 		case 'content.text.started': {
 			const blockId = payloadString(event.payload, 'blockId');
@@ -272,6 +308,7 @@ function upsertAssistantBlock(
 		text,
 		sequence: existing?.sequence ?? event.sequence,
 		...(event.turnId ? { turnId: event.turnId } : {}),
+		...eventAttribution(event),
 		streaming,
 		...(existing?.startedAt === undefined ? {} : { startedAt: existing.startedAt }),
 		...(existing?.durationMs === undefined ? {} : { durationMs: existing.durationMs }),
@@ -325,6 +362,7 @@ function upsertToolCall(
 			: existing?.turnId
 				? { turnId: existing.turnId }
 				: {}),
+		...eventAttribution(event),
 		startedAt: existing?.startedAt ?? event.timestamp,
 		...(completed
 			? { durationMs: Math.max(0, event.timestamp - (existing?.startedAt ?? event.timestamp)) }
@@ -367,7 +405,8 @@ function upsertChangeSet(
 		id: `changes-${changeSet.id}`,
 		changeSet,
 		sequence: index >= 0 ? (current.changes[index]?.sequence ?? event.sequence) : event.sequence,
-		...(event.turnId ? { turnId: event.turnId } : {})
+		...(event.turnId ? { turnId: event.turnId } : {}),
+		...eventAttribution(event)
 	};
 	return {
 		...current,
@@ -377,6 +416,29 @@ function upsertChangeSet(
 			index < 0
 				? [...current.changes, item]
 				: current.changes.map((entry, entryIndex) => (entryIndex === index ? item : entry))
+	};
+}
+
+function upsertSubagent(
+	current: ConversationProjection,
+	event: RuntimeEventWire,
+	run: SubagentRunWire
+): ConversationProjection {
+	const index = current.subagents.findIndex((item) => item.run.id === run.id);
+	const existing = index >= 0 ? current.subagents[index] : undefined;
+	const item: ConversationSubagentRun = {
+		itemKind: 'subagent',
+		id: `subagent-${run.id}`,
+		run,
+		sequence: existing?.sequence ?? event.sequence,
+		...(event.turnId ? { turnId: event.turnId } : {})
+	};
+	return {
+		...current,
+		subagents:
+			index < 0
+				? [...current.subagents, item]
+				: current.subagents.map((entry, entryIndex) => (entryIndex === index ? item : entry))
 	};
 }
 
@@ -396,6 +458,7 @@ function findAssistantBlockIndex(
 	blockId: string,
 	reconcileActiveTurn: boolean
 ): number {
+	const subagentRunId = eventAttribution(event).subagentRunId;
 	const exactId = assistantBlockId(event, contentKind, blockId);
 	const exact = current.messages.findIndex((message) => message.id === exactId);
 	if (exact >= 0 || !reconcileActiveTurn) return exact;
@@ -408,7 +471,8 @@ function findAssistantBlockIndex(
 			message?.role === 'assistant' &&
 			message.contentKind === contentKind &&
 			message.streaming &&
-			message.turnId === event.turnId
+			message.turnId === event.turnId &&
+			message.subagentRunId === subagentRunId
 		) {
 			return index;
 		}
@@ -429,8 +493,28 @@ function defer(current: ConversationProjection, event: RuntimeEventWire): Conver
 }
 
 function admittedText(payload: unknown): string | undefined {
-	if (!isRecord(payload) || !isRecord(payload.input)) return undefined;
-	return typeof payload.input.text === 'string' ? payload.input.text : undefined;
+	if (!isRecord(payload) || !isRecord(payload.entry) || !isRecord(payload.entry.input)) {
+		return undefined;
+	}
+	return typeof payload.entry.input.text === 'string' ? payload.entry.input.text : undefined;
+}
+
+function inputQueuePayload(payload: unknown): InputQueueEntryWire[] | undefined {
+	if (!isRecord(payload)) return undefined;
+	const parsed = inputQueueEntrySchema.array().safeParse(payload.entries);
+	return parsed.success ? parsed.data : undefined;
+}
+
+function subagentPayload(payload: unknown): SubagentRunWire | undefined {
+	if (!isRecord(payload)) return undefined;
+	const parsed = subagentRunSchema.safeParse(payload.run);
+	return parsed.success ? parsed.data : undefined;
+}
+
+function eventAttribution(event: RuntimeEventWire): { subagentRunId?: string } {
+	if (!isRecord(event.attribution) || typeof event.attribution.subagentRunId !== 'string')
+		return {};
+	return { subagentRunId: event.attribution.subagentRunId };
 }
 
 function payloadString(payload: unknown, key: string): string | undefined {

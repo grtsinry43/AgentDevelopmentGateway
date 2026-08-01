@@ -4,6 +4,8 @@ import {
   forkSessionRequestSchema,
   gatewayIdSchema,
   interruptSessionRequestSchema,
+  reorderQueuedInputsRequestSchema,
+  replaceQueuedInputRequestSchema,
   resolveInteractionRequestSchema,
   resumeSessionRequestSchema,
   sendSessionInputRequestSchema,
@@ -49,6 +51,37 @@ export function registerSessionHandlers(): void {
     const input = sendSessionInputRequestSchema.parse(rawInput)
     return gatewayServer.sendInput(sessionId, input)
   })
+
+  ipcMain.handle(
+    IPC.sessionsQueueReplace,
+    (_event, rawSessionId: unknown, rawInputId: unknown, rawInput: unknown) =>
+      gatewayServer.replaceQueuedInput(
+        gatewayIdSchema.parse(rawSessionId),
+        gatewayIdSchema.parse(rawInputId),
+        replaceQueuedInputRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(IPC.sessionsQueueReorder, (_event, rawSessionId: unknown, rawInput: unknown) =>
+    gatewayServer.reorderQueuedInputs(
+      gatewayIdSchema.parse(rawSessionId),
+      reorderQueuedInputsRequestSchema.parse(rawInput)
+    )
+  )
+
+  ipcMain.handle(IPC.sessionsQueueCancel, (_event, rawSessionId: unknown, rawInputId: unknown) =>
+    gatewayServer.cancelQueuedInput(
+      gatewayIdSchema.parse(rawSessionId),
+      gatewayIdSchema.parse(rawInputId)
+    )
+  )
+
+  ipcMain.handle(IPC.sessionsQueueSendNow, (_event, rawSessionId: unknown, rawInputId: unknown) =>
+    gatewayServer.sendQueuedInputNow(
+      gatewayIdSchema.parse(rawSessionId),
+      gatewayIdSchema.parse(rawInputId)
+    )
+  )
 
   ipcMain.handle(IPC.sessionsGet, (_event, rawSessionId: unknown) =>
     gatewayServer.session(gatewayIdSchema.parse(rawSessionId))

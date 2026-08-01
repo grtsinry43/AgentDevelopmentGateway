@@ -46,7 +46,10 @@ test('creates one initialized Query and reuses its input stream across turns', a
   const sdkInput = captured!.prompt as AsyncIterable<SDKMessage>
   const inputIterator = sdkInput[Symbol.asyncIterator]()
   const firstTurn = asTurnId('turn-1')
-  await adapter.send(sessionId, { clientMessageId: 'first', text: 'first' }, { turnId: firstTurn })
+  await adapter.send(sessionId, { clientMessageId: 'first', text: 'first' }, {
+    turnId: firstTurn,
+    kind: 'start-turn'
+  })
   const firstInput = await inputIterator.next()
   assert.equal(firstInput.value?.type, 'user')
   assert.equal(firstInput.value?.message.content, 'first')
@@ -60,7 +63,10 @@ test('creates one initialized Query and reuses its input stream across turns', a
   await nextEventOfType(events, 'session.status_changed')
 
   const secondTurn = asTurnId('turn-2')
-  await adapter.send(sessionId, { clientMessageId: 'second', text: 'second' }, { turnId: secondTurn })
+  await adapter.send(sessionId, { clientMessageId: 'second', text: 'second' }, {
+    turnId: secondTurn,
+    kind: 'start-turn'
+  })
   const secondInput = await inputIterator.next()
   assert.equal(secondInput.value?.message.content, 'second')
   assert.equal(factoryCalls, 1)

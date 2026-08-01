@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -314,7 +315,7 @@ test('requires an installation choice when an adapter has multiple installations
   )
 })
 
-test('removes a newly created session when initial input delivery fails', async (t) => {
+test('keeps a durably admitted session when provider delivery later fails', async (t) => {
   const adapter = new FakeRuntimeAdapter()
   adapter.sendError = new Error('initial delivery failed')
   const server = buildServer({ adapters: [adapter], databasePath: ':memory:', logger: false })
@@ -326,7 +327,7 @@ test('removes a newly created session when initial input delivery fails', async 
   })
   const projectId = projectResponse.json<{ id: string }>().id
 
-  const failed = await server.inject({
+  const created = await server.inject({
     method: 'POST',
     url: `/api/v1/projects/${projectId}/sessions`,
     payload: {
@@ -337,12 +338,85 @@ test('removes a newly created session when initial input delivery fails', async 
       }
     }
   })
-  assert.equal(failed.statusCode, 500)
+  assert.equal(created.statusCode, 201)
+
+  await new Promise<void>((resolve) => setImmediate(resolve))
 
   const sessions = await server.inject({
     method: 'GET',
     url: `/api/v1/projects/${projectId}/sessions`
   })
-  assert.deepEqual(sessions.json<{ sessions: unknown[] }>().sessions, [])
-  assert.equal(adapter.disposeCalls.length, 1)
+  const listed = sessions.json<{ sessions: Array<{ inputQueue: unknown[] }> }>().sessions
+  assert.equal(listed.length, 1)
+  assert.deepEqual(listed[0]?.inputQueue, [])
+  assert.equal(adapter.disposeCalls.length, 0)
+})
+
+test('manages queued inputs while a turn is active', async (t) => {
+  const adapter = new FakeRuntimeAdapter()
+  adapter.autoComplete = false
+  adapter.descriptor.capabilities.steer = 'native'
+  const server = buildServer({ adapters: [adapter], databasePath: ':memory:', logger: false })
+  t.after(() => server.close())
+  const project = await server.inject({
+    method: 'POST',
+    url: '/api/v1/projects',
+    payload: { path: '/workspace/input-queue' }
+  })
+  const projectId = project.json<{ id: string }>().id
+  const created = await server.inject({
+    method: 'POST',
+    url: `/api/v1/projects/${projectId}/sessions`,
+    payload: {
+      adapterId: 'claude-code',
+      initialInput: { clientMessageId: randomUUID(), text: 'Keep this turn active' }
+    }
+  })
+  const sessionId = created.json<{ session: { id: string } }>().session.id
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  const secondId = randomUUID()
+  const thirdId = randomUUID()
+  for (const [clientMessageId, text] of [
+    [secondId, 'second message'],
+    [thirdId, 'third message']
+  ]) {
+    const admitted = await server.inject({
+      method: 'POST',
+      url: `/api/v1/sessions/${sessionId}/inputs`,
+      payload: { input: { clientMessageId, text } }
+    })
+    assert.equal(admitted.statusCode, 202)
+  }
+
+  const replaced = await server.inject({
+    method: 'PATCH',
+    url: `/api/v1/sessions/${sessionId}/input-queue/${secondId}`,
+    payload: {
+      input: { clientMessageId: secondId, text: 'edited second message', delivery: 'queue' }
+    }
+  })
+  assert.equal(replaced.statusCode, 204)
+  const reordered = await server.inject({
+    method: 'PUT',
+    url: `/api/v1/sessions/${sessionId}/input-queue/order`,
+    payload: { inputIds: [thirdId, secondId] }
+  })
+  assert.equal(reordered.statusCode, 204)
+  const cancelled = await server.inject({
+    method: 'DELETE',
+    url: `/api/v1/sessions/${sessionId}/input-queue/${thirdId}`
+  })
+  assert.equal(cancelled.statusCode, 204)
+  const sentNow = await server.inject({
+    method: 'POST',
+    url: `/api/v1/sessions/${sessionId}/input-queue/${secondId}/send`
+  })
+  assert.equal(sentNow.statusCode, 204)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  const session = await server.inject({ method: 'GET', url: `/api/v1/sessions/${sessionId}` })
+  assert.deepEqual(session.json<{ inputQueue: unknown[] }>().inputQueue, [])
+  assert.equal(adapter.sendCalls.at(-1)?.options.kind, 'steer')
+  assert.equal(adapter.sendCalls.at(-1)?.input.text, 'edited second message')
 })

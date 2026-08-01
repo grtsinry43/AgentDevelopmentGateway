@@ -15,6 +15,8 @@ import type {
   ForkSessionRequest,
   GitChangeArea,
   InterruptSessionRequest,
+	ReorderQueuedInputsRequest,
+	ReplaceQueuedInputRequest,
   ResolveInteractionRequest,
   ResumeSessionRequest,
   SendSessionInputRequest,
@@ -96,6 +98,17 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.sessionsCreate, projectKey, input),
     send: (sessionId: string, input: SendSessionInputRequest) =>
       ipcRenderer.invoke(IPC.sessionsSend, sessionId, input),
+    replaceQueuedInput: (
+      sessionId: string,
+      inputId: string,
+      input: ReplaceQueuedInputRequest
+    ) => ipcRenderer.invoke(IPC.sessionsQueueReplace, sessionId, inputId, input),
+    reorderQueuedInputs: (sessionId: string, input: ReorderQueuedInputsRequest) =>
+      ipcRenderer.invoke(IPC.sessionsQueueReorder, sessionId, input),
+    cancelQueuedInput: (sessionId: string, inputId: string) =>
+      ipcRenderer.invoke(IPC.sessionsQueueCancel, sessionId, inputId),
+    sendQueuedInputNow: (sessionId: string, inputId: string) =>
+      ipcRenderer.invoke(IPC.sessionsQueueSendNow, sessionId, inputId),
     interrupt: (sessionId: string, input: InterruptSessionRequest = {}) =>
       ipcRenderer.invoke(IPC.sessionsInterrupt, sessionId, input),
     resolveInteraction: (

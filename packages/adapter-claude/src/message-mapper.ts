@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import {
+  asSessionId,
+  asSubagentRunId,
   asToolCallId,
   type AdapterEvent,
   type ChangeSet,
@@ -6,6 +9,8 @@ import {
   type DiffLine,
   type FileChange,
   type RuntimeError,
+  type SessionId,
+  type SubagentRun,
   type ToolCall,
   type TurnId,
   type Usage,
@@ -17,6 +22,10 @@ import type {
   SDKResultMessage,
   SDKSessionStateChangedMessage,
   SDKSystemMessage,
+  SDKTaskNotificationMessage,
+  SDKTaskProgressMessage,
+  SDKTaskStartedMessage,
+  SDKTaskUpdatedMessage,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import { capabilitiesFromInit } from './capabilities.js'
@@ -40,9 +49,14 @@ export class ClaudeMessageMapper {
   private readonly tools = new Map<string, ToolCall>()
   private readonly streamedTools = new Map<number, ToolCall['id']>()
   private readonly startedBlocks = new Set<string>()
+  private readonly subagents = new Map<string, SubagentRun>()
+  private readonly subagentByToolUseId = new Map<string, SubagentRun['id']>()
   private currentMessageId?: string
 
-  constructor(private readonly workspacePath = process.cwd()) {}
+  constructor(
+    private readonly workspacePath = process.cwd(),
+    private readonly sessionId: SessionId = asSessionId('00000000-0000-4000-8000-000000000000'),
+  ) {}
 
   map(message: SDKMessage, context: MapperContext): AdapterEvent[] {
     if (message.type === 'system' && message.subtype === 'init') {
@@ -51,14 +65,26 @@ export class ClaudeMessageMapper {
     if (message.type === 'system' && message.subtype === 'session_state_changed') {
       return this.mapSessionState(message)
     }
+    if (message.type === 'system' && message.subtype === 'task_started') {
+      return this.mapTaskStarted(message, context.turnId)
+    }
+    if (message.type === 'system' && message.subtype === 'task_progress') {
+      return this.mapTaskProgress(message, context.turnId)
+    }
+    if (message.type === 'system' && message.subtype === 'task_updated') {
+      return this.mapTaskUpdated(message, context.turnId)
+    }
+    if (message.type === 'system' && message.subtype === 'task_notification') {
+      return this.mapTaskNotification(message, context.turnId)
+    }
     if (message.type === 'stream_event') {
-      return this.mapPartial(message, requireTurnId(message, context.turnId))
+      return this.attribute(this.mapPartial(message, requireTurnId(message, context.turnId)), message)
     }
     if (message.type === 'assistant') {
-      return this.mapAssistant(message, requireTurnId(message, context.turnId))
+      return this.attribute(this.mapAssistant(message, requireTurnId(message, context.turnId)), message)
     }
     if (message.type === 'user') {
-      return this.mapUser(message, requireTurnId(message, context.turnId))
+      return this.attribute(this.mapUser(message, requireTurnId(message, context.turnId)), message)
     }
     if (message.type === 'result') {
       return this.mapResult(message, requireTurnId(message, context.turnId))
@@ -91,6 +117,136 @@ export class ClaudeMessageMapper {
         nativeRef: nativeRef(message),
       },
     ]
+  }
+
+  private mapTaskStarted(message: SDKTaskStartedMessage, turnId?: TurnId): AdapterEvent[] {
+    if (message.task_type !== 'subagent' && !message.subagent_type) return [this.extension(message)]
+    const now = Date.now()
+    const run: SubagentRun = {
+      id: asSubagentRunId(randomUUID()),
+      sessionId: this.sessionId,
+      ...(message.tool_use_id ? { parentToolCallId: asToolCallId(message.tool_use_id) } : {}),
+      runtimeSubagentId: message.task_id,
+      ...(message.subagent_type ? { agentName: message.subagent_type } : {}),
+      title: message.description,
+      description: message.description,
+      ...(message.prompt ? { prompt: message.prompt } : {}),
+      executionMode: 'foreground',
+      status: 'starting',
+      startedAt: now,
+      updatedAt: now,
+    }
+    this.subagents.set(message.task_id, run)
+    if (message.tool_use_id) this.subagentByToolUseId.set(message.tool_use_id, run.id)
+    return [{
+      type: 'subagent.started',
+      payload: { run: structuredClone(run) },
+      ...(turnId ? { turnId } : {}),
+      attribution: {
+        subagentRunId: run.id,
+        ...(run.parentToolCallId ? { parentToolCallId: run.parentToolCallId } : {}),
+        taskId: message.task_id,
+        depth: 1,
+        sourceKind: 'subagent',
+      },
+      nativeRef: nativeRef(message),
+    }]
+  }
+
+  private mapTaskProgress(message: SDKTaskProgressMessage, turnId?: TurnId): AdapterEvent[] {
+    const existing = this.subagents.get(message.task_id)
+    if (!existing) return [this.extension(message)]
+    const run: SubagentRun = {
+      ...existing,
+      ...(message.subagent_type ? { agentName: message.subagent_type } : {}),
+      description: message.description,
+      ...(message.summary ? { resultSummary: message.summary } : {}),
+      status: 'running',
+      updatedAt: Date.now(),
+    }
+    return this.updateSubagent(message, run, turnId, 'subagent.updated')
+  }
+
+  private mapTaskUpdated(message: SDKTaskUpdatedMessage, turnId?: TurnId): AdapterEvent[] {
+    const existing = this.subagents.get(message.task_id)
+    if (!existing) return [this.extension(message)]
+    const status = mapTaskStatus(message.patch.status) ?? existing.status
+    const completedAt = isTerminalSubagentStatus(status)
+      ? (message.patch.end_time ?? Date.now())
+      : existing.completedAt
+    const run: SubagentRun = {
+      ...existing,
+      ...(message.patch.description ? { description: message.patch.description } : {}),
+      executionMode: message.patch.is_backgrounded ? 'background' : existing.executionMode,
+      status,
+      ...(message.patch.error
+        ? { error: { code: 'unknown', layer: 'turn', message: message.patch.error } }
+        : {}),
+      updatedAt: Date.now(),
+      ...(completedAt === undefined ? {} : { completedAt }),
+    }
+    return this.updateSubagent(
+      message,
+      run,
+      turnId,
+      isTerminalSubagentStatus(status) ? 'subagent.completed' : 'subagent.updated',
+    )
+  }
+
+  private mapTaskNotification(message: SDKTaskNotificationMessage, turnId?: TurnId): AdapterEvent[] {
+    const existing = this.subagents.get(message.task_id)
+    if (!existing) return [this.extension(message)]
+    const status = message.status === 'completed' ? 'completed' : message.status === 'failed' ? 'failed' : 'interrupted'
+    const run: SubagentRun = {
+      ...existing,
+      status,
+      resultSummary: message.summary,
+      ...(status === 'failed'
+        ? { error: { code: 'unknown', layer: 'turn', message: message.summary } }
+        : {}),
+      updatedAt: Date.now(),
+      completedAt: Date.now(),
+    }
+    return this.updateSubagent(message, run, turnId, 'subagent.completed')
+  }
+
+  private updateSubagent(
+    message: SDKMessage,
+    run: SubagentRun,
+    turnId: TurnId | undefined,
+    type: 'subagent.updated' | 'subagent.completed',
+  ): AdapterEvent[] {
+    const runtimeSubagentId = run.runtimeSubagentId
+    if (runtimeSubagentId) this.subagents.set(runtimeSubagentId, run)
+    return [{
+      type,
+      payload: { run: structuredClone(run) },
+      ...(turnId ? { turnId } : {}),
+      attribution: {
+        subagentRunId: run.id,
+        ...(run.parentToolCallId ? { parentToolCallId: run.parentToolCallId } : {}),
+        ...(runtimeSubagentId ? { taskId: runtimeSubagentId } : {}),
+        depth: 1,
+        sourceKind: 'subagent',
+      },
+      nativeRef: nativeRef(message),
+    }]
+  }
+
+  private attribute(events: AdapterEvent[], message: SDKMessage): AdapterEvent[] {
+    if (!('parent_tool_use_id' in message) || !message.parent_tool_use_id) return events
+    const subagentRunId = this.subagentByToolUseId.get(message.parent_tool_use_id)
+    if (!subagentRunId) return events
+    return events.map((event) => ({
+      ...event,
+      attribution: {
+        ...event.attribution,
+        parentToolCallId: asToolCallId(message.parent_tool_use_id as string),
+        subagentRunId,
+        depth: 1,
+        sourceKind: 'subagent',
+      },
+    }))
   }
 
   private mapPartial(message: SDKPartialAssistantMessage, turnId: TurnId): AdapterEvent[] {
@@ -374,6 +530,31 @@ interface ClaudeStructuredHunk {
   newStart: number
   newLines: number
   lines: string[]
+}
+
+function mapTaskStatus(
+  status: SDKTaskUpdatedMessage['patch']['status'],
+): SubagentRun['status'] | undefined {
+  switch (status) {
+    case 'pending':
+      return 'starting'
+    case 'running':
+      return 'running'
+    case 'paused':
+      return 'waiting'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    case 'killed':
+      return 'cancelled'
+    case undefined:
+      return undefined
+  }
+}
+
+function isTerminalSubagentStatus(status: SubagentRun['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'interrupted' || status === 'cancelled'
 }
 
 interface ClaudeFileChangeOutput {

@@ -1,5 +1,7 @@
 import { join } from 'node:path'
 import { ClaudeAdapter } from '@agent-gateway/adapter-claude'
+import { CodexAdapter } from '@agent-gateway/adapter-codex'
+import { OpenCodeAdapter } from '@agent-gateway/adapter-opencode'
 import cors from '@fastify/cors'
 import websocket from '@fastify/websocket'
 import { APP_NAME, type HealthResponse } from '@agent-gateway/shared'
@@ -39,7 +41,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   })
 
   server.register(cors, {
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     origin: ['null', /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/]
   })
 
@@ -51,7 +53,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   const dataDirectory = options.dataDirectory ?? join(process.cwd(), '.agent-gateway-server')
   server.register(applicationPlugin, {
-    adapters: options.adapters ?? [new ClaudeAdapter()],
+    adapters: options.adapters ?? [new ClaudeAdapter(), new CodexAdapter(), new OpenCodeAdapter()],
     databasePath: options.databasePath ?? join(dataDirectory, 'gateway.sqlite'),
     environment: stringEnvironment(options.environment ?? process.env),
     ...(options.terminalPtyFactory ? { terminalPtyFactory: options.terminalPtyFactory } : {}),

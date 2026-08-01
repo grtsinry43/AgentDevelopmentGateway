@@ -18,6 +18,8 @@ import type {
 	GitRepositoryState,
 	GatewaySession,
 	InputAdmissionReceipt,
+	ReorderQueuedInputsRequest,
+	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
 	ResolveInteractionRequest,
 	ResumeSessionRequest,
@@ -64,6 +66,10 @@ export const IPC = {
 	sessionsAdapters: 'sessions:adapters',
 	sessionsCreate: 'sessions:create',
 	sessionsSend: 'sessions:send',
+	sessionsQueueReplace: 'sessions:queueReplace',
+	sessionsQueueReorder: 'sessions:queueReorder',
+	sessionsQueueCancel: 'sessions:queueCancel',
+	sessionsQueueSendNow: 'sessions:queueSendNow',
 	sessionsGet: 'sessions:get',
 	sessionsInterrupt: 'sessions:interrupt',
 	sessionsResolveInteraction: 'sessions:resolveInteraction',
@@ -271,6 +277,14 @@ export interface DesktopBridge {
 		adapters(projectKey: string): Promise<GatewayAdapterAvailability[]>;
 		create(projectKey: string, input: CreateSessionRequest): Promise<CreateSessionResponse>;
 		send(sessionId: string, input: SendSessionInputRequest): Promise<InputAdmissionReceipt>;
+		replaceQueuedInput(
+			sessionId: string,
+			inputId: string,
+			input: ReplaceQueuedInputRequest
+		): Promise<void>;
+		reorderQueuedInputs(sessionId: string, input: ReorderQueuedInputsRequest): Promise<void>;
+		cancelQueuedInput(sessionId: string, inputId: string): Promise<void>;
+		sendQueuedInputNow(sessionId: string, inputId: string): Promise<void>;
 		interrupt(sessionId: string, input?: InterruptSessionRequest): Promise<void>;
 		resolveInteraction(
 			sessionId: string,

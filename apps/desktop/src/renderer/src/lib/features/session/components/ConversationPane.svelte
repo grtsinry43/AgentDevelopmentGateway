@@ -12,6 +12,7 @@
 	import ChangeSetBlock from './ChangeSetBlock.svelte';
 	import ReasoningBlock from './ReasoningBlock.svelte';
 	import SessionComposer from './SessionComposer.svelte';
+	import SubagentRunBlock from './SubagentRunBlock.svelte';
 	import ToolCallBlock from './ToolCallBlock.svelte';
 
 	interface Props {
@@ -70,6 +71,9 @@
 	$effect(() => {
 		workspace.timeline.map((item) => {
 			if (item.itemKind === 'message') return `${item.id}:${item.text.length}:${item.streaming}`;
+			if (item.itemKind === 'subagent') {
+				return `${item.id}:${item.run.status}:${item.run.updatedAt}`;
+			}
 			if (item.itemKind === 'tool') {
 				return `${item.id}:${item.toolCall.status}:${item.outputDelta?.length ?? 0}:${item.changeSet?.status ?? ''}`;
 			}
@@ -82,11 +86,27 @@
 
 <section class="flex min-h-0 flex-1 flex-col bg-surface-base">
 	<header class="flex h-9 shrink-0 items-center gap-2 border-b border-subtle px-3">
+		{#if workspace.selectedSubagent}
+			<button
+				type="button"
+				class="grid h-6 w-6 shrink-0 place-items-center rounded-default text-muted hover:bg-surface-hover hover:text-strong"
+				title="返回父级会话"
+				onclick={() => workspace.closeSubagent()}
+			>
+				<Icon name="chevron-right" size={12} class="rotate-180" />
+			</button>
+		{/if}
 		<div class="min-w-0 flex-1">
 			<p class="truncate text-xs text-strong">
-				{workspace.selectedSession?.title ?? '新建会话'}
+				{workspace.selectedSubagent?.title ?? workspace.selectedSession?.title ?? '新建会话'}
 			</p>
-			{#if workspace.selectedSession}
+			{#if workspace.selectedSubagent}
+				<p class="truncate font-mono text-2xs text-faint">
+					子代理 · {workspace.selectedSubagent.agentName ??
+						workspace.selectedSubagent.runtimeSubagentId ??
+						'Agent'}
+				</p>
+			{:else if workspace.selectedSession}
 				<p class="truncate font-mono text-2xs text-faint">{workspace.selectedSession.adapterId}</p>
 			{:else}
 				<p class="text-2xs text-faint">首次发送时创建真实 Session</p>
@@ -147,7 +167,9 @@
 			{:else}
 				<div class="mx-auto w-full max-w-3xl px-5 py-4">
 					{#each workspace.timeline as item (item.id)}
-						{#if item.itemKind === 'tool'}
+						{#if item.itemKind === 'subagent'}
+							<SubagentRunBlock {item} {workspace} />
+						{:else if item.itemKind === 'tool'}
 							<ToolCallBlock {item} />
 						{:else if item.itemKind === 'changes'}
 							<ChangeSetBlock {item} />

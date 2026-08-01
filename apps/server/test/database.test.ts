@@ -19,7 +19,8 @@ test('migrates a file database and preserves server identity across reopen', asy
     { version: 2 },
     { version: 3 },
     { version: 4 },
-    { version: 5 }
+    { version: 5 },
+    { version: 6 }
   ])
   firstDatabase.close()
 

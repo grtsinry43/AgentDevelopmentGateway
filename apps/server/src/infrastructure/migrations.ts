@@ -97,6 +97,13 @@ const migrations: Migration[] = [
     sql: `
       ALTER TABLE sessions ADD COLUMN task_state_json TEXT NOT NULL DEFAULT '{"tasks":[]}';
     `
+  },
+  {
+    version: 6,
+    sql: `
+      ALTER TABLE sessions ADD COLUMN subagent_runs_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE sessions ADD COLUMN input_queue_json TEXT NOT NULL DEFAULT '[]';
+    `
   }
 ]
 

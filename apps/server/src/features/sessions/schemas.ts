@@ -5,6 +5,8 @@ import {
   controlReceiptSchema,
   forkSessionRequestSchema,
   inputAdmissionReceiptSchema,
+  reorderQueuedInputsRequestSchema,
+  replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
   resolveInteractionRequestSchema,
   resumeSessionRequestSchema,
@@ -22,6 +24,8 @@ import {
   type CloseSessionRequest,
   type ForkSessionRequest,
   type InputAdmissionReceipt,
+  type ReorderQueuedInputsRequest,
+  type ReplaceQueuedInputRequest,
   type InterruptSessionRequest,
   type ResolveInteractionRequest,
   type ResumeSessionRequest,
@@ -42,6 +46,8 @@ export {
   controlReceiptSchema,
   forkSessionRequestSchema,
   inputAdmissionReceiptSchema,
+  reorderQueuedInputsRequestSchema,
+  replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
   resolveInteractionRequestSchema,
   resumeSessionRequestSchema,
@@ -61,6 +67,10 @@ export const sessionInteractionParamsSchema = z.strictObject({
   sessionId: idSchema,
   interactionId: idSchema
 })
+export const sessionInputParamsSchema = z.strictObject({
+  sessionId: idSchema,
+  inputId: idSchema
+})
 
 export const sessionErrorResponses = {
   400: errorResponseSchema,
@@ -76,6 +86,8 @@ export type CreateSessionResult = CreateSessionResponse
 export type SessionResponse = GatewaySession
 export type SendSessionInputBody = SendSessionInputRequest
 export type SendSessionInputResult = InputAdmissionReceipt
+export type ReplaceQueuedInputBody = ReplaceQueuedInputRequest
+export type ReorderQueuedInputsBody = ReorderQueuedInputsRequest
 export type SessionControlResult = RuntimeControlReceipt
 export type InterruptSessionBody = InterruptSessionRequest
 export type ResolveInteractionBody = ResolveInteractionRequest

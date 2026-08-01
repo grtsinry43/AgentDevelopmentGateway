@@ -83,6 +83,8 @@ export interface RuntimeAdapter {
     settings: SessionExecutionSettings,
   ): Promise<ExecutionConfigurationResult>
   disposeSession(sessionId: SessionId): Promise<void>
+  /** Release adapter-owned transports/processes during host shutdown. */
+  dispose?(): Promise<void>
 
   /** Pre-envelope events for a session; the runtime layer seals them into the store (§8.3). */
   events(sessionId: SessionId): AsyncIterable<AdapterEvent>

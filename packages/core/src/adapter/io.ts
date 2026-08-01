@@ -15,16 +15,20 @@ export interface UserInput {
   /** Client-generated id used to make active-session retries idempotent. */
   clientMessageId: string
   text: string
-  delivery?: 'steer' | 'queue'
+  delivery?: InputDelivery
   attachments?: InputAttachment[]
   /** Admit to the log without scheduling execution (OpenCode `resume:false`). */
   admitOnly?: boolean
 }
 
+export type InputDelivery = 'steer' | 'queue'
+
 /** Runtime-prepared context accompanying one send without becoming user-authored input. */
 export interface SendOptions {
   /** Gateway turn assigned by the runtime before provider delivery. */
   turnId: TurnId
+  /** Whether this input opens a new turn or joins the currently active one. */
+  kind: 'start-turn' | 'steer'
   context?: TurnContext
 }
 

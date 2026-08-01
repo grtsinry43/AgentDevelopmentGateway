@@ -1,7 +1,7 @@
 import type { RuntimeCapabilities } from '../domain/descriptor.js'
 import type { SessionStatus } from '../domain/session.js'
 import type { InteractionId, TurnId } from '../ids.js'
-import type { InteractionResolution, UserInput } from '../adapter/io.js'
+import type { InteractionResolution } from '../adapter/io.js'
 import type { ChangeSet } from '../model/change-set.js'
 import type { InteractionRequest } from '../model/interaction.js'
 import type { Plan, TaskStateUpdate } from '../model/task-plan.js'
@@ -11,6 +11,8 @@ import type { RateLimitWindow, Usage } from '../model/usage.js'
 import type { RuntimeError } from '../model/runtime-error.js'
 import type { SessionExecutionState } from '../domain/execution.js'
 import type { ModelSelection } from '../adapter/io.js'
+import type { SubagentRun } from '../domain/subagent.js'
+import type { InputQueueEntry } from '../domain/input-queue.js'
 
 /**
  * One payload interface per base runtime event (requirements §9.4).
@@ -49,6 +51,19 @@ export interface SessionModelChangedPayload {
 export interface SessionExecutionChangedPayload {
   execution: SessionExecutionState
   controlRevision: number
+}
+
+// --- delegated agent execution ---
+export interface SubagentStartedPayload {
+  run: SubagentRun
+}
+export interface SubagentUpdatedPayload {
+  /** Full authoritative state; projections replace rather than merge it. */
+  run: SubagentRun
+}
+export interface SubagentCompletedPayload {
+  /** Full authoritative terminal state. */
+  run: SubagentRun
 }
 
 // --- turn ---
@@ -159,18 +174,20 @@ export interface InteractionCanceledPayload {
 
 // --- input scheduling (OpenCode durable admission + steer/queue, docs/05 §4.5) ---
 export interface InputAdmittedPayload {
-  admittedSequence: number
-  turnId?: TurnId
-  delivery?: 'steer' | 'queue'
-  /** Durable user-authored input used to rebuild the conversation after reconnect/restart. */
-  input: UserInput
+  entry: InputQueueEntry
 }
-/** Queue-item lifecycle so clients can show depth / reordering / 'steer applied'. */
+/** Full ordered snapshot of inputs still waiting for provider delivery. */
 export interface InputQueueUpdatedPayload {
-  entries: Array<{
-    id: string
-    status: 'enqueued' | 'claimed' | 'released' | 'failed' | 'completed' | 'cancelled'
-  }>
+  entries: InputQueueEntry[]
+}
+export interface InputDispatchedPayload {
+  entry: InputQueueEntry
+}
+export interface InputFailedPayload {
+  entry: InputQueueEntry
+}
+export interface InputCancelledPayload {
+  entry: InputQueueEntry
 }
 
 // --- task / plan / changes ---

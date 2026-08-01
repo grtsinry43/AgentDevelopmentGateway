@@ -1,4 +1,4 @@
-import type { AdapterId, SessionId, ToolCallId, TurnId } from '../ids.js'
+import type { AdapterId, SubagentRunId, ToolCallId, TurnId } from '../ids.js'
 
 /**
  * Reference back to the native runtime event that produced this envelope.
@@ -18,8 +18,8 @@ export interface NativeRef {
  */
 export interface EventAttribution {
   parentToolCallId?: ToolCallId
-  /** Subagent thread this event came from. */
-  parentSessionId?: SessionId
+  /** Gateway child execution this event belongs to. */
+  subagentRunId?: SubagentRunId
   taskId?: string
   depth?: number
   sourceKind?: 'main' | 'subagent' | 'subagent-review' | 'subagent-compact' | 'user-shell'

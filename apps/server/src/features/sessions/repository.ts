@@ -1,12 +1,16 @@
 import {
   asSessionId,
   type AgentSession,
+  type InputQueueEntry,
   type RuntimeCapabilities,
+  type SubagentRun,
   type TaskState
 } from '@agent-gateway/core'
 import {
   runtimeCapabilitiesSchema,
+  inputQueueEntrySchema,
   sessionExecutionStateSchema,
+  subagentRunSchema,
   taskStateSchema,
 } from '@agent-gateway/shared'
 import { z } from 'zod'
@@ -28,6 +32,8 @@ const sessionRowSchema = z.strictObject({
   execution_limitations_json: z.string(),
   capabilities_json: z.string(),
   task_state_json: z.string(),
+  subagent_runs_json: z.string(),
+  input_queue_json: z.string(),
   control_revision: z.number().int().nonnegative(),
   status: z.enum(['starting', 'idle', 'running', 'waiting', 'interrupted', 'error', 'closed']),
   title: z.string().nullable(),
@@ -41,6 +47,8 @@ export interface StoredSession {
   session: AgentSession
   capabilities: RuntimeCapabilities
   taskState: TaskState
+  subagentRuns: SubagentRun[]
+  inputQueue: InputQueueEntry[]
 }
 
 const activeStatuses = ['starting', 'idle', 'running', 'waiting'] as const
@@ -57,8 +65,9 @@ export class SessionRepository {
           model, reasoning_effort, mode, status, title, last_event_sequence,
           provider_state_snapshot, created_at, updated_at, work_mode,
           execution_settings_json, effective_execution_settings_json,
-          execution_limitations_json, capabilities_json, control_revision, task_state_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          execution_limitations_json, capabilities_json, control_revision, task_state_json,
+          subagent_runs_json, input_queue_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         session.id,
@@ -81,14 +90,18 @@ export class SessionRepository {
         JSON.stringify(session.execution.limitations),
         JSON.stringify(stored.capabilities),
         session.controlRevision,
-        JSON.stringify(stored.taskState)
+        JSON.stringify(stored.taskState),
+        JSON.stringify(stored.subagentRuns),
+        JSON.stringify(stored.inputQueue)
       )
   }
 
   updateSnapshot(
     session: AgentSession,
     capabilities?: RuntimeCapabilities,
-    taskState?: TaskState
+    taskState?: TaskState,
+    subagentRuns?: SubagentRun[],
+    inputQueue?: InputQueueEntry[]
   ): void {
     this.database
       .prepare(
@@ -98,7 +111,9 @@ export class SessionRepository {
           updated_at = ?, work_mode = ?, execution_settings_json = ?,
           effective_execution_settings_json = ?, execution_limitations_json = ?,
           capabilities_json = COALESCE(?, capabilities_json), control_revision = ?,
-          task_state_json = COALESCE(?, task_state_json)
+          task_state_json = COALESCE(?, task_state_json),
+          subagent_runs_json = COALESCE(?, subagent_runs_json),
+          input_queue_json = COALESCE(?, input_queue_json)
          WHERE id = ?`
       )
       .run(
@@ -118,6 +133,8 @@ export class SessionRepository {
         capabilities ? JSON.stringify(capabilities) : null,
         session.controlRevision,
         taskState ? JSON.stringify(taskState) : null,
+        subagentRuns ? JSON.stringify(subagentRuns) : null,
+        inputQueue ? JSON.stringify(inputQueue) : null,
         session.id
       )
   }
@@ -131,6 +148,13 @@ export class SessionRepository {
     return this.database
       .prepare(sessionSelect('WHERE sessions.project_id = ? ORDER BY sessions.updated_at DESC'))
       .all(projectId)
+      .map(mapSession)
+  }
+
+  listAll(): StoredSession[] {
+    return this.database
+      .prepare(sessionSelect('ORDER BY sessions.updated_at DESC'))
+      .all()
       .map(mapSession)
   }
 
@@ -178,6 +202,7 @@ function sessionSelect(suffix: string): string {
     sessions.reasoning_effort, sessions.mode, sessions.work_mode,
     sessions.execution_settings_json, sessions.effective_execution_settings_json,
     sessions.execution_limitations_json, sessions.capabilities_json, sessions.task_state_json,
+    sessions.subagent_runs_json, sessions.input_queue_json,
     sessions.control_revision, sessions.status, sessions.title,
     sessions.last_event_sequence, sessions.provider_state_snapshot,
     sessions.created_at, sessions.updated_at
@@ -197,6 +222,12 @@ function mapSession(row: unknown): StoredSession {
     parseJson(parsed.capabilities_json, 'runtime capabilities')
   )
   const taskState = taskStateSchema.parse(parseJson(parsed.task_state_json, 'task state'))
+  const subagentRuns = z
+    .array(subagentRunSchema)
+    .parse(parseJson(parsed.subagent_runs_json, 'subagent runs')) as SubagentRun[]
+  const inputQueue = z
+    .array(inputQueueEntrySchema)
+    .parse(parseJson(parsed.input_queue_json, 'input queue')) as InputQueueEntry[]
   return {
     session: {
       id: asSessionId(parsed.id),
@@ -231,7 +262,9 @@ function mapSession(row: unknown): StoredSession {
       updatedAt: parsed.updated_at
     },
     capabilities,
-    taskState
+    taskState,
+    subagentRuns,
+    inputQueue
   }
 }
 

@@ -9,12 +9,16 @@ import type {
 import { interactionRequestSchema, interactionResolutionSchema } from '@agent-gateway/shared';
 import {
 	createSession,
+	cancelQueuedInput as cancelQueuedInputApi,
 	getSession,
 	listAdapters,
 	listSessions,
+	reorderQueuedInputs,
+	replaceQueuedInput,
 	resolveSessionInteraction,
 	resumeSession,
 	sendSessionInput,
+	sendQueuedInputNow as sendQueuedInputNowApi,
 	setSessionExecutionSettings,
 	setSessionWorkMode,
 	unwatchSession,
@@ -47,6 +51,8 @@ class SessionWorkspace {
 	sending = $state(false);
 	controlling = $state(false);
 	resolvingInteractionId = $state<string | undefined>(undefined);
+	queueBusyId = $state<string | undefined>(undefined);
+	selectedSubagentRunId = $state<string | undefined>(undefined);
 	serverError = $state<string | undefined>(undefined);
 	error = $state<string | undefined>(undefined);
 	streamState = $state<'idle' | 'connecting' | 'connected' | 'retrying' | 'closed' | 'error'>(
@@ -61,10 +67,26 @@ class SessionWorkspace {
 	);
 	readonly messages = $derived<ConversationMessage[]>(this.projection.messages);
 	readonly tools = $derived<ConversationToolCall[]>(this.projection.tools);
+	readonly subagents = $derived(this.projection.subagents);
+	readonly inputQueue = $derived(this.projection.inputQueue);
+	readonly selectedSubagent = $derived(
+		this.projection.subagents.find((item) => item.run.id === this.selectedSubagentRunId)?.run
+	);
 	readonly timeline = $derived<ConversationTimelineItem[]>(
-		[...this.projection.messages, ...this.projection.tools, ...this.projection.changes].sort(
-			(left, right) => left.sequence - right.sequence
-		)
+		[
+			...this.projection.messages,
+			...this.projection.tools,
+			...this.projection.changes,
+			...this.projection.subagents
+		]
+			.filter((item) => {
+				if (item.itemKind === 'subagent') {
+					return item.run.parentSubagentRunId === this.selectedSubagentRunId;
+				}
+				if (item.itemKind === 'tool' && item.toolCall.kind === 'subagent') return false;
+				return item.subagentRunId === this.selectedSubagentRunId;
+			})
+			.sort((left, right) => left.sequence - right.sequence)
 	);
 	readonly features = $derived<Partial<Record<RuntimeFeature, boolean>> | undefined>(
 		this.projection.features
@@ -211,6 +233,7 @@ class SessionWorkspace {
 		const generation = ++this.#selectionGeneration;
 		const previous = this.selectedSessionId;
 		this.selectedSessionId = sessionId;
+		this.selectedSubagentRunId = undefined;
 		this.projection = emptyConversationProjection();
 		this.#clearReplay();
 		this.streamState = 'connecting';
@@ -223,7 +246,11 @@ class SessionWorkspace {
 			const session = await getSession(sessionId);
 			if (generation !== this.#selectionGeneration) return;
 			this.#upsertSession(session);
-			this.projection = emptyConversationProjection(session.taskState);
+			this.projection = emptyConversationProjection(
+				session.taskState,
+				session.subagentRuns,
+				session.inputQueue
+			);
 			this.#replaySessionId = sessionId;
 			this.#replayTargetSequence = session.lastEventSequence;
 			this.#replayProjection = emptyConversationProjection();
@@ -241,6 +268,7 @@ class SessionWorkspace {
 		this.#selectionGeneration += 1;
 		const previous = this.selectedSessionId;
 		this.selectedSessionId = undefined;
+		this.selectedSubagentRunId = undefined;
 		this.projection = emptyConversationProjection();
 		this.#clearReplay();
 		this.streamState = 'idle';
@@ -326,6 +354,67 @@ class SessionWorkspace {
 		}
 	}
 
+	openSubagent(runId: string): void {
+		if (!this.projection.subagents.some((item) => item.run.id === runId)) return;
+		this.selectedSubagentRunId = runId;
+	}
+
+	closeSubagent(): void {
+		const current = this.selectedSubagent;
+		this.selectedSubagentRunId = current?.parentSubagentRunId;
+	}
+
+	async editQueuedInput(inputId: string, text: string): Promise<boolean> {
+		const session = this.selectedSession;
+		const entry = this.inputQueue.find((candidate) => candidate.id === inputId);
+		if (!session || !entry || this.queueBusyId) return false;
+		this.queueBusyId = inputId;
+		this.error = undefined;
+		try {
+			await replaceQueuedInput(session.id, inputId, {
+				input: {
+					clientMessageId: inputId,
+					text,
+					delivery: entry.requestedDelivery
+				}
+			});
+			return true;
+		} catch (error) {
+			this.error = errorMessage(error);
+			return false;
+		} finally {
+			this.queueBusyId = undefined;
+		}
+	}
+
+	async moveQueuedInput(inputId: string, offset: -1 | 1): Promise<void> {
+		const session = this.selectedSession;
+		if (!session || this.queueBusyId) return;
+		const ids = this.inputQueue.map((entry) => entry.id);
+		const index = ids.indexOf(inputId);
+		const target = index + offset;
+		if (index < 0 || target < 0 || target >= ids.length) return;
+		[ids[index], ids[target]] = [ids[target]!, ids[index]!];
+		this.queueBusyId = inputId;
+		try {
+			await reorderQueuedInputs(session.id, { inputIds: ids });
+		} catch (error) {
+			this.error = errorMessage(error);
+		} finally {
+			this.queueBusyId = undefined;
+		}
+	}
+
+	async cancelQueuedInput(inputId: string): Promise<void> {
+		await this.#runQueueOperation(inputId, (sessionId) => cancelQueuedInputApi(sessionId, inputId));
+	}
+
+	async sendQueuedInputNow(inputId: string): Promise<void> {
+		await this.#runQueueOperation(inputId, (sessionId) =>
+			sendQueuedInputNowApi(sessionId, inputId)
+		);
+	}
+
 	setWorkMode(workMode: GatewaySession['execution']['configured']['workMode']): Promise<boolean> {
 		return this.#runControl((session) =>
 			setSessionWorkMode(session.id, {
@@ -402,6 +491,23 @@ class SessionWorkspace {
 		}
 	}
 
+	async #runQueueOperation(
+		inputId: string,
+		operation: (sessionId: string) => Promise<void>
+	): Promise<void> {
+		const session = this.selectedSession;
+		if (!session || this.queueBusyId) return;
+		this.queueBusyId = inputId;
+		this.error = undefined;
+		try {
+			await operation(session.id);
+		} catch (error) {
+			this.error = errorMessage(error);
+		} finally {
+			this.queueBusyId = undefined;
+		}
+	}
+
 	#applySessions(next: GatewaySession[]): void {
 		const byId = new Map(next.map((session) => [session.id, session]));
 		this.sessions = [...byId.values()];
@@ -409,6 +515,7 @@ class SessionWorkspace {
 			const removed = this.selectedSessionId;
 			this.#selectionGeneration += 1;
 			this.selectedSessionId = undefined;
+			this.selectedSubagentRunId = undefined;
 			this.projection = emptyConversationProjection();
 			this.#clearReplay();
 			this.streamState = 'idle';
@@ -443,6 +550,8 @@ class SessionWorkspace {
 					? {}
 					: { controlRevision: projected.controlRevision }),
 				pendingInteractions,
+				subagentRuns: projected.subagents.map((item) => item.run),
+				inputQueue: projected.inputQueue,
 				lastEventSequence: Math.max(session.lastEventSequence, event.sequence),
 				updatedAt: Math.max(session.updatedAt, event.timestamp)
 			};
@@ -452,6 +561,12 @@ class SessionWorkspace {
 	#publishReplay(): void {
 		if (!this.#replayProjection) return;
 		this.projection = this.#replayProjection;
+		if (
+			this.selectedSubagentRunId &&
+			!this.projection.subagents.some((item) => item.run.id === this.selectedSubagentRunId)
+		) {
+			this.selectedSubagentRunId = undefined;
+		}
 		this.#clearReplay();
 	}
 

@@ -7,6 +7,8 @@ import type {
 	GatewayAdapterAvailability,
 	GatewaySession,
 	InputAdmissionReceipt,
+	ReorderQueuedInputsRequest,
+	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
 	ResolveInteractionRequest,
 	ResumeSessionRequest,
@@ -42,6 +44,29 @@ export function sendSessionInput(
 	input: SendSessionInputRequest
 ): Promise<InputAdmissionReceipt> {
 	return desktop.sessions.send(sessionId, input);
+}
+
+export function replaceQueuedInput(
+	sessionId: string,
+	inputId: string,
+	input: ReplaceQueuedInputRequest
+): Promise<void> {
+	return desktop.sessions.replaceQueuedInput(sessionId, inputId, input);
+}
+
+export function reorderQueuedInputs(
+	sessionId: string,
+	input: ReorderQueuedInputsRequest
+): Promise<void> {
+	return desktop.sessions.reorderQueuedInputs(sessionId, input);
+}
+
+export function cancelQueuedInput(sessionId: string, inputId: string): Promise<void> {
+	return desktop.sessions.cancelQueuedInput(sessionId, inputId);
+}
+
+export function sendQueuedInputNow(sessionId: string, inputId: string): Promise<void> {
+	return desktop.sessions.sendQueuedInputNow(sessionId, inputId);
 }
 
 export function interruptSession(

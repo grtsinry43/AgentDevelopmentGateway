@@ -9,6 +9,7 @@
 export type Brand<T, B extends string> = T & { readonly __brand: B }
 
 export type SessionId = Brand<string, 'SessionId'>
+export type SubagentRunId = Brand<string, 'SubagentRunId'>
 export type TurnId = Brand<string, 'TurnId'>
 export type MessageId = Brand<string, 'MessageId'>
 export type ToolCallId = Brand<string, 'ToolCallId'>
@@ -18,6 +19,7 @@ export type InteractionId = Brand<string, 'InteractionId'>
 export type AdapterId = 'claude-code' | 'codex' | 'opencode'
 
 export const asSessionId = (value: string): SessionId => value as SessionId
+export const asSubagentRunId = (value: string): SubagentRunId => value as SubagentRunId
 export const asTurnId = (value: string): TurnId => value as TurnId
 export const asMessageId = (value: string): MessageId => value as MessageId
 export const asToolCallId = (value: string): ToolCallId => value as ToolCallId

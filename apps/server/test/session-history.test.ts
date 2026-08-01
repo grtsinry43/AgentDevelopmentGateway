@@ -39,9 +39,11 @@ test('replays durable history before following a resumed runtime tail', async ()
     })
     const sessionId = created.session.id
     const beforeClose = await waitForSequence(service, sessionId, created.receipt.admittedSequence + 6)
+    const firstTurnId = adapter.sendCalls[0]?.options.turnId
+    assert.ok(firstTurnId)
     adapter.emit(asSessionId(sessionId), {
       type: 'changes.updated',
-      turnId: asTurnId(created.receipt.turnId),
+      turnId: asTurnId(firstTurnId),
       payload: {
         changeSet: {
           id: 'tool:server-history-edit',
@@ -65,7 +67,7 @@ test('replays durable history before following a resumed runtime tail', async ()
     await waitForSequence(service, sessionId, beforeClose.lastEventSequence + 1)
     adapter.emit(asSessionId(sessionId), {
       type: 'task.updated',
-      turnId: asTurnId(created.receipt.turnId),
+      turnId: asTurnId(firstTurnId),
       payload: {
         update: {
           kind: 'replace',

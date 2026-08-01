@@ -316,6 +316,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
         cwd: input.projectPath,
         persistSession: true,
         includePartialMessages: true,
+        forwardSubagentText: true,
         settingSources: ['user', 'project', 'local'],
         env: { ...process.env, ...connection.context.env },
         canUseTool: bridge.canUseTool,
@@ -352,7 +353,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       query,
       input: sdkInput,
       events,
-      mapper: new ClaudeMessageMapper(input.projectPath),
+      mapper: new ClaudeMessageMapper(input.projectPath, input.id),
       bridge,
       capabilities: cloneCapabilities(input.connection.capabilities),
       execution: {

@@ -19,5 +19,8 @@
   },
   "dependencies": {
     "@agent-gateway/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
   }
 }

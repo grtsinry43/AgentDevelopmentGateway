@@ -33,9 +33,7 @@ export interface AgentSession {
   controlRevision: number
   status: SessionStatus
 
-  // --- lineage (Codex fork / subagent thread; OpenCode move) — docs/05 §3.1 ---
-  /** Parent when this session is a subagent thread / derived session. */
-  parentSessionId?: SessionId
+  // --- lineage for user-visible conversation forks — docs/05 §3.1 ---
   /** Source session this was forked from. */
   forkedFromSessionId?: SessionId
   /** Where the fork was cut (Codex last_turn_id / before_turn_id). */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { asTurnId } from '@agent-gateway/core';
+import { asSessionId, asTurnId } from '@agent-gateway/core';
 import type {
 	SDKAssistantMessage,
 	SDKMessage,
@@ -299,6 +299,49 @@ test('emits a Core task update only after a successful Claude TodoWrite result',
 	assert.equal(update?.payload.update.kind, 'replace');
 	if (update?.payload.update.kind !== 'replace') throw new Error('Expected task replacement');
 	assert.equal(update.payload.update.tasks[0]?.activeText, 'Rendering task panel');
+});
+
+test('maps Claude subagent task lifecycle to provider-neutral child runs', () => {
+	const mapper = new ClaudeMessageMapper(
+		'/workspace',
+		asSessionId('11111111-1111-4111-8111-111111111111')
+	);
+	const started = mapper.map(
+		{
+			type: 'system',
+			subtype: 'task_started',
+			task_id: 'native-agent-1',
+			tool_use_id: 'agent-tool-1',
+			task_type: 'subagent',
+			subagent_type: 'Explore',
+			description: 'Inspect the runtime',
+			prompt: 'Trace the event path',
+			uuid: 'native-start-1',
+			session_id: 'native-session'
+		} as unknown as SDKMessage,
+		{ turnId }
+	);
+	const completed = mapper.map(
+		{
+			type: 'system',
+			subtype: 'task_notification',
+			task_id: 'native-agent-1',
+			tool_use_id: 'agent-tool-1',
+			status: 'completed',
+			output_file: '/tmp/agent-output',
+			summary: 'Runtime path verified',
+			uuid: 'native-complete-1',
+			session_id: 'native-session'
+		} as unknown as SDKMessage,
+		{ turnId }
+	);
+
+	assert.equal(started[0]?.type, 'subagent.started');
+	assert.equal(started[0]?.payload.run.agentName, 'Explore');
+	assert.equal(started[0]?.attribution?.parentToolCallId, 'agent-tool-1');
+	assert.equal(completed[0]?.type, 'subagent.completed');
+	assert.equal(completed[0]?.payload.run.resultSummary, 'Runtime path verified');
+	assert.equal(completed[0]?.payload.run.id, started[0]?.payload.run.id);
 });
 
 async function mapFixture(name: string) {

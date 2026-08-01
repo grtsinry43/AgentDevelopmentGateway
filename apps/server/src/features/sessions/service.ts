@@ -7,7 +7,7 @@ import {
   type RuntimeEvent,
   type SessionId
 } from '@agent-gateway/core'
-import type { RuntimeSessionManager } from '@agent-gateway/runtime'
+import { projectDurableRuntimeState, type RuntimeSessionManager } from '@agent-gateway/runtime'
 import { GatewayHttpError } from '../../http/errors.js'
 import type { ProjectRepository } from '../projects/repository.js'
 import type {
@@ -17,6 +17,8 @@ import type {
   ForkSessionBody,
   InterruptSessionBody,
   ResolveInteractionBody,
+  ReorderQueuedInputsBody,
+  ReplaceQueuedInputBody,
   ResumeSessionBody,
   SendSessionInputBody,
   SendSessionInputResult,
@@ -45,6 +47,7 @@ export class SessionService {
   ) {}
 
   recoverInterruptedSessions(): number {
+    this.repairDurableProjections()
     return this.repository.interruptActive()
   }
 
@@ -71,7 +74,9 @@ export class SessionService {
     const stored: StoredSession = {
       session: snapshot.session,
       capabilities: snapshot.capabilities,
-      taskState: snapshot.taskState
+      taskState: snapshot.taskState,
+      subagentRuns: snapshot.subagentRuns,
+      inputQueue: snapshot.inputQueue
     }
     let observer: Promise<void> | undefined
     try {
@@ -80,13 +85,15 @@ export class SessionService {
       this.runtime.setSessionTitle(snapshot.session.id, titleFromInput(input.initialInput.text))
       const receipt = await this.runtime.send(snapshot.session.id, input.initialInput)
       const current = this.runtime.getSession(snapshot.session.id)
-      this.repository.updateSnapshot(current.session, current.capabilities, current.taskState)
+      this.persistSnapshot(current)
       return {
         session: toResponse(
           {
             session: current.session,
             capabilities: current.capabilities,
-            taskState: current.taskState
+            taskState: current.taskState,
+            subagentRuns: current.subagentRuns,
+            inputQueue: current.inputQueue
           },
           current.pendingInteractions
         ),
@@ -102,18 +109,52 @@ export class SessionService {
   }
 
   async send(id: string, body: SendSessionInputBody): Promise<SendSessionInputResult> {
-    const sessionId = asSessionId(id)
-    if (!this.repository.findById(id)) {
-      throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
-    }
-    if (!this.runtime.listSessions().some((snapshot) => snapshot.session.id === sessionId)) {
+    const sessionId = this.requireActive(id)
+    return this.runtime.send(sessionId, body.input)
+  }
+
+  async replaceQueuedInput(
+    id: string,
+    inputId: string,
+    body: ReplaceQueuedInputBody
+  ): Promise<void> {
+    const sessionId = this.requireQueuedInput(id, inputId)
+    if (body.input.clientMessageId !== inputId) {
       throw new GatewayHttpError(
-        409,
-        'SESSION_NOT_ACTIVE',
-        'Session is not active in this Server process'
+        400,
+        'INPUT_ID_MISMATCH',
+        'Input id does not match the route input id'
       )
     }
-    return this.runtime.send(sessionId, body.input)
+    await this.runtime.replaceQueuedInput(sessionId, body.input)
+  }
+
+  async reorderQueuedInputs(id: string, body: ReorderQueuedInputsBody): Promise<void> {
+    const sessionId = this.requireActive(id)
+    const snapshot = this.runtime.getSession(sessionId)
+    const pendingIds = new Set(snapshot.inputQueue.map((entry) => entry.id))
+    if (
+      body.inputIds.length !== pendingIds.size ||
+      new Set(body.inputIds).size !== body.inputIds.length ||
+      body.inputIds.some((inputId) => !pendingIds.has(inputId))
+    ) {
+      throw new GatewayHttpError(
+        409,
+        'INPUT_QUEUE_CHANGED',
+        'Input order must contain every currently queued input exactly once'
+      )
+    }
+    await this.runtime.reorderQueuedInputs(sessionId, body.inputIds)
+  }
+
+  async cancelQueuedInput(id: string, inputId: string): Promise<void> {
+    const sessionId = this.requireQueuedInput(id, inputId)
+    await this.runtime.cancelQueuedInput(sessionId, inputId)
+  }
+
+  async sendQueuedInputNow(id: string, inputId: string): Promise<void> {
+    const sessionId = this.requireQueuedInput(id, inputId)
+    await this.runtime.sendQueuedInputNow(sessionId, inputId)
   }
 
   async interrupt(id: string, body: InterruptSessionBody): Promise<void> {
@@ -141,7 +182,7 @@ export class SessionService {
     const sessionId = this.requireActive(id)
     const receipt = await this.runtime.closeSession(sessionId, body)
     const snapshot = this.runtime.getSession(sessionId)
-    this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
+    this.persistSnapshot(snapshot)
     return receipt
   }
 
@@ -155,6 +196,7 @@ export class SessionService {
     }
     const project = this.projects.findById(stored.session.projectId)
     if (!project) throw new GatewayHttpError(404, 'PROJECT_NOT_FOUND', 'Project was not found')
+    const durable = projectDurableRuntimeState(this.eventsRepository.listAfter(id))
     const snapshot = await this.runtime.resumeSession({
       sessionId: stored.session.id,
       projectId: stored.session.projectId,
@@ -168,15 +210,20 @@ export class SessionService {
       runtimeSessionId: stored.session.runtimeSessionId,
       previousSession: stored.session,
       providerStateSnapshot: stored.session.providerStateSnapshot,
-      taskState: stored.taskState
+      taskState: stored.taskState,
+      subagentRuns: durable.subagentRuns,
+      inputQueue: durable.inputQueue,
+      inputAdmissions: durable.inputAdmissions
     })
-    this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
+    this.persistSnapshot(snapshot)
     this.observe(snapshot.session.id)
     return toResponse(
       {
         session: snapshot.session,
         capabilities: snapshot.capabilities,
-        taskState: snapshot.taskState
+        taskState: snapshot.taskState,
+        subagentRuns: snapshot.subagentRuns,
+        inputQueue: snapshot.inputQueue
       },
       snapshot.pendingInteractions
     )
@@ -192,7 +239,9 @@ export class SessionService {
     const stored = {
       session: snapshot.session,
       capabilities: snapshot.capabilities,
-      taskState: snapshot.taskState
+      taskState: snapshot.taskState,
+      subagentRuns: snapshot.subagentRuns,
+      inputQueue: snapshot.inputQueue
     }
     try {
       this.repository.create(stored)
@@ -263,7 +312,7 @@ export class SessionService {
   get(id: string): SessionResponse {
     const sessionId = asSessionId(id)
     const live = this.runtime.listSessions().find((snapshot) => snapshot.session.id === sessionId)
-    if (live) this.repository.updateSnapshot(live.session, live.capabilities, live.taskState)
+    if (live) this.persistSnapshot(live)
     const stored = this.repository.findById(id)
     if (!stored) throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
     return toResponse(stored, live?.pendingInteractions)
@@ -297,7 +346,7 @@ export class SessionService {
       for await (const event of this.runtime.events(sessionId)) {
         void event
         const snapshot = this.runtime.getSession(sessionId)
-        this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
+        this.persistSnapshot(snapshot)
       }
     } catch (error) {
       this.reportObserverError(error, sessionId)
@@ -306,7 +355,32 @@ export class SessionService {
 
   private refreshRuntimeSnapshots(projectId: string): void {
     for (const snapshot of this.runtime.listSessions(projectId)) {
-      this.repository.updateSnapshot(snapshot.session, snapshot.capabilities, snapshot.taskState)
+      this.persistSnapshot(snapshot)
+    }
+  }
+
+  private persistSnapshot(snapshot: ReturnType<RuntimeSessionManager['getSession']>): void {
+    this.repository.updateSnapshot(
+      snapshot.session,
+      snapshot.capabilities,
+      snapshot.taskState,
+      snapshot.subagentRuns,
+      snapshot.inputQueue
+    )
+  }
+
+  private repairDurableProjections(): void {
+    for (const stored of this.repository.listAll()) {
+      const events = this.eventsRepository.listAfter(stored.session.id)
+      if (events.length === 0) continue
+      const durable = projectDurableRuntimeState(events)
+      this.repository.updateSnapshot(
+        stored.session,
+        stored.capabilities,
+        stored.taskState,
+        durable.subagentRuns,
+        durable.inputQueue
+      )
     }
   }
 
@@ -323,6 +397,17 @@ export class SessionService {
     }
     if (!this.isActive(sessionId)) {
       throw new GatewayHttpError(409, 'SESSION_NOT_ACTIVE', 'Session is not active in this Server process')
+    }
+    return sessionId
+  }
+
+  private requireQueuedInput(id: string, inputId: string): SessionId {
+    const sessionId = this.requireActive(id)
+    const queued = this.runtime
+      .getSession(sessionId)
+      .inputQueue.some((entry) => entry.id === inputId)
+    if (!queued) {
+      throw new GatewayHttpError(404, 'QUEUED_INPUT_NOT_FOUND', 'Queued input was not found')
     }
     return sessionId
   }
@@ -385,6 +470,8 @@ function toResponse(
     capabilities: stored.capabilities,
     pendingInteractions,
     taskState: stored.taskState,
+    subagentRuns: stored.subagentRuns,
+    inputQueue: stored.inputQueue,
     status: session.status,
     ...(session.title ? { title: session.title } : {}),
     lastEventSequence: session.lastEventSequence,

@@ -11,6 +11,8 @@ import {
   inputAdmissionReceiptSchema,
   interruptSessionRequestSchema,
   projectSessionsParamsSchema,
+  reorderQueuedInputsRequestSchema,
+  replaceQueuedInputRequestSchema,
   sendSessionInputRequestSchema,
   resolveInteractionRequestSchema,
   resumeSessionRequestSchema,
@@ -23,6 +25,7 @@ import {
   sessionListResponseSchema,
   sessionParamsSchema,
   sessionInteractionParamsSchema,
+  sessionInputParamsSchema,
   sessionSchema
 } from './schemas.js'
 
@@ -206,6 +209,68 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
     async (request, reply) => {
       const receipt = await options.sessions.send(request.params.sessionId, request.body)
       return reply.code(202).send(receipt)
+    }
+  )
+
+  server.patch(
+    '/sessions/:sessionId/input-queue/:inputId',
+    {
+      schema: {
+        params: sessionInputParamsSchema,
+        body: replaceQueuedInputRequestSchema,
+        response: { ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.sessions.replaceQueuedInput(
+        request.params.sessionId,
+        request.params.inputId,
+        request.body
+      )
+      reply.code(204)
+    }
+  )
+
+  server.put(
+    '/sessions/:sessionId/input-queue/order',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: reorderQueuedInputsRequestSchema,
+        response: { ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.sessions.reorderQueuedInputs(request.params.sessionId, request.body)
+      reply.code(204)
+    }
+  )
+
+  server.delete(
+    '/sessions/:sessionId/input-queue/:inputId',
+    {
+      schema: {
+        params: sessionInputParamsSchema,
+        response: { ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.sessions.cancelQueuedInput(request.params.sessionId, request.params.inputId)
+      reply.code(204)
+    }
+  )
+
+  server.post(
+    '/sessions/:sessionId/input-queue/:inputId/send',
+    {
+      schema: {
+        params: sessionInputParamsSchema,
+        response: { ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.sessions.sendQueuedInputNow(request.params.sessionId, request.params.inputId)
+      reply.code(204)
     }
   )
 

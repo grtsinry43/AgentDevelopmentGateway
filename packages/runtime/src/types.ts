@@ -2,6 +2,7 @@ import type {
   AdapterId,
   AgentSession,
   InteractionRequest,
+  InputQueueEntry,
   ModelSelection,
   RuntimeAdapterDescriptor,
   RuntimeConnection,
@@ -12,7 +13,9 @@ import type {
   SessionId,
   SessionExecutionSettings,
   TaskState,
+  SubagentRun,
 } from '@agent-gateway/core'
+import type { RuntimeInputAdmission } from './runtime-projection.js'
 
 export interface RuntimeAdapterAvailability {
   adapterId: AdapterId
@@ -40,6 +43,8 @@ export interface RuntimeSessionSnapshot {
   capabilities: RuntimeConnection['capabilities']
   pendingInteractions: InteractionRequest[]
   taskState: TaskState
+  subagentRuns: SubagentRun[]
+  inputQueue: InputQueueEntry[]
 }
 
 export interface RuntimeControlOptions {
@@ -57,6 +62,9 @@ export interface ResumeRuntimeSessionInput extends CreateRuntimeSessionInput {
   cursor?: import('@agent-gateway/core').ResumeCursor
   providerStateSnapshot?: string
   taskState: TaskState
+  subagentRuns: SubagentRun[]
+  inputQueue: InputQueueEntry[]
+  inputAdmissions: RuntimeInputAdmission[]
 }
 
 export interface ForkRuntimeSessionInput {
