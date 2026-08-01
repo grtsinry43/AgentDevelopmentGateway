@@ -12,6 +12,8 @@ import type {
 	CloseSessionRequest,
 	ForkSessionRequest,
 	GatewayAdapterAvailability,
+	GatewayAdapterId,
+	GatewayModelCatalog,
 	GitChangeArea,
 	GitCommitResponse,
 	GitDiffResponse,
@@ -21,6 +23,7 @@ import type {
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
+	ListModelsQuery,
 	ResolveInteractionRequest,
 	ResumeSessionRequest,
 	RuntimeControlReceipt,
@@ -64,6 +67,8 @@ export const IPC = {
 
 	sessionsList: 'sessions:list',
 	sessionsAdapters: 'sessions:adapters',
+	sessionsModels: 'sessions:models',
+	sessionsSessionModels: 'sessions:sessionModels',
 	sessionsCreate: 'sessions:create',
 	sessionsSend: 'sessions:send',
 	sessionsQueueReplace: 'sessions:queueReplace',
@@ -275,6 +280,12 @@ export interface DesktopBridge {
 		list(projectKey: string): Promise<GatewaySession[]>;
 		get(sessionId: string): Promise<GatewaySession>;
 		adapters(projectKey: string): Promise<GatewayAdapterAvailability[]>;
+		models(
+			projectKey: string,
+			adapterId: GatewayAdapterId,
+			query?: ListModelsQuery
+		): Promise<GatewayModelCatalog>;
+		sessionModels(sessionId: string): Promise<GatewayModelCatalog>;
 		create(projectKey: string, input: CreateSessionRequest): Promise<CreateSessionResponse>;
 		send(sessionId: string, input: SendSessionInputRequest): Promise<InputAdmissionReceipt>;
 		replaceQueuedInput(

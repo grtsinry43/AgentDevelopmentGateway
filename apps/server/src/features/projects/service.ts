@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 import { basename, isAbsolute, normalize, parse } from 'node:path'
+import type { AdapterId, ModelCatalog } from '@agent-gateway/core'
 import type { RuntimeAdapterAvailability, RuntimeSessionManager } from '@agent-gateway/runtime'
 import { GatewayHttpError } from '../../http/errors.js'
 import type { SessionRepository } from '../sessions/repository.js'
@@ -75,6 +76,20 @@ export class ProjectService {
       hostId: project.hostId,
       platform: process.platform,
       env: this.hostEnvironment
+    })
+  }
+
+  listModels(id: string, adapterId: AdapterId, installationPath?: string): Promise<ModelCatalog> {
+    const project = this.require(id)
+    return this.runtime.listModels({
+      host: {
+        hostId: project.hostId,
+        platform: process.platform,
+        env: this.hostEnvironment
+      },
+      projectPath: project.path,
+      adapterId,
+      installationPath
     })
   }
 

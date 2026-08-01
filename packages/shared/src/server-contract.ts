@@ -265,6 +265,25 @@ export const adapterAvailabilitySchema = z.strictObject({
 export const adaptersResponseSchema = z.strictObject({
   adapters: z.array(adapterAvailabilitySchema),
 })
+export const modelReasoningEffortSchema = z.strictObject({
+  id: z.string().min(1),
+  displayName: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
+})
+export const runtimeModelSchema = z.strictObject({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  description: z.string().min(1).optional(),
+  isDefault: z.boolean().optional(),
+  defaultReasoningEffort: z.string().min(1).optional(),
+  reasoningEfforts: z.array(modelReasoningEffortSchema),
+})
+export const modelCatalogSchema = z.strictObject({
+  models: z.array(runtimeModelSchema),
+})
+export const listModelsQuerySchema = z.strictObject({
+  installationPath: z.string().min(1).optional(),
+})
 
 export const sessionStatusSchema = z.enum([
   'starting',
@@ -753,6 +772,9 @@ export type CreateTerminalRequest = z.infer<typeof createTerminalRequestSchema>
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>
 export type TerminalServerMessage = z.infer<typeof terminalServerMessageSchema>
 export type GatewayAdapterAvailability = z.infer<typeof adapterAvailabilitySchema>
+export type GatewayModelCatalog = z.infer<typeof modelCatalogSchema>
+export type GatewayRuntimeModel = z.infer<typeof runtimeModelSchema>
+export type ListModelsQuery = z.infer<typeof listModelsQuerySchema>
 export type GatewaySession = z.infer<typeof sessionSchema>
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>
 export type SendSessionInputRequest = z.infer<typeof sendSessionInputRequestSchema>

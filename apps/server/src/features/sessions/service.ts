@@ -4,6 +4,7 @@ import {
   type AgentSession,
   type InteractionRequest,
   type InteractionResolution,
+  type ModelCatalog,
   type RuntimeEvent,
   type SessionId
 } from '@agent-gateway/core'
@@ -261,15 +262,92 @@ export class SessionService {
   }
 
   async setModel(id: string, body: SetSessionModelBody): Promise<SessionControlResult> {
-    const sessionId = this.requireActive(id)
-    return this.runtime.setModel(
-      sessionId,
-      {
-        model: body.model,
-        ...(body.reasoningEffort ? { reasoningEffort: body.reasoningEffort } : {})
-      },
-      body
+    const stored = this.requireStored(id)
+    if (this.isActive(stored.session.id)) {
+      return this.runtime.setModel(
+        stored.session.id,
+        {
+          model: body.model,
+          ...(body.reasoningEffort ? { reasoningEffort: body.reasoningEffort } : {})
+        },
+        body
+      )
+    }
+    if (stored.capabilities.modelSwitch === 'unsupported') {
+      throw new GatewayHttpError(422, 'CAPABILITY_UNSUPPORTED', 'Model switching is unsupported')
+    }
+    if (
+      body.expectedRevision !== undefined &&
+      body.expectedRevision !== stored.session.controlRevision
+    ) {
+      throw new GatewayHttpError(
+        409,
+        'SESSION_REVISION_CONFLICT',
+        `Session revision is ${stored.session.controlRevision}, expected ${body.expectedRevision}`
+      )
+    }
+    const catalog = await this.listModels(id)
+    const model = catalog.models.find((candidate) => candidate.id === body.model)
+    if (!model) {
+      throw new GatewayHttpError(422, 'VALIDATION_ERROR', `Unknown model: ${body.model}`)
+    }
+    if (
+      body.reasoningEffort &&
+      !model.reasoningEfforts.some((effort) => effort.id === body.reasoningEffort)
+    ) {
+      throw new GatewayHttpError(
+        422,
+        'VALIDATION_ERROR',
+        `Model ${body.model} does not support reasoning effort ${body.reasoningEffort}`
+      )
+    }
+
+    const previousEvents = this.eventsRepository.listAfter(id)
+    const now = Date.now()
+    const controlRevision = stored.session.controlRevision + 1
+    const sequence = stored.session.lastEventSequence + 1
+    const selection = {
+      model: body.model,
+      ...(body.reasoningEffort ? { reasoningEffort: body.reasoningEffort } : {})
+    }
+    const session: AgentSession = {
+      ...stored.session,
+      model: selection,
+      controlRevision,
+      lastEventSequence: sequence,
+      updatedAt: now
+    }
+    this.repository.updateSnapshot(
+      session,
+      stored.capabilities,
+      stored.taskState,
+      stored.subagentRuns,
+      stored.inputQueue
     )
+    this.eventsRepository.append({
+      id: (previousEvents.at(-1)?.id ?? 0) + 1,
+      sequence,
+      sessionId: session.id,
+      adapterId: session.adapterId,
+      timestamp: now,
+      type: 'session.model_changed',
+      payload: { model: selection, controlRevision }
+    })
+    return { controlRevision }
+  }
+
+  listModels(id: string): Promise<ModelCatalog> {
+    const stored = this.requireStored(id)
+    if (this.isActive(stored.session.id)) {
+      return this.runtime.listSessionModels(stored.session.id)
+    }
+    const project = this.projects.findById(stored.session.projectId)
+    if (!project) throw new GatewayHttpError(404, 'PROJECT_NOT_FOUND', 'Project was not found')
+    return this.runtime.listModels({
+      host: { hostId: project.hostId, platform: process.platform, env: this.hostEnvironment },
+      projectPath: project.path,
+      adapterId: stored.session.adapterId
+    })
   }
 
   async setWorkMode(id: string, body: SetWorkModeBody): Promise<SessionControlResult> {

@@ -13,8 +13,10 @@ import type {
   CloseSessionRequest,
   CreateSessionRequest,
   ForkSessionRequest,
+  GatewayAdapterId,
   GitChangeArea,
   InterruptSessionRequest,
+  ListModelsQuery,
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
   ResolveInteractionRequest,
@@ -94,6 +96,10 @@ const bridge: DesktopBridge = {
     list: (projectKey: string) => ipcRenderer.invoke(IPC.sessionsList, projectKey),
     get: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsGet, sessionId),
     adapters: (projectKey: string) => ipcRenderer.invoke(IPC.sessionsAdapters, projectKey),
+    models: (projectKey: string, adapterId: GatewayAdapterId, query: ListModelsQuery = {}) =>
+      ipcRenderer.invoke(IPC.sessionsModels, projectKey, adapterId, query),
+    sessionModels: (sessionId: string) =>
+      ipcRenderer.invoke(IPC.sessionsSessionModels, sessionId),
     create: (projectKey: string, input: CreateSessionRequest) =>
       ipcRenderer.invoke(IPC.sessionsCreate, projectKey, input),
     send: (sessionId: string, input: SendSessionInputRequest) =>

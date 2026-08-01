@@ -19,8 +19,24 @@ test('keeps Gateway turn ids authoritative while addressing Codex by native turn
       context,
       installation: { path: executable, version: 'test', source: 'custom' },
     })
+    const catalog = await adapter.listModels({ connection, projectPath: directory })
+    assert.deepEqual(catalog.models[0], {
+      id: 'gpt-test',
+      displayName: 'GPT Test',
+      isDefault: true,
+      defaultReasoningEffort: 'medium',
+      reasoningEfforts: [
+        { id: 'low', displayName: 'low', description: 'Faster' },
+        { id: 'medium', displayName: 'medium', description: 'Balanced' },
+      ],
+    })
     const sessionId = asSessionId('gateway-session')
-    await adapter.createSession({ sessionId, projectPath: directory, connection })
+    await adapter.createSession({
+      sessionId,
+      projectPath: directory,
+      connection,
+      model: { model: 'gpt-test', reasoningEffort: 'medium' },
+    })
     const events = adapter.events(sessionId)[Symbol.asyncIterator]()
     assert.equal((await events.next()).value?.type, 'session.created')
     assert.equal((await events.next()).value?.type, 'session.status_changed')
@@ -50,6 +66,18 @@ lines.on('line', (line) => {
   const message = JSON.parse(line)
   if (message.method === 'initialize') {
     send({ jsonrpc: '2.0', id: message.id, result: {} })
+  } else if (message.method === 'model/list') {
+    send({ jsonrpc: '2.0', id: message.id, result: { data: [{
+      id: 'gpt-test',
+      model: 'gpt-test',
+      displayName: 'GPT Test',
+      isDefault: true,
+      defaultReasoningEffort: 'medium',
+      supportedReasoningEfforts: [
+        { reasoningEffort: 'low', description: 'Faster' },
+        { reasoningEffort: 'medium', description: 'Balanced' }
+      ]
+    }], nextCursor: null } })
   } else if (message.method === 'thread/start') {
     send({ jsonrpc: '2.0', id: message.id, result: { thread: { id: 'native-thread' } } })
   } else if (message.method === 'turn/start') {

@@ -19,6 +19,7 @@ import {
   type InteractionRequest,
   type InteractionResolution,
   type InterruptOptions,
+  type ModelCatalog,
   type ModelSelection,
   type RuntimeAdapter,
   type RuntimeConnection,
@@ -36,6 +37,7 @@ import { RuntimeSessionEventStream } from './session-event-stream.js'
 import type {
   CreateRuntimeSessionInput,
   ForkRuntimeSessionInput,
+  ListRuntimeModelsInput,
   ResumeRuntimeSessionInput,
   RuntimeAdapterAvailability,
   RuntimeControlOptions,
@@ -63,10 +65,18 @@ interface ManagedSession {
   taskState: TaskState
 }
 
+interface ModelCatalogCacheEntry {
+  promise: Promise<ModelCatalog>
+  expiresAt?: number
+}
+
+const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000
+
 /** Owns Gateway session identity, immutable adapter binding, and provider event consumption. */
 export class RuntimeSessionManager {
   private readonly connections: RuntimeConnectionManager
   private readonly sessions = new Map<SessionId, ManagedSession>()
+  private readonly modelCatalogs = new Map<string, ModelCatalogCacheEntry>()
   private nextEventId = 1
 
   constructor(
@@ -78,6 +88,65 @@ export class RuntimeSessionManager {
 
   inspectAdapters(input: CreateRuntimeSessionInput['host']): Promise<RuntimeAdapterAvailability[]> {
     return this.registry.inspect(input)
+  }
+
+  async listModels(input: ListRuntimeModelsInput): Promise<ModelCatalog> {
+    const adapter = this.registry.get(input.adapterId)
+    if (!adapter.listModels || !adapter.descriptor.capabilities.features['model.catalog']) {
+      throw unsupported('model catalog')
+    }
+    const connection = await this.connections.connect(input.adapterId, input.host, input.installationPath)
+    return this.loadModelCatalog(adapter, connection, input.projectPath)
+  }
+
+  listSessionModels(sessionId: SessionId): Promise<ModelCatalog> {
+    const managed = this.requireSession(sessionId)
+    if (!managed.adapter.listModels || !managed.connection.capabilities.features['model.catalog']) {
+      throw unsupported('model catalog')
+    }
+    return this.loadModelCatalog(
+      managed.adapter,
+      managed.connection,
+      managed.projectPath,
+      sessionId,
+    )
+  }
+
+  private loadModelCatalog(
+    adapter: RuntimeAdapter,
+    connection: RuntimeConnection,
+    projectPath: string,
+    sessionId?: SessionId,
+  ): Promise<ModelCatalog> {
+    const key = JSON.stringify([adapter.descriptor.id, connection.id, projectPath])
+    const now = Date.now()
+    const existing = this.modelCatalogs.get(key)
+    if (existing && (existing.expiresAt === undefined || existing.expiresAt > now)) {
+      return existing.promise
+    }
+
+    const entry: ModelCatalogCacheEntry = {
+      promise: adapter
+        .listModels!({
+          connection,
+          projectPath,
+          ...(sessionId ? { sessionId } : {}),
+        })
+        .then((catalog) => {
+          if (catalog.models.length === 0) {
+            if (this.modelCatalogs.get(key) === entry) this.modelCatalogs.delete(key)
+          } else {
+            entry.expiresAt = Date.now() + MODEL_CATALOG_TTL_MS
+          }
+          return catalog
+        })
+        .catch((error: unknown) => {
+          if (this.modelCatalogs.get(key) === entry) this.modelCatalogs.delete(key)
+          throw error
+        }),
+    }
+    this.modelCatalogs.set(key, entry)
+    return entry.promise
   }
 
   async createSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionSnapshot> {
@@ -249,6 +318,7 @@ export class RuntimeSessionManager {
         projectPath: input.projectPath,
         runtimeSessionId: input.runtimeSessionId,
         connection,
+        model: input.model,
         cursor: input.cursor,
         providerStateSnapshot: input.providerStateSnapshot,
         execution: configured,
@@ -332,6 +402,7 @@ export class RuntimeSessionManager {
         projectPath: source.projectPath,
         runtimeSessionId: source.session.runtimeSessionId,
         connection: source.connection,
+        model: source.session.model,
         forkPoint: input.forkPoint,
         execution: configured,
       })
@@ -412,7 +483,10 @@ export class RuntimeSessionManager {
       }
       await managed.adapter.setModel(sessionId, model)
       this.bumpControlRevision(managed)
-      this.append(managed, { type: 'session.model_changed', payload: { model: { ...model } } })
+      this.append(managed, {
+        type: 'session.model_changed',
+        payload: { model: { ...model }, controlRevision: managed.session.controlRevision },
+      })
       return { controlRevision: managed.session.controlRevision }
     })
   }

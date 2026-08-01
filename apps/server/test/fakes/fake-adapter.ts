@@ -12,6 +12,7 @@ import {
   type SessionExecutionSettings,
   type ExecutionConfigurationResult,
   type InteractionResolution,
+  type ModelCatalog,
   type ModelSelection,
   type SendOptions,
   type SessionId,
@@ -53,7 +54,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
           update: 'in-session',
           granularRules: true,
         },
-        features: { 'session.resume': true, 'session.fork': true },
+        features: { 'session.resume': true, 'session.fork': true, 'model.catalog': true },
         raw: []
       }
     }
@@ -148,6 +149,23 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
       payload: { id: resolution.id, resolution }
     })
     return Promise.resolve()
+  }
+
+  listModels(): Promise<ModelCatalog> {
+    return Promise.resolve({
+      models: [
+        {
+          id: 'test-model',
+          displayName: 'Test Model',
+          isDefault: true,
+          defaultReasoningEffort: 'medium',
+          reasoningEfforts: [
+            { id: 'low', displayName: 'Low' },
+            { id: 'medium', displayName: 'Medium' },
+          ],
+        },
+      ],
+    })
   }
 
   setModel(_sessionId: SessionId, model: ModelSelection): Promise<void> {

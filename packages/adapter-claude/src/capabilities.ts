@@ -15,6 +15,7 @@ export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
   },
   features: {
     'session.resume': true,
+    'model.catalog': true,
     'output.partial_text': true,
     'output.partial_reasoning': true,
     'tool.input_stream': true,

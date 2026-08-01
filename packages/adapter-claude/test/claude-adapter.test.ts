@@ -73,8 +73,8 @@ test('creates one initialized Query and reuses its input stream across turns', a
 
   await adapter.interrupt(sessionId)
   assert.equal(fake.interruptCount, 1)
-  await adapter.setModel(sessionId, { model: 'claude-sonnet-4-6' })
-  assert.deepEqual(fake.models, ['claude-sonnet-4-6'])
+  await adapter.setModel(sessionId, { model: 'claude-sonnet-4-6', reasoningEffort: 'high' })
+  assert.deepEqual(fake.flagSettings, [{ model: 'claude-sonnet-4-6', effortLevel: 'high' }])
   await adapter.disposeSession(sessionId)
   assert.equal(fake.closed, true)
 })
@@ -92,6 +92,7 @@ test('resumes with the runtime-owned project path and message cursor', async () 
     projectPath: '/remote/workspace/project',
     runtimeSessionId: 'provider-session',
     connection,
+    model: { model: 'claude-opus-4-6', reasoningEffort: 'max' },
     cursor: { by: 'message', messageUuid: 'message-cut' },
   })
   fake.resolveInitialization()
@@ -100,7 +101,73 @@ test('resumes with the runtime-owned project path and message cursor', async () 
   assert.equal(captured?.options?.cwd, '/remote/workspace/project')
   assert.equal(captured?.options?.resume, 'provider-session')
   assert.equal(captured?.options?.resumeSessionAt, 'message-cut')
+  assert.equal(captured?.options?.model, 'claude-opus-4-6')
+  assert.equal(captured?.options?.effort, 'max')
   assert.equal(captured?.options?.sessionId, undefined)
+})
+
+test('maps the SDK model catalog and closes its discovery Query', async () => {
+  const fake = new FakeClaudeQuery()
+  fake.modelCatalog.push({
+    value: 'default',
+    resolvedModel: 'claude-sonnet-4-6',
+    displayName: 'Default',
+    description: 'Balanced model',
+    supportsEffort: true,
+    supportedEffortLevels: ['low', 'high'],
+  })
+  const adapter = new ClaudeAdapter(() => fake)
+  const connection = await connect(adapter)
+
+  const catalog = await adapter.listModels({ connection, projectPath: '/workspace/project' })
+
+  assert.deepEqual(catalog, {
+    models: [
+      {
+        id: 'default',
+        displayName: 'Default',
+        description: 'Balanced model',
+        isDefault: true,
+        reasoningEfforts: [
+          { id: 'low', displayName: 'low' },
+          { id: 'high', displayName: 'high' },
+        ],
+      },
+    ],
+  })
+  assert.equal(fake.closed, true)
+})
+
+test('lists models from the active session Query without creating a discovery Query', async () => {
+  const fake = new FakeClaudeQuery()
+  fake.modelCatalog.push({
+    value: 'sonnet',
+    resolvedModel: 'claude-sonnet-4-6',
+    displayName: 'Sonnet',
+    description: 'Balanced model',
+    supportsEffort: true,
+    supportedEffortLevels: ['high'],
+  })
+  let factoryCalls = 0
+  const adapter = new ClaudeAdapter(() => {
+    factoryCalls += 1
+    return fake
+  })
+  const connection = await connect(adapter)
+  const sessionId = asSessionId('catalog-session')
+  const creating = adapter.createSession({ sessionId, projectPath: '/workspace/project', connection })
+  fake.resolveInitialization()
+  await creating
+
+  const catalog = await adapter.listModels({
+    connection,
+    projectPath: '/workspace/project',
+    sessionId,
+  })
+
+  assert.equal(catalog.models[0]?.id, 'sonnet')
+  assert.equal(factoryCalls, 1)
+  assert.equal(fake.closed, false)
 })
 
 test('cleans up a Query whose initialization fails', async () => {

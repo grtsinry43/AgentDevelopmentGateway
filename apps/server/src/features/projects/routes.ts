@@ -5,7 +5,10 @@ import type { ProjectService } from './service.js'
 import {
   adaptersResponseSchema,
   createProjectBodySchema,
+  listModelsQuerySchema,
+  modelCatalogSchema,
   projectErrorResponses,
+  projectAgentParamsSchema,
   projectListResponseSchema,
   projectParamsSchema,
   projectSchema
@@ -73,5 +76,22 @@ export const projectRoutes: FastifyPluginAsyncZod<ProjectRoutesOptions> = async 
       }
     },
     async (request) => ({ adapters: await options.projects.inspectAdapters(request.params.id) })
+  )
+
+  server.get(
+    '/projects/:id/agents/:adapterId/models',
+    {
+      schema: {
+        params: projectAgentParamsSchema,
+        querystring: listModelsQuerySchema,
+        response: { 200: modelCatalogSchema, ...projectErrorResponses }
+      }
+    },
+    async (request) =>
+      options.projects.listModels(
+        request.params.id,
+        request.params.adapterId,
+        request.query.installationPath
+      )
   )
 }

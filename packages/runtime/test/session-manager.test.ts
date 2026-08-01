@@ -76,6 +76,72 @@ test('requires explicit installation selection when a runtime has multiple insta
   assert.equal(claude.connectCount, 1)
 })
 
+test('lists provider models before creation and through the active session connection', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const catalog = await manager.listModels({
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  assert.equal(catalog.models[0]?.id, 'test-model')
+
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  assert.deepEqual(await manager.listSessionModels(created.session.id), catalog)
+  assert.equal(claude.connectCount, 1)
+  assert.equal(claude.listModelsInputs.length, 1)
+})
+
+test('uses an active session when no cached model catalog exists', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+
+  await manager.listSessionModels(created.session.id)
+
+  assert.equal(claude.listModelsInputs.length, 1)
+  assert.equal(claude.listModelsInputs[0]?.sessionId, created.session.id)
+})
+
+test('deduplicates in-flight model catalogs and does not cache failures', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  claude.beforeListModels = () => gate
+  const input = {
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code' as const,
+  }
+
+  const first = manager.listModels(input)
+  const second = manager.listModels(input)
+  release()
+  await Promise.all([first, second])
+  assert.equal(claude.listModelsInputs.length, 1)
+
+  const otherProject = { ...input, projectPath: '/workspace/other' }
+  claude.beforeListModels = undefined
+  claude.listModelsError = new Error('catalog unavailable')
+  await assert.rejects(manager.listModels(otherProject), /catalog unavailable/)
+  claude.listModelsError = undefined
+  await manager.listModels(otherProject)
+  assert.equal(claude.listModelsInputs.length, 3)
+})
+
 test('seals adapter events with immutable routing and monotonic cursors', async () => {
   const claude = new FakeRuntimeAdapter('claude-code')
   const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
@@ -452,10 +518,18 @@ test('serializes control changes, rejects stale revisions, and deduplicates clie
 
   const model = await manager.setModel(
     created.session.id,
-    { model: 'test-model' },
+    { model: 'test-model', reasoningEffort: 'medium' },
     { expectedRevision: 1 },
   )
   assert.equal(model.controlRevision, 2)
+  const modelEvents = manager
+    .eventSnapshot(created.session.id)
+    .filter((event) => event.type === 'session.model_changed')
+  assert.equal(modelEvents.length, 1)
+  assert.deepEqual(modelEvents[0]?.payload, {
+    model: { model: 'test-model', reasoningEffort: 'medium' },
+    controlRevision: 2,
+  })
 
   const input = { clientMessageId: 'deduplicated', text: 'Run once' }
   const first = await manager.send(created.session.id, input)
@@ -473,6 +547,7 @@ test('projects pending interactions and resumes event sequences without collisio
     host: localHost,
     projectPath: '/workspace/project',
     adapterId: 'claude-code',
+    model: { model: 'test-model', reasoningEffort: 'medium' },
   })
   await waitForEvents(manager, created.session.id, 2)
   const interactionId = asInteractionId('interaction-1')
@@ -511,6 +586,7 @@ test('projects pending interactions and resumes event sequences without collisio
     host: localHost,
     projectPath: '/workspace/project',
     adapterId: closed.adapterId,
+    model: closed.model,
     runtimeSessionId: closed.runtimeSessionId!,
     execution: closed.execution.configured,
     taskState: manager.getSession(created.session.id).taskState,
@@ -524,6 +600,8 @@ test('projects pending interactions and resumes event sequences without collisio
 
   const forked = await manager.forkSession({ sourceSessionId: resumed.session.id })
   assert.equal(forked.session.forkedFromSessionId, resumed.session.id)
+  assert.deepEqual(claude.resumeInputs.at(-1)?.model, closed.model)
+  assert.deepEqual(claude.forkInputs.at(-1)?.model, closed.model)
 })
 
 async function waitForEvents(

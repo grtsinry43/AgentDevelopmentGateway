@@ -18,6 +18,8 @@ import {
   type ExecutionConfigurationResult,
   type ForkSessionInput,
   type InteractionResolution,
+  type ListModelsInput,
+  type ModelCatalog,
   type ModelSelection,
   type ResumeSessionInput,
   type RuntimeAdapter,
@@ -55,6 +57,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
   features: {
     'session.resume': true,
     'session.fork': true,
+    'model.catalog': true,
     'output.partial_text': true,
     'output.partial_reasoning': true,
     'interaction.permission': true,
@@ -200,7 +203,14 @@ export class CodexAdapter implements RuntimeAdapter {
       ...codexExecution(execution),
     })
     const threadId = readThreadId(result, 'thread/resume')
-    const session = this.openSession(input.sessionId, threadId, input.projectPath, connection, execution)
+    const session = this.openSession(
+      input.sessionId,
+      threadId,
+      input.projectPath,
+      connection,
+      execution,
+      input.model,
+    )
     this.publish(session, { type: 'session.status_changed', payload: { status: 'idle' } })
     return { sessionId: input.sessionId, runtimeSessionId: threadId, execution: executionResult(execution) }
   }
@@ -221,7 +231,14 @@ export class CodexAdapter implements RuntimeAdapter {
       ...codexExecution(execution),
     })
     const threadId = readThreadId(result, 'thread/fork')
-    const session = this.openSession(input.sessionId, threadId, input.projectPath, connection, execution)
+    const session = this.openSession(
+      input.sessionId,
+      threadId,
+      input.projectPath,
+      connection,
+      execution,
+      input.model,
+    )
     this.publish(session, {
       type: 'session.created',
       payload: { runtimeSessionId: threadId, capabilities: cloneCapabilities(CODEX_CAPABILITIES) },
@@ -298,10 +315,30 @@ export class CodexAdapter implements RuntimeAdapter {
     }
   }
 
+  async listModels(input: ListModelsInput): Promise<ModelCatalog> {
+    const connection = this.requireConnection(input.connection)
+    const models: ModelCatalog['models'] = []
+    let cursor: string | undefined
+    do {
+      const result = await connection.client.request('model/list', {
+        limit: 100,
+        includeHidden: false,
+        ...(cursor ? { cursor } : {}),
+      })
+      if (!isRecord(result) || !Array.isArray(result.data)) {
+        throw adapterError('protocol', 'Codex model/list returned an invalid catalog')
+      }
+      for (const value of result.data) {
+        if (isRecord(value)) models.push(codexModel(value))
+      }
+      cursor = stringValue(result.nextCursor)
+    } while (cursor)
+    return { models }
+  }
+
   setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {
     const session = this.getSession(sessionId)
     session.model = { ...model }
-    this.publish(session, { type: 'session.model_changed', payload: { model: { ...model } } })
     return Promise.resolve()
   }
 
@@ -804,6 +841,30 @@ function codexTurnStatus(value: string | undefined): 'completed' | 'failed' | 'i
   if (value === 'failed') return 'failed'
   if (value === 'interrupted') return 'interrupted'
   return 'completed'
+}
+
+function codexModel(value: Record<string, unknown>): ModelCatalog['models'][number] {
+  const id = stringValue(value.model) ?? requiredString(value, 'id', 'Codex model')
+  const efforts = Array.isArray(value.supportedReasoningEfforts)
+    ? value.supportedReasoningEfforts.filter(isRecord).map((effort) => {
+        const effortId = requiredString(effort, 'reasoningEffort', 'Codex reasoning effort')
+        return {
+          id: effortId,
+          displayName: effortId,
+          ...(stringValue(effort.description) ? { description: stringValue(effort.description) } : {}),
+        }
+      })
+    : []
+  return {
+    id,
+    displayName: stringValue(value.displayName) ?? id,
+    ...(stringValue(value.description) ? { description: stringValue(value.description) } : {}),
+    ...(value.isDefault === true ? { isDefault: true } : {}),
+    ...(stringValue(value.defaultReasoningEffort)
+      ? { defaultReasoningEffort: stringValue(value.defaultReasoningEffort) }
+      : {}),
+    reasoningEfforts: efforts,
+  }
 }
 
 function mapCollabStatus(value: string | undefined, completed: boolean): SubagentRun['status'] {

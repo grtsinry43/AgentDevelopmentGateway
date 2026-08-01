@@ -37,23 +37,61 @@
 			? (selectedAdapter?.descriptor.displayName ?? '没有可用 Agent')
 			: (activeAdapter?.descriptor.displayName ?? workspace.selectedSession?.adapterId ?? 'Agent')
 	);
-	const modelLabel = $derived(workspace.selectedSession?.model ?? 'Agent 默认模型');
-	const reasoningLabel = $derived(workspace.selectedSession?.reasoningEffort ?? '默认思考');
-	const workModeLabel = $derived(
-		workspace.selectedSession?.execution.effective.workMode === 'plan' ? 'Plan' : 'Build'
+	const pendingModel = $derived(
+		workspace.pendingModelSelection?.sessionId === workspace.selectedSessionId
+			? workspace.pendingModelSelection
+			: undefined
 	);
-	const permissionLabel = $derived.by(() => {
-		const execution = workspace.selectedSession?.execution.effective;
-		if (!execution) return '发送时确认';
-		const action = execution.approval.defaultAction;
-		if (action === 'allow') return '自动允许';
-		if (action === 'deny') return '默认拒绝';
-		return '每次询问';
-	});
-	const executionCapabilities = $derived(workspace.selectedSession?.capabilities.execution);
+	const defaultModel = $derived(workspace.modelCatalog?.models.find((model) => model.isDefault));
+	const selectedModelId = $derived(
+		creating
+			? (workspace.draftModel ?? defaultModel?.id ?? '')
+			: (pendingModel?.model ?? workspace.selectedSession?.model ?? defaultModel?.id ?? '')
+	);
+	const selectedModel = $derived(
+		workspace.modelCatalog?.models.find((model) => model.id === selectedModelId)
+	);
+	const reasoningOptions = $derived(selectedModel?.reasoningEfforts ?? []);
+	const selectedReasoningEffort = $derived(
+		creating
+			? (workspace.draftReasoningEffort ?? selectedModel?.defaultReasoningEffort ?? '')
+			: pendingModel
+				? (pendingModel.reasoningEffort ?? selectedModel?.defaultReasoningEffort ?? '')
+				: (workspace.selectedSession?.reasoningEffort ??
+					selectedModel?.defaultReasoningEffort ??
+					'')
+	);
+	const selectedSessionIsLive = $derived(
+		workspace.selectedSession
+			? ['starting', 'idle', 'running', 'waiting'].includes(workspace.selectedSession.status)
+			: false
+	);
+	const modelSwitchSupport = $derived(workspace.selectedSession?.capabilities.modelSwitch);
+	const modelCanUpdate = $derived(
+		creating ||
+			(modelSwitchSupport !== undefined &&
+				modelSwitchSupport !== 'unsupported' &&
+				(selectedSessionIsLive
+					? modelSwitchSupport === 'in-session'
+					: Boolean(workspace.selectedSession?.runtimeSessionId)))
+	);
+	const modelControlDisabled = $derived(
+		workspace.sending ||
+			workspace.controlling ||
+			workspace.modelCatalogLoading ||
+			!modelCanUpdate ||
+			(workspace.modelCatalog?.models.length ?? 0) === 0
+	);
+	const executionCapabilities = $derived(
+		creating
+			? selectedAdapter?.descriptor.capabilities.execution
+			: workspace.selectedSession?.capabilities.execution
+	);
 	const executionCanUpdate = $derived(executionCapabilities?.update === 'in-session');
 	const executionPreset = $derived(
-		classifyExecutionPreset(workspace.selectedSession?.execution.effective)
+		classifyExecutionPreset(
+			creating ? workspace.draftExecution : workspace.selectedSession?.execution.effective
+		)
 	);
 	const tokenLabel = $derived(formatTokens(workspace.usage?.totalTokens));
 	const contextLabel = $derived(
@@ -104,6 +142,55 @@
 		if (accepted) text = '';
 	}
 
+	function changeAdapter(adapterId: GatewayAdapterAvailability['adapterId']): void {
+		adapterOverride = adapterId;
+		installationOverride = undefined;
+		const adapter = workspace.availableAdapters.find((entry) => entry.adapterId === adapterId);
+		workspace.resetDraftExecution(adapterId);
+		void workspace.loadDraftModels(adapterId, adapter?.installations[0]?.path);
+	}
+
+	function changeInstallation(path: string): void {
+		installationOverride = path;
+		if (selectedAdapter) void workspace.loadDraftModels(selectedAdapter.adapterId, path);
+	}
+
+	function changeModel(model: string): void {
+		if (creating) {
+			workspace.selectDraftModel(model || undefined);
+		} else if (model) {
+			void workspace.setModel(model);
+		}
+	}
+
+	function changeReasoningEffort(reasoningEffort: string): void {
+		if (!selectedModelId) return;
+		if (creating) {
+			workspace.selectDraftReasoningEffort(reasoningEffort || undefined);
+		} else {
+			void workspace.setModel(selectedModelId, reasoningEffort || undefined);
+		}
+	}
+
+	function changeWorkMode(workMode: 'build' | 'plan'): void {
+		if (creating) workspace.setDraftWorkMode(workMode);
+		else void workspace.setWorkMode(workMode);
+	}
+
+	function changeExecutionPreset(preset: ExecutionPreset | 'custom'): void {
+		if (preset === 'custom') return;
+		if (creating) workspace.setDraftExecutionPreset(preset);
+		else void workspace.setExecutionPreset(preset);
+	}
+
+	function retryModels(): void {
+		if (creating && selectedAdapter) {
+			void workspace.loadDraftModels(selectedAdapter.adapterId, selectedInstallation);
+		} else {
+			void workspace.reloadSelectedModels();
+		}
+	}
+
 	function formatTokens(value: number | undefined): string {
 		if (value === undefined) return '上下文 —';
 		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m tokens`;
@@ -122,7 +209,6 @@
 			return 'custom';
 		}
 		if (
-			execution.workMode === 'build' &&
 			execution.approval.defaultAction === 'allow' &&
 			execution.sandbox.filesystem === 'unrestricted' &&
 			execution.sandbox.network === 'allow'
@@ -130,7 +216,6 @@
 			return 'full-access';
 		}
 		if (
-			execution.workMode === 'build' &&
 			execution.approval.defaultAction === 'ask' &&
 			execution.sandbox.filesystem === 'read-only' &&
 			execution.sandbox.network === 'ask'
@@ -138,7 +223,6 @@
 			return 'read-only';
 		}
 		if (
-			execution.workMode === 'build' &&
 			execution.approval.defaultAction === 'ask' &&
 			execution.sandbox.filesystem === 'workspace-write' &&
 			execution.sandbox.network === 'ask'
@@ -150,7 +234,7 @@
 
 	function supportsPreset(preset: ExecutionPreset): boolean {
 		const capabilities = executionCapabilities;
-		if (!capabilities || !capabilities.workModes.includes('build')) return false;
+		if (!capabilities) return false;
 		if (!capabilities.approvalReviewers.includes('user')) return false;
 		if (preset === 'full-access') {
 			return (
@@ -212,10 +296,8 @@
 				class="h-7 max-w-36 rounded-default bg-transparent px-1.5 text-xs font-medium text-strong hover:bg-surface-hover disabled:text-faint"
 				value={selectedAdapterId}
 				disabled={workspace.availableAdapters.length === 0 || workspace.sending}
-				onchange={(event) => {
-					adapterOverride = event.currentTarget.value as GatewayAdapterAvailability['adapterId'];
-					installationOverride = undefined;
-				}}
+				onchange={(event) =>
+					changeAdapter(event.currentTarget.value as GatewayAdapterAvailability['adapterId'])}
 			>
 				{#if workspace.availableAdapters.length === 0}
 					<option value="">没有可用 Agent</option>
@@ -233,7 +315,7 @@
 					class="h-7 max-w-44 rounded-default bg-transparent px-1.5 font-mono text-2xs text-muted hover:bg-surface-hover"
 					value={selectedInstallation}
 					disabled={workspace.sending}
-					onchange={(event) => (installationOverride = event.currentTarget.value)}
+					onchange={(event) => changeInstallation(event.currentTarget.value)}
 				>
 					{#each selectedAdapter.installations as installation (installation.path)}
 						<option value={installation.path}>{installation.path}</option>
@@ -245,43 +327,71 @@
 		{/if}
 
 		<span class="h-3.5 w-px bg-subtle" aria-hidden="true"></span>
-		<button
-			type="button"
-			class="h-7 rounded-default px-1.5 text-xs text-muted disabled:cursor-default disabled:opacity-100"
-			disabled
-			title="等待 Agent 提供可选模型目录">{modelLabel}</button
+		<label class="sr-only" for="session-model">模型</label>
+		<select
+			id="session-model"
+			class="h-7 max-w-44 rounded-default bg-transparent px-1.5 text-xs text-muted hover:bg-surface-hover disabled:cursor-default disabled:text-faint"
+			value={selectedModelId}
+			disabled={modelControlDisabled}
+			title={workspace.modelCatalogError ??
+				(modelCanUpdate ? '选择模型' : '当前状态不支持切换模型')}
+			onchange={(event) => changeModel(event.currentTarget.value)}
 		>
-		<button
-			type="button"
-			class="hidden h-7 rounded-default px-1.5 text-xs text-faint disabled:cursor-default disabled:opacity-100 lg:block"
-			disabled
-			title="等待 Agent 提供可选思考强度">{reasoningLabel}</button
+			<option value="" disabled={!creating}>Agent 默认模型</option>
+			{#if selectedModelId && !selectedModel}
+				<option value={selectedModelId}>{selectedModelId}</option>
+			{/if}
+			{#each workspace.modelCatalog?.models ?? [] as model (model.id)}
+				<option value={model.id}>{model.displayName}</option>
+			{/each}
+		</select>
+
+		{#if workspace.modelCatalogLoading}
+			<span class="px-1 text-2xs text-faint">加载模型…</span>
+		{:else if workspace.modelCatalogError}
+			<button
+				type="button"
+				class="text-danger h-7 rounded-default px-1.5 text-2xs hover:bg-surface-hover disabled:text-faint"
+				disabled={workspace.modelCatalogLoading}
+				title={workspace.modelCatalogError}
+				onclick={retryModels}
+			>
+				重试模型
+			</button>
+		{/if}
+
+		<label class="sr-only" for="session-reasoning-effort">思考强度</label>
+		<select
+			id="session-reasoning-effort"
+			class="hidden h-7 max-w-32 rounded-default bg-transparent px-1.5 text-xs text-faint hover:bg-surface-hover disabled:cursor-default disabled:text-faint lg:block"
+			value={selectedReasoningEffort}
+			disabled={modelControlDisabled || !selectedModelId || reasoningOptions.length === 0}
+			title={reasoningOptions.length > 0 ? '选择思考强度' : '当前模型没有可选思考强度'}
+			onchange={(event) => changeReasoningEffort(event.currentTarget.value)}
 		>
+			<option value="">默认思考</option>
+			{#each reasoningOptions as effort (effort.id)}
+				<option value={effort.id}>{effort.displayName ?? effort.id}</option>
+			{/each}
+		</select>
 
 		<span class="h-3.5 w-px bg-subtle" aria-hidden="true"></span>
-		{#if creating}
-			<button
-				type="button"
-				class="h-7 rounded-default px-1.5 text-xs text-muted disabled:cursor-default disabled:opacity-100"
-				disabled
-				title="新会话执行设置将在后续接入">{workModeLabel}</button
-			>
-			<button
-				type="button"
-				class="hidden h-7 rounded-default px-1.5 text-xs text-muted disabled:cursor-default disabled:opacity-100 xl:block"
-				disabled
-				title="新会话权限设置将在后续接入">{permissionLabel}</button
-			>
-		{:else if workspace.selectedSession}
+		{#if creating || workspace.selectedSession}
 			<label class="sr-only" for="session-work-mode">工作模式</label>
 			<select
 				id="session-work-mode"
 				class="h-7 rounded-default bg-transparent px-1.5 text-xs text-muted hover:bg-surface-hover disabled:cursor-default disabled:text-faint"
-				value={workspace.selectedSession.execution.effective.workMode}
-				disabled={!executionCanUpdate || workspace.controlling}
-				title={executionCanUpdate ? '切换工作模式' : '当前 Agent 不支持会话内切换工作模式'}
-				onchange={(event) =>
-					void workspace.setWorkMode(event.currentTarget.value as 'build' | 'plan')}
+				value={creating
+					? workspace.draftExecution.workMode
+					: workspace.selectedSession?.execution.effective.workMode}
+				disabled={workspace.sending ||
+					(creating ? !executionCapabilities : !executionCanUpdate || workspace.controlling)}
+				title={creating
+					? '设置新会话工作模式'
+					: executionCanUpdate
+						? '切换工作模式'
+						: '当前 Agent 不支持会话内切换工作模式'}
+				onchange={(event) => changeWorkMode(event.currentTarget.value as 'build' | 'plan')}
 			>
 				{#each executionCapabilities?.workModes ?? [] as mode (mode)}
 					<option value={mode}>{mode === 'plan' ? 'Plan' : 'Build'}</option>
@@ -293,14 +403,13 @@
 				id="session-permission-preset"
 				class="hidden h-7 rounded-default bg-transparent px-1.5 text-xs text-muted hover:bg-surface-hover disabled:cursor-default disabled:text-faint lg:block"
 				value={executionPreset}
-				disabled={!executionCanUpdate || workspace.controlling}
-				title={executionCanUpdate
-					? '权限预设会原子更新批准、文件系统和网络策略'
+				disabled={workspace.sending ||
+					(creating ? !executionCapabilities : !executionCanUpdate || workspace.controlling)}
+				title={creating || executionCanUpdate
+					? '权限预设会更新批准、文件系统和网络策略'
 					: '当前 Agent 不支持会话内切换权限'}
-				onchange={(event) => {
-					const preset = event.currentTarget.value;
-					if (preset !== 'custom') void workspace.setExecutionPreset(preset as ExecutionPreset);
-				}}
+				onchange={(event) =>
+					changeExecutionPreset(event.currentTarget.value as ExecutionPreset | 'custom')}
 			>
 				{#if supportsPreset('standard')}<option value="standard">标准</option>{/if}
 				{#if supportsPreset('read-only')}<option value="read-only">只读</option>{/if}

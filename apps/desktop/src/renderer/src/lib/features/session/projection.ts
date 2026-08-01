@@ -1,5 +1,6 @@
 import type {
 	ChangeSet,
+	ModelSelection,
 	RuntimeFeature,
 	SessionExecutionState,
 	SessionStatus,
@@ -83,6 +84,7 @@ export interface ConversationProjection {
 	features?: Partial<Record<RuntimeFeature, boolean>>;
 	usage?: Usage;
 	execution?: SessionExecutionState;
+	model?: ModelSelection;
 	controlRevision?: number;
 	taskState: TaskState;
 	/** Known-but-not-rendered and unknown events remain available for future feature renderers. */
@@ -231,6 +233,13 @@ export function projectRuntimeEvent(
 		case 'session.title_changed': {
 			const title = payloadString(event.payload, 'title');
 			return title === undefined ? defer(base, event) : { ...base, title };
+		}
+		case 'session.model_changed': {
+			const model = modelSelection(event.payload);
+			const controlRevision = payloadNumber(event.payload, 'controlRevision');
+			return model && controlRevision !== undefined
+				? { ...base, model, controlRevision }
+				: defer(base, event);
 		}
 		case 'session.created':
 		case 'session.capabilities_changed': {
@@ -520,6 +529,18 @@ function eventAttribution(event: RuntimeEventWire): { subagentRunId?: string } {
 function payloadString(payload: unknown, key: string): string | undefined {
 	if (!isRecord(payload)) return undefined;
 	return typeof payload[key] === 'string' ? payload[key] : undefined;
+}
+
+function modelSelection(payload: unknown): ModelSelection | undefined {
+	if (!isRecord(payload) || !isRecord(payload.model) || typeof payload.model.model !== 'string') {
+		return undefined;
+	}
+	return {
+		model: payload.model.model,
+		...(typeof payload.model.reasoningEffort === 'string'
+			? { reasoningEffort: payload.model.reasoningEffort }
+			: {})
+	};
 }
 
 function payloadNumber(payload: unknown, key: string): number | undefined {

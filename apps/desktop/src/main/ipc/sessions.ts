@@ -1,9 +1,11 @@
 import {
+  adapterIdSchema,
   createSessionRequestSchema,
   closeSessionRequestSchema,
   forkSessionRequestSchema,
   gatewayIdSchema,
   interruptSessionRequestSchema,
+  listModelsQuerySchema,
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
   resolveInteractionRequestSchema,
@@ -33,6 +35,26 @@ export function registerSessionHandlers(): void {
     const resolved = await resolveServerProject(projectKey)
     return gatewayServer.adapters(resolved.serverProjectId)
   })
+
+  ipcMain.handle(
+    IPC.sessionsModels,
+    async (
+      _event,
+      rawProjectKey: unknown,
+      rawAdapterId: unknown,
+      rawQuery: unknown = {}
+    ) => {
+      const projectKey = parseProjectKey(rawProjectKey)
+      const adapterId = adapterIdSchema.parse(rawAdapterId)
+      const query = listModelsQuerySchema.parse(rawQuery)
+      const resolved = await resolveServerProject(projectKey)
+      return gatewayServer.projectModels(resolved.serverProjectId, adapterId, query)
+    }
+  )
+
+  ipcMain.handle(IPC.sessionsSessionModels, (_event, rawSessionId: unknown) =>
+    gatewayServer.sessionModels(gatewayIdSchema.parse(rawSessionId))
+  )
 
   ipcMain.handle(
     IPC.sessionsCreate,

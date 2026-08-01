@@ -10,6 +10,8 @@ import type {
   ForkSessionInput,
   InteractionResolution,
   InterruptOptions,
+  ListModelsInput,
+  ModelCatalog,
   ModelSelection,
   ResumeSessionInput,
   SendOptions,
@@ -56,6 +58,7 @@ export interface Disposable {
  * Optional methods pair with capabilities (registry parity check):
  *   - `forkSession?`     ↔ features['session.fork']
  *   - `setModel?`        ↔ RuntimeCapabilities.modelSwitch !== 'unsupported'
+ *   - `listModels?`      ↔ features['model.catalog']
  *   - `getCapabilities?` ↔ capabilities can change mid-session
  *   - `onServerRequest?` ↔ the runtime is bidirectional (Codex)
  *
@@ -76,6 +79,7 @@ export interface RuntimeAdapter {
   send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void>
   interrupt(sessionId: SessionId, options?: InterruptOptions): Promise<void>
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
+  listModels?(input: ListModelsInput): Promise<ModelCatalog>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>
   /** Atomically apply work mode, approval policy, and sandbox intent. */
   configureExecution?(

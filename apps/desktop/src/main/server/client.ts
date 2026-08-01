@@ -16,6 +16,8 @@ import {
   gitPathsRequestSchema,
   gitRepositoryStateSchema,
   inputAdmissionReceiptSchema,
+  listModelsQuerySchema,
+  modelCatalogSchema,
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
@@ -43,6 +45,8 @@ import {
   type CloseSessionRequest,
   type ForkSessionRequest,
   type GatewayAdapterAvailability,
+  type GatewayAdapterId,
+  type GatewayModelCatalog,
   type GatewayProject,
   type GatewayServerInfo,
   type GatewaySession,
@@ -52,6 +56,7 @@ import {
   type GitEvent,
   type GitRepositoryState,
   type InputAdmissionReceipt,
+  type ListModelsQuery,
   type ReorderQueuedInputsRequest,
   type ReplaceQueuedInputRequest,
   type InterruptSessionRequest,
@@ -125,6 +130,21 @@ export class GatewayServerClient {
   async adapters(projectId: string): Promise<GatewayAdapterAvailability[]> {
     return (await this.request(`/api/v1/projects/${projectId}/agents`, adaptersResponseSchema))
       .adapters
+  }
+
+  projectModels(
+    projectId: string,
+    adapterId: GatewayAdapterId,
+    query: ListModelsQuery = {}
+  ): Promise<GatewayModelCatalog> {
+    const parsed = listModelsQuerySchema.parse(query)
+    const params = new URLSearchParams()
+    if (parsed.installationPath) params.set('installationPath', parsed.installationPath)
+    const suffix = params.size ? `?${params.toString()}` : ''
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(adapterId)}/models${suffix}`,
+      modelCatalogSchema
+    )
   }
 
   async sessions(projectId: string): Promise<GatewaySession[]> {
@@ -252,6 +272,13 @@ export class GatewayServerClient {
 
   session(sessionId: string): Promise<GatewaySession> {
     return this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, sessionSchema)
+  }
+
+  sessionModels(sessionId: string): Promise<GatewayModelCatalog> {
+    return this.request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/models`,
+      modelCatalogSchema
+    )
   }
 
   createSession(projectId: string, input: CreateSessionRequest): Promise<CreateSessionResponse> {

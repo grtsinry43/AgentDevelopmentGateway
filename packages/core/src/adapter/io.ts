@@ -122,6 +122,34 @@ export interface ModelSelection {
   reasoningEffort?: string
 }
 
+/** Provider-advertised reasoning option. Order is meaningful and must be preserved. */
+export interface ModelReasoningEffort {
+  id: string
+  displayName?: string
+  description?: string
+}
+
+/** Provider-neutral model metadata used by clients to render a model picker. */
+export interface RuntimeModel {
+  id: string
+  displayName: string
+  description?: string
+  isDefault?: boolean
+  defaultReasoningEffort?: string
+  reasoningEfforts: ModelReasoningEffort[]
+}
+
+export interface ModelCatalog {
+  models: RuntimeModel[]
+}
+
+export interface ListModelsInput {
+  projectPath: string
+  connection: RuntimeConnection
+  /** Active Gateway session whose provider connection can serve this catalog. */
+  sessionId?: SessionId
+}
+
 /**
  * Resume cursor — the three runtimes address resume differently (docs/05 §7.4):
  * OpenCode by integer seq, Claude by message UUID (`resumeSessionAt`), Codex by rollout
@@ -163,6 +191,8 @@ export interface ResumeSessionInput {
   projectPath: string
   runtimeSessionId: string
   connection: RuntimeConnection
+  /** Gateway-persisted selection to restore when the provider transport is reopened. */
+  model?: ModelSelection
   /** Where to resume from; shape varies per runtime (see {@link ResumeCursor}). */
   cursor?: ResumeCursor
   /** Opaque provider state for runtimes not reconstructable from the log (cradle). */
@@ -180,6 +210,8 @@ export interface ForkSessionInput {
   projectPath: string
   runtimeSessionId: string
   connection: RuntimeConnection
+  /** Selection inherited from the source Gateway session. */
+  model?: ModelSelection
   /** Cut point for the fork (Codex `last_turn_id` / `before_turn_id`). */
   forkPoint?: ResumeCursor
   /** New stable context, for example when continuing under refreshed rules. */

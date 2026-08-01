@@ -10,6 +10,7 @@ import {
   forkSessionRequestSchema,
   inputAdmissionReceiptSchema,
   interruptSessionRequestSchema,
+  modelCatalogSchema,
   projectSessionsParamsSchema,
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
@@ -160,6 +161,17 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       }
     },
     async (request) => options.sessions.setModel(request.params.sessionId, request.body)
+  )
+
+  server.get(
+    '/sessions/:sessionId/models',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        response: { 200: modelCatalogSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.listModels(request.params.sessionId)
   )
 
   server.patch(

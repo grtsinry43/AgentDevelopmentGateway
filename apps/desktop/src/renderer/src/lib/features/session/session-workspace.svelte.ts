@@ -1,9 +1,16 @@
 import { pushBus } from '$lib/shared/bridge/events';
-import type { Host, RuntimeFeature } from '@agent-gateway/core';
+import {
+	createDefaultSessionExecutionSettings,
+	type Host,
+	type RuntimeFeature,
+	type SessionExecutionSettings
+} from '@agent-gateway/core';
 import type {
 	GatewayAdapterAvailability,
+	GatewayModelCatalog,
 	GatewaySession,
 	InteractionResolutionWire,
+	RuntimeControlReceipt,
 	RuntimeEventWire
 } from '@agent-gateway/shared';
 import { interactionRequestSchema, interactionResolutionSchema } from '@agent-gateway/shared';
@@ -12,6 +19,8 @@ import {
 	cancelQueuedInput as cancelQueuedInputApi,
 	getSession,
 	listAdapters,
+	listModels,
+	listSessionModels,
 	listSessions,
 	reorderQueuedInputs,
 	replaceQueuedInput,
@@ -20,6 +29,7 @@ import {
 	sendSessionInput,
 	sendQueuedInputNow as sendQueuedInputNowApi,
 	setSessionExecutionSettings,
+	setSessionModel,
 	setSessionWorkMode,
 	unwatchSession,
 	watchSession
@@ -36,6 +46,13 @@ import {
 export type SessionFilter = 'all' | 'active' | 'waiting' | 'ended';
 export type ExecutionPreset = 'standard' | 'read-only' | 'full-access';
 
+interface PendingModelSelection {
+	sessionId: string;
+	model: string;
+	reasoningEffort?: string;
+	controlRevision?: number;
+}
+
 const MAX_LOAD_ATTEMPTS = 5;
 
 class SessionWorkspace {
@@ -50,6 +67,13 @@ class SessionWorkspace {
 	loadRetryAttempt = $state(0);
 	sending = $state(false);
 	controlling = $state(false);
+	modelCatalog = $state.raw<GatewayModelCatalog | undefined>(undefined);
+	modelCatalogLoading = $state(false);
+	modelCatalogError = $state<string | undefined>(undefined);
+	draftModel = $state<string | undefined>(undefined);
+	draftReasoningEffort = $state<string | undefined>(undefined);
+	draftExecution = $state.raw<SessionExecutionSettings>(createDefaultSessionExecutionSettings());
+	pendingModelSelection = $state.raw<PendingModelSelection | undefined>(undefined);
 	resolvingInteractionId = $state<string | undefined>(undefined);
 	queueBusyId = $state<string | undefined>(undefined);
 	selectedSubagentRunId = $state<string | undefined>(undefined);
@@ -125,6 +149,8 @@ class SessionWorkspace {
 
 	#loadGeneration = 0;
 	#selectionGeneration = 0;
+	#modelCatalogGeneration = 0;
+	#pendingControlRevision: number | undefined;
 	#started = false;
 	#replaySessionId: string | undefined;
 	#replayTargetSequence = 0;
@@ -202,6 +228,14 @@ class SessionWorkspace {
 			if (!this.selectedSessionId && sessions.length > 0) {
 				const latest = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0];
 				if (latest) await this.select(latest.id);
+			} else if (!this.selectedSessionId) {
+				const adapter = adapters.find(
+					(entry) => entry.status === 'available' && entry.installations.length > 0
+				);
+				if (adapter) {
+					this.resetDraftExecution(adapter.adapterId);
+					await this.loadDraftModels(adapter.adapterId, adapter.installations[0]?.path);
+				}
 			}
 		} catch (error) {
 			if (generation === this.#loadGeneration) {
@@ -229,7 +263,12 @@ class SessionWorkspace {
 	}
 
 	async select(sessionId: string): Promise<void> {
-		if (sessionId === this.selectedSessionId) return;
+		if (sessionId === this.selectedSessionId) {
+			if (!this.modelCatalog && !this.modelCatalogLoading) {
+				await this.#loadSelectedModels(sessionId, this.#selectionGeneration);
+			}
+			return;
+		}
 		const generation = ++this.#selectionGeneration;
 		const previous = this.selectedSessionId;
 		this.selectedSessionId = sessionId;
@@ -240,6 +279,7 @@ class SessionWorkspace {
 		this.streamMessage = undefined;
 		this.streamRetryAttempt = 0;
 		this.error = undefined;
+		this.#resetModelCatalog();
 		if (previous) await unwatchSession(previous).catch(() => undefined);
 		if (generation !== this.#selectionGeneration) return;
 		try {
@@ -256,6 +296,7 @@ class SessionWorkspace {
 			this.#replayProjection = emptyConversationProjection();
 			await watchSession(sessionId);
 			if (generation !== this.#selectionGeneration) await unwatchSession(sessionId);
+			else await this.#loadSelectedModels(sessionId, generation);
 		} catch (error) {
 			if (generation !== this.#selectionGeneration) return;
 			this.#clearReplay();
@@ -275,7 +316,13 @@ class SessionWorkspace {
 		this.streamMessage = undefined;
 		this.streamRetryAttempt = 0;
 		this.error = undefined;
+		this.#resetModelCatalog();
 		if (previous) await unwatchSession(previous).catch(() => undefined);
+		const adapter = this.availableAdapters[0];
+		if (adapter) {
+			this.resetDraftExecution(adapter.adapterId);
+			await this.loadDraftModels(adapter.adapterId, adapter.installations[0]?.path);
+		}
 	}
 
 	async retryConnection(): Promise<void> {
@@ -294,6 +341,90 @@ class SessionWorkspace {
 		}
 	}
 
+	async loadDraftModels(
+		adapterId: GatewayAdapterAvailability['adapterId'],
+		installationPath?: string
+	): Promise<void> {
+		const generation = ++this.#modelCatalogGeneration;
+		this.modelCatalog = undefined;
+		this.modelCatalogLoading = true;
+		this.modelCatalogError = undefined;
+		this.draftModel = undefined;
+		this.draftReasoningEffort = undefined;
+		try {
+			const catalog = await listModels(this.projectKey, adapterId, {
+				...(installationPath ? { installationPath } : {})
+			});
+			if (generation === this.#modelCatalogGeneration && !this.selectedSessionId) {
+				this.modelCatalog = catalog;
+				const defaultModel = catalog.models.find((model) => model.isDefault);
+				if (!this.draftModel && defaultModel) this.draftModel = defaultModel.id;
+			}
+		} catch (error) {
+			if (generation === this.#modelCatalogGeneration && !this.selectedSessionId) {
+				this.modelCatalogError = errorMessage(error);
+			}
+		} finally {
+			if (generation === this.#modelCatalogGeneration) this.modelCatalogLoading = false;
+		}
+	}
+
+	async reloadSelectedModels(): Promise<void> {
+		const sessionId = this.selectedSessionId;
+		if (!sessionId || this.modelCatalogLoading) return;
+		this.#resetModelCatalog();
+		await this.#loadSelectedModels(sessionId, this.#selectionGeneration);
+	}
+
+	selectDraftModel(model: string | undefined): void {
+		this.draftModel = model;
+		this.draftReasoningEffort = undefined;
+	}
+
+	selectDraftReasoningEffort(reasoningEffort: string | undefined): void {
+		this.draftReasoningEffort = reasoningEffort;
+	}
+
+	resetDraftExecution(adapterId: GatewayAdapterAvailability['adapterId']): void {
+		const capabilities = this.adapters.find((adapter) => adapter.adapterId === adapterId)
+			?.descriptor.capabilities.execution;
+		const defaults = createDefaultSessionExecutionSettings();
+		if (!capabilities) {
+			this.draftExecution = defaults;
+			return;
+		}
+		this.draftExecution = {
+			workMode: capabilities.workModes.includes(defaults.workMode)
+				? defaults.workMode
+				: (capabilities.workModes[0] ?? defaults.workMode),
+			approval: {
+				defaultAction: capabilities.approvalActions.includes(defaults.approval.defaultAction)
+					? defaults.approval.defaultAction
+					: (capabilities.approvalActions[0] ?? defaults.approval.defaultAction),
+				reviewer: capabilities.approvalReviewers.includes(defaults.approval.reviewer)
+					? defaults.approval.reviewer
+					: (capabilities.approvalReviewers[0] ?? defaults.approval.reviewer),
+				rules: []
+			},
+			sandbox: {
+				filesystem: capabilities.filesystemSandbox.includes(defaults.sandbox.filesystem)
+					? defaults.sandbox.filesystem
+					: (capabilities.filesystemSandbox[0] ?? defaults.sandbox.filesystem),
+				network: capabilities.networkAccess.includes(defaults.sandbox.network)
+					? defaults.sandbox.network
+					: (capabilities.networkAccess[0] ?? defaults.sandbox.network)
+			}
+		};
+	}
+
+	setDraftWorkMode(workMode: SessionExecutionSettings['workMode']): void {
+		this.draftExecution = { ...this.draftExecution, workMode };
+	}
+
+	setDraftExecutionPreset(preset: ExecutionPreset): void {
+		this.draftExecution = executionPreset(this.draftExecution, preset);
+	}
+
 	async createTextSession(
 		text: string,
 		adapterId: GatewayAdapterAvailability['adapterId'],
@@ -306,6 +437,11 @@ class SessionWorkspace {
 			const created = await createSession(this.projectKey, {
 				adapterId,
 				...(installationPath ? { installationPath } : {}),
+				...(this.draftModel ? { model: this.draftModel } : {}),
+				...(this.draftModel && this.draftReasoningEffort
+					? { reasoningEffort: this.draftReasoningEffort }
+					: {}),
+				execution: this.draftExecution,
 				initialInput: { clientMessageId: crypto.randomUUID(), text }
 			});
 			this.#applySessions([...this.sessions, created.session]);
@@ -415,33 +551,57 @@ class SessionWorkspace {
 		);
 	}
 
-	setWorkMode(workMode: GatewaySession['execution']['configured']['workMode']): Promise<boolean> {
-		return this.#runControl((session) =>
+	async setWorkMode(
+		workMode: GatewaySession['execution']['configured']['workMode']
+	): Promise<boolean> {
+		const receipt = await this.#runControl((session, expectedRevision) =>
 			setSessionWorkMode(session.id, {
 				workMode,
-				expectedRevision: session.controlRevision
+				expectedRevision
 			})
 		);
+		return Boolean(receipt);
+	}
+
+	async setModel(model: string, reasoningEffort?: string): Promise<boolean> {
+		const session = this.selectedSession;
+		if (!session || this.controlling) return false;
+		const pending: PendingModelSelection = {
+			sessionId: session.id,
+			model,
+			...(reasoningEffort ? { reasoningEffort } : {})
+		};
+		this.pendingModelSelection = pending;
+		const receipt = await this.#runControl((selected, expectedRevision) =>
+			setSessionModel(selected.id, {
+				model,
+				...(reasoningEffort ? { reasoningEffort } : {}),
+				expectedRevision
+			})
+		);
+		if (!receipt) {
+			if (this.pendingModelSelection === pending) this.pendingModelSelection = undefined;
+			return false;
+		}
+		if (this.pendingModelSelection === pending) {
+			this.pendingModelSelection = { ...pending, controlRevision: receipt.controlRevision };
+		}
+		if (!isLiveSessionStatus(session.status) && session.id === this.selectedSessionId) {
+			try {
+				this.#upsertSession(await getSession(session.id));
+				this.pendingModelSelection = undefined;
+				this.#pendingControlRevision = undefined;
+			} catch (error) {
+				this.error = `模型已保存，但会话状态刷新失败：${errorMessage(error)}`;
+			}
+		}
+		return true;
 	}
 
 	setExecutionPreset(preset: ExecutionPreset): Promise<boolean> {
-		return this.#updateExecution(() => ({
-			workMode: 'build',
-			approval: {
-				defaultAction: preset === 'full-access' ? 'allow' : 'ask',
-				reviewer: 'user',
-				rules: []
-			},
-			sandbox: {
-				filesystem:
-					preset === 'full-access'
-						? 'unrestricted'
-						: preset === 'read-only'
-							? 'read-only'
-							: 'workspace-write',
-				network: preset === 'full-access' ? 'allow' : 'ask'
-			}
-		}));
+		return this.#updateExecution((session) =>
+			executionPreset(session.execution.configured, preset)
+		);
 	}
 
 	async resolveInteraction(resolution: InteractionResolutionWire): Promise<boolean> {
@@ -465,27 +625,40 @@ class SessionWorkspace {
 		}
 	}
 
-	#updateExecution(
+	async #updateExecution(
 		update: (session: GatewaySession) => GatewaySession['execution']['configured']
 	): Promise<boolean> {
-		return this.#runControl((session) =>
+		const receipt = await this.#runControl((session, expectedRevision) =>
 			setSessionExecutionSettings(session.id, {
 				execution: update(session),
-				expectedRevision: session.controlRevision
+				expectedRevision
 			})
 		);
+		return Boolean(receipt);
 	}
-	async #runControl(operation: (session: GatewaySession) => Promise<unknown>): Promise<boolean> {
+	async #runControl(
+		operation: (session: GatewaySession, expectedRevision: number) => Promise<RuntimeControlReceipt>
+	): Promise<RuntimeControlReceipt | undefined> {
 		const session = this.selectedSession;
-		if (!session || this.controlling) return false;
+		if (!session || this.controlling) return undefined;
 		this.controlling = true;
 		this.error = undefined;
 		try {
-			await operation(session);
-			return true;
+			const expectedRevision = Math.max(
+				session.controlRevision,
+				this.#pendingControlRevision ?? session.controlRevision
+			);
+			const receipt = await operation(session, expectedRevision);
+			if (session.id === this.selectedSessionId) {
+				this.#pendingControlRevision = Math.max(
+					this.#pendingControlRevision ?? 0,
+					receipt.controlRevision
+				);
+			}
+			return receipt;
 		} catch (error) {
 			this.error = errorMessage(error);
-			return false;
+			return undefined;
 		} finally {
 			this.controlling = false;
 		}
@@ -506,6 +679,44 @@ class SessionWorkspace {
 		} finally {
 			this.queueBusyId = undefined;
 		}
+	}
+
+	async #loadSelectedModels(sessionId: string, selectionGeneration: number): Promise<void> {
+		const session = this.sessions.find((candidate) => candidate.id === sessionId);
+		if (!session) return;
+		const generation = ++this.#modelCatalogGeneration;
+		this.modelCatalogLoading = true;
+		this.modelCatalogError = undefined;
+		try {
+			const catalog = await listSessionModels(sessionId);
+			if (
+				generation === this.#modelCatalogGeneration &&
+				selectionGeneration === this.#selectionGeneration &&
+				sessionId === this.selectedSessionId
+			) {
+				this.modelCatalog = catalog;
+			}
+		} catch (error) {
+			if (
+				generation === this.#modelCatalogGeneration &&
+				selectionGeneration === this.#selectionGeneration
+			) {
+				this.modelCatalogError = errorMessage(error);
+			}
+		} finally {
+			if (generation === this.#modelCatalogGeneration) this.modelCatalogLoading = false;
+		}
+	}
+
+	#resetModelCatalog(): void {
+		this.#modelCatalogGeneration += 1;
+		this.modelCatalog = undefined;
+		this.modelCatalogLoading = false;
+		this.modelCatalogError = undefined;
+		this.draftModel = undefined;
+		this.draftReasoningEffort = undefined;
+		this.pendingModelSelection = undefined;
+		this.#pendingControlRevision = undefined;
 	}
 
 	#applySessions(next: GatewaySession[]): void {
@@ -545,6 +756,12 @@ class SessionWorkspace {
 				...session,
 				...(projected.status ? { status: projected.status } : {}),
 				...(projected.title ? { title: projected.title } : {}),
+				...(projected.model
+					? {
+							model: projected.model.model,
+							reasoningEffort: projected.model.reasoningEffort
+						}
+					: {}),
 				...(projected.execution ? { execution: projected.execution } : {}),
 				...(projected.controlRevision === undefined
 					? {}
@@ -556,6 +773,30 @@ class SessionWorkspace {
 				updatedAt: Math.max(session.updatedAt, event.timestamp)
 			};
 		});
+		if (
+			(event.type === 'session.model_changed' || event.type === 'session.execution_changed') &&
+			projected.controlRevision !== undefined
+		) {
+			if (
+				this.#pendingControlRevision !== undefined &&
+				projected.controlRevision >= this.#pendingControlRevision
+			) {
+				this.#pendingControlRevision = undefined;
+			}
+			const pending = this.pendingModelSelection;
+			if (event.type === 'session.model_changed' && pending?.sessionId === event.sessionId) {
+				const matches =
+					projected.model?.model === pending.model &&
+					projected.model.reasoningEffort === pending.reasoningEffort;
+				if (
+					matches ||
+					(pending.controlRevision !== undefined &&
+						projected.controlRevision >= pending.controlRevision)
+				) {
+					this.pendingModelSelection = undefined;
+				}
+			}
+		}
 	}
 
 	#publishReplay(): void {
@@ -614,6 +855,29 @@ function projectPendingInteractions(
 		return session.pendingInteractions.filter((request) => request.id !== resolvedId);
 	}
 	return session.pendingInteractions;
+}
+
+function executionPreset(
+	current: SessionExecutionSettings,
+	preset: ExecutionPreset
+): SessionExecutionSettings {
+	return {
+		...current,
+		approval: {
+			defaultAction: preset === 'full-access' ? 'allow' : 'ask',
+			reviewer: 'user',
+			rules: []
+		},
+		sandbox: {
+			filesystem:
+				preset === 'full-access'
+					? 'unrestricted'
+					: preset === 'read-only'
+						? 'read-only'
+						: 'workspace-write',
+			network: preset === 'full-access' ? 'allow' : 'ask'
+		}
+	};
 }
 
 function matchesFilter(session: GatewaySession, filter: SessionFilter): boolean {

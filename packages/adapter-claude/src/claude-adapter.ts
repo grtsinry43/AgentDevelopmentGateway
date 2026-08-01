@@ -8,6 +8,8 @@ import {
   type CreateSessionInput,
   type InteractionResolution,
   type InterruptOptions,
+  type ListModelsInput,
+  type ModelCatalog,
   type ModelSelection,
   type ExecutionConfigurationResult,
   type ResumeSessionInput,
@@ -28,6 +30,7 @@ import {
 } from '@agent-gateway/core'
 import {
   query as createClaudeQuery,
+  type ModelInfo,
   type SDKControlInitializeResponse,
   type SDKMessage,
   type SDKUserMessage,
@@ -40,8 +43,13 @@ import { createClaudePreToolUseHook, resolveClaudeExecution } from './execution-
 
 export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
   initializationResult(): Promise<SDKControlInitializeResponse>
+  supportedModels(): Promise<ModelInfo[]>
   interrupt(): Promise<unknown>
   setModel(model?: string): Promise<unknown>
+  applyFlagSettings(settings: {
+    model?: string | null
+    effortLevel?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+  }): Promise<unknown>
   setPermissionMode(mode: import('@anthropic-ai/claude-agent-sdk').PermissionMode): Promise<unknown>
   close(): void
 }
@@ -148,6 +156,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       runtimeSessionId: input.runtimeSessionId,
       projectPath: input.projectPath,
       connection: input.connection,
+      model: input.model,
       execution: input.execution,
       querySessionOptions: {
         resume: input.runtimeSessionId,
@@ -228,11 +237,42 @@ export class ClaudeAdapter implements RuntimeAdapter {
     return Promise.resolve()
   }
 
-  async setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {
-    if (model.reasoningEffort) {
-      throw adapterError('not_implemented', 'Mid-session Claude reasoning effort changes are not implemented')
+  async listModels(input: ListModelsInput): Promise<ModelCatalog> {
+    if (input.sessionId) {
+      const models = await this.getSession(input.sessionId).query.supportedModels()
+      return { models: models.map(mapModelInfo) }
     }
-    await this.getSession(sessionId).query.setModel(model.model)
+
+    const connection = this.getConnection(input.connection)
+    const prompt = new AsyncQueue<SDKUserMessage>()
+    const query = this.queryFactory({
+      prompt,
+      options: {
+        cwd: input.projectPath,
+        persistSession: false,
+        settingSources: ['user', 'project', 'local'],
+        env: { ...process.env, ...connection.context.env },
+        pathToClaudeCodeExecutable:
+          connection.installation?.source === 'path' || connection.installation?.source === 'custom'
+            ? connection.installation.path
+            : undefined,
+      },
+    })
+    try {
+      const models = await query.supportedModels()
+      return { models: models.map(mapModelInfo) }
+    } finally {
+      prompt.close()
+      query.close()
+    }
+  }
+
+  async setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {
+    const query = this.getSession(sessionId).query
+    await query.applyFlagSettings({
+      model: model.model,
+      effortLevel: model.reasoningEffort ? mapEffort(model.reasoningEffort) : null,
+    })
   }
 
   async configureExecution(
@@ -523,6 +563,19 @@ function mapEffort(value: string | undefined): 'low' | 'medium' | 'high' | 'xhig
     return value
   }
   throw adapterError('protocol', `Unsupported Claude reasoning effort: ${value}`)
+}
+
+function mapModelInfo(model: ModelInfo): ModelCatalog['models'][number] {
+  return {
+    id: model.value,
+    displayName: model.displayName,
+    ...(model.description ? { description: model.description } : {}),
+    ...(model.value === 'default' ? { isDefault: true } : {}),
+    reasoningEfforts: (model.supportedEffortLevels ?? []).map((effort) => ({
+      id: effort,
+      displayName: effort,
+    })),
+  }
 }
 
 function adapterError(code: 'connection' | 'not_implemented' | 'protocol', message: string): AdapterError {

@@ -12,6 +12,8 @@ import {
   type SessionExecutionSettings,
   type ExecutionConfigurationResult,
   type InteractionResolution,
+  type ListModelsInput,
+  type ModelCatalog,
   type ModelSelection,
   type SendOptions,
   type SessionId,
@@ -21,18 +23,23 @@ import {
 export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly descriptor: RuntimeAdapterDescriptor
   readonly createInputs: CreateSessionInput[] = []
+  readonly resumeInputs: ResumeSessionInput[] = []
+  readonly forkInputs: ForkSessionInput[] = []
   readonly disposeCalls: SessionId[] = []
   readonly disposeFailures = new Set<SessionId>()
   readonly sendInputs: Array<{ sessionId: SessionId; input: UserInput; options: SendOptions }> = []
   readonly executionSettings: SessionExecutionSettings[] = []
   readonly models: ModelSelection[] = []
+  readonly listModelsInputs: ListModelsInput[] = []
   readonly resolutions: InteractionResolution[] = []
   interruptCount = 0
   connectCount = 0
   detectError?: unknown
   createError?: unknown
   sendError?: unknown
+  listModelsError?: unknown
   beforeSend?: () => void
+  beforeListModels?: () => Promise<void>
 
   private readonly streams = new Map<SessionId, TestEventStream>()
 
@@ -59,7 +66,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
           update: 'in-session',
           granularRules: true,
         },
-        features: { 'session.resume': true, 'session.fork': true },
+        features: { 'session.resume': true, 'session.fork': true, 'model.catalog': true },
         raw: [],
       },
     }
@@ -86,10 +93,12 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   }
 
   resumeSession(input: ResumeSessionInput): Promise<RuntimeSessionHandle> {
+    this.resumeInputs.push(input)
     return this.openSession(input.sessionId, input.runtimeSessionId)
   }
 
   forkSession(input: ForkSessionInput): Promise<RuntimeSessionHandle> {
+    this.forkInputs.push(input)
     return this.openSession(input.sessionId, `${this.descriptor.id}-fork-${input.runtimeSessionId}`)
   }
 
@@ -129,6 +138,22 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
       payload: { id: resolution.id, resolution },
     })
     return Promise.resolve()
+  }
+
+  async listModels(input: ListModelsInput): Promise<ModelCatalog> {
+    this.listModelsInputs.push(input)
+    if (this.listModelsError) throw this.listModelsError
+    await this.beforeListModels?.()
+    return Promise.resolve({
+      models: [
+        {
+          id: 'test-model',
+          displayName: 'Test Model',
+          defaultReasoningEffort: 'medium',
+          reasoningEfforts: [{ id: 'medium', displayName: 'Medium' }],
+        },
+      ],
+    })
   }
 
   setModel(_sessionId: SessionId, model: ModelSelection): Promise<void> {

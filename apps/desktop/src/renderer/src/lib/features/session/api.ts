@@ -4,12 +4,15 @@ import type {
 	CreateSessionResponse,
 	CloseSessionRequest,
 	ForkSessionRequest,
+	GatewayAdapterId,
 	GatewayAdapterAvailability,
+	GatewayModelCatalog,
 	GatewaySession,
 	InputAdmissionReceipt,
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
+	ListModelsQuery,
 	ResolveInteractionRequest,
 	ResumeSessionRequest,
 	RuntimeControlReceipt,
@@ -30,6 +33,18 @@ export function getSession(sessionId: string): Promise<GatewaySession> {
 
 export function listAdapters(projectKey: string): Promise<GatewayAdapterAvailability[]> {
 	return desktop.sessions.adapters(projectKey);
+}
+
+export function listModels(
+	projectKey: string,
+	adapterId: GatewayAdapterId,
+	query: ListModelsQuery = {}
+): Promise<GatewayModelCatalog> {
+	return desktop.sessions.models(projectKey, adapterId, query);
+}
+
+export function listSessionModels(sessionId: string): Promise<GatewayModelCatalog> {
+	return desktop.sessions.sessionModels(sessionId);
 }
 
 export function createSession(

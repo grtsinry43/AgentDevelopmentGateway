@@ -47,6 +47,7 @@ export interface SessionTitleChangedPayload {
 }
 export interface SessionModelChangedPayload {
   model: ModelSelection
+  controlRevision: number
 }
 export interface SessionExecutionChangedPayload {
   execution: SessionExecutionState

@@ -14,6 +14,7 @@ export type RuntimeFeature =
   | 'session.fork'
   | 'output.partial_text'
   | 'output.partial_reasoning'
+  | 'model.catalog'
   | 'tool.input_stream'
   | 'interaction.permission'
   | 'interaction.question'

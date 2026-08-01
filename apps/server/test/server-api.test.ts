@@ -68,12 +68,23 @@ test('serves the project and session lifecycle through validated HTTP contracts'
     agents.json<{ adapters: Array<{ adapterId: string }> }>().adapters.map((item) => item.adapterId),
     ['claude-code']
   )
+  const projectModels = await first.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${project.id}/agents/claude-code/models`
+  })
+  assert.equal(projectModels.statusCode, 200)
+  assert.equal(projectModels.json<{ models: Array<{ id: string }> }>().models[0]?.id, 'test-model')
 
   const createdSession = await first.inject({
     method: 'POST',
     url: `/api/v1/projects/${project.id}/sessions`,
     payload: {
       adapterId: 'claude-code',
+      execution: {
+        workMode: 'plan',
+        approval: { defaultAction: 'allow', reviewer: 'user', rules: [] },
+        sandbox: { filesystem: 'unrestricted', network: 'allow' }
+      },
       initialInput: {
         clientMessageId: '28d560a7-4fe7-49f3-b6c2-d5e5376262f9',
         text: 'Inspect this project'
@@ -82,13 +93,28 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   })
   assert.equal(createdSession.statusCode, 201)
   const createdSessionBody = createdSession.json<{
-    session: { id: string; adapterId: string; title?: string }
+    session: {
+      id: string
+      adapterId: string
+      title?: string
+      execution: {
+        configured: { workMode: string; approval: { defaultAction: string } }
+      }
+    }
     receipt: { turnId: string; admittedSequence: number }
   }>()
   const session = createdSessionBody.session
   assert.equal(session.adapterId, 'claude-code')
   assert.equal(session.title, 'Inspect this project')
+  assert.equal(session.execution.configured.workMode, 'plan')
+  assert.equal(session.execution.configured.approval.defaultAction, 'allow')
   assert.ok(createdSessionBody.receipt.admittedSequence > 0)
+  const sessionModels = await first.inject({
+    method: 'GET',
+    url: `/api/v1/sessions/${session.id}/models`
+  })
+  assert.equal(sessionModels.statusCode, 200)
+  assert.deepEqual(sessionModels.json(), projectModels.json())
 
   const continued = await first.inject({
     method: 'POST',
@@ -142,7 +168,7 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   const changedModel = await first.inject({
     method: 'PATCH',
     url: `/api/v1/sessions/${session.id}/model`,
-    payload: { model: 'test-model', expectedRevision: 2 }
+    payload: { model: 'test-model', reasoningEffort: 'medium', expectedRevision: 2 }
   })
   assert.equal(changedModel.statusCode, 200)
   assert.equal(changedModel.json<{ controlRevision: number }>().controlRevision, 3)
@@ -207,13 +233,39 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   assert.equal(closed.statusCode, 200)
   assert.equal(closed.json<{ controlRevision: number }>().controlRevision, 4)
 
+  const inactiveModels = await first.inject({
+    method: 'GET',
+    url: `/api/v1/sessions/${session.id}/models`
+  })
+  assert.equal(inactiveModels.statusCode, 200)
+  assert.deepEqual(inactiveModels.json(), projectModels.json())
+  const adapterModelCalls = adapter.models.length
+  const configuredInactiveModel = await first.inject({
+    method: 'PATCH',
+    url: `/api/v1/sessions/${session.id}/model`,
+    payload: { model: 'test-model', reasoningEffort: 'low', expectedRevision: 4 }
+  })
+  assert.equal(configuredInactiveModel.statusCode, 200)
+  assert.equal(
+    configuredInactiveModel.json<{ controlRevision: number }>().controlRevision,
+    5
+  )
+  assert.equal(adapter.models.length, adapterModelCalls)
+
   const resumed = await first.inject({
     method: 'POST',
     url: `/api/v1/sessions/${session.id}/resume`,
     payload: {}
   })
   assert.equal(resumed.statusCode, 200)
-  assert.equal(resumed.json<{ controlRevision: number }>().controlRevision, 4)
+  const resumedBody = resumed.json<{
+    controlRevision: number
+    model?: string
+    reasoningEffort?: string
+  }>()
+  assert.equal(resumedBody.controlRevision, 5)
+  assert.equal(resumedBody.model, 'test-model')
+  assert.equal(resumedBody.reasoningEffort, 'low')
 
   const forked = await first.inject({
     method: 'POST',

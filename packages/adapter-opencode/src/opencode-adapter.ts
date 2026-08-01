@@ -18,6 +18,8 @@ import {
   type ExecutionConfigurationResult,
   type ForkSessionInput,
   type InteractionResolution,
+  type ListModelsInput,
+  type ModelCatalog,
   type ModelSelection,
   type ResumeSessionInput,
   type RuntimeAdapter,
@@ -55,6 +57,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   features: {
     'session.resume': true,
     'session.fork': true,
+    'model.catalog': true,
     'output.partial_text': true,
     'output.partial_reasoning': true,
     'interaction.permission': true,
@@ -215,7 +218,7 @@ export class OpenCodeAdapter implements RuntimeAdapter {
       input.runtimeSessionId,
       input.projectPath,
       connection,
-      undefined,
+      input.model,
     )
     await this.discoverChildren(session)
     this.publish(session, { type: 'session.status_changed', payload: { status: 'idle' } })
@@ -244,7 +247,7 @@ export class OpenCodeAdapter implements RuntimeAdapter {
       runtimeSessionId,
       input.projectPath,
       this.requireConnection(input.connection),
-      undefined,
+      input.model,
     )
     this.publish(session, {
       type: 'session.created',
@@ -293,6 +296,7 @@ export class OpenCodeAdapter implements RuntimeAdapter {
           method: 'POST',
           body: {
             ...(session.model ? { model: splitModel(session.model.model) } : {}),
+            ...(session.model?.reasoningEffort ? { variant: session.model.reasoningEffort } : {}),
             parts: [{ type: 'text', text: input.text }],
           },
         },
@@ -355,6 +359,27 @@ export class OpenCodeAdapter implements RuntimeAdapter {
       payload: { id: resolution.id, resolution },
       ...(session.activeTurnId ? { turnId: session.activeTurnId } : {}),
     })
+  }
+
+  async listModels(input: ListModelsInput): Promise<ModelCatalog> {
+    const connection = this.requireConnection(input.connection)
+    const response = await requestJson(connection, input.projectPath, '/provider')
+    if (!isRecord(response) || !Array.isArray(response.all)) {
+      throw adapterError('protocol', 'OpenCode /provider returned an invalid catalog')
+    }
+    const connected = new Set(stringArray(response.connected))
+    const defaults = isRecord(response.default) ? response.default : {}
+    const models: ModelCatalog['models'] = []
+    for (const provider of response.all) {
+      if (!isRecord(provider)) continue
+      const providerId = stringValue(provider.id)
+      if (!providerId || !connected.has(providerId) || !isRecord(provider.models)) continue
+      for (const [modelKey, value] of Object.entries(provider.models)) {
+        if (!isRecord(value)) continue
+        models.push(openCodeModel(providerId, modelKey, value, stringValue(defaults[providerId])))
+      }
+    }
+    return { models }
   }
 
   setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {
@@ -858,6 +883,23 @@ function splitModel(model: string): { providerID: string; modelID: string } {
   return { providerID: model.slice(0, separator), modelID: model.slice(separator + 1) }
 }
 
+function openCodeModel(
+  providerId: string,
+  modelKey: string,
+  value: Record<string, unknown>,
+  defaultModel: string | undefined,
+): ModelCatalog['models'][number] {
+  const modelId = stringValue(value.id) ?? modelKey
+  const id = `${providerId}/${modelId}`
+  const variants = isRecord(value.variants) ? Object.keys(value.variants) : []
+  return {
+    id,
+    displayName: stringValue(value.name) ?? modelId,
+    ...(defaultModel === modelId || defaultModel === id ? { isDefault: true } : {}),
+    reasoningEfforts: variants.map((variant) => ({ id: variant, displayName: variant })),
+  }
+}
+
 function mapUsage(tokens: Record<string, unknown>, cost?: number) {
   const cache = isRecord(tokens.cache) ? tokens.cache : {}
   const inputTokens = numberValue(tokens.input) ?? 0
@@ -1114,6 +1156,10 @@ function nativeErrorMessage(value: unknown): string | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 }
 
 function numberValue(value: unknown): number | undefined {

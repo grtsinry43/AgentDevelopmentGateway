@@ -3,6 +3,7 @@ import type {
   AgentSession,
   InteractionRequest,
   InputQueueEntry,
+  ModelCatalog,
   ModelSelection,
   RuntimeAdapterDescriptor,
   RuntimeConnection,
@@ -36,6 +37,15 @@ export interface CreateRuntimeSessionInput {
   model?: ModelSelection
   execution?: SessionExecutionSettings
 }
+
+export interface ListRuntimeModelsInput {
+  host: RuntimeHostContext
+  projectPath: string
+  adapterId: AdapterId
+  installationPath?: string
+}
+
+export type RuntimeModelCatalog = ModelCatalog
 
 export interface RuntimeSessionSnapshot {
   session: AgentSession
