@@ -1,4 +1,5 @@
 import type { AdapterId } from '../ids.js'
+import type { ExecutionCapabilities } from './execution.js'
 
 /**
  * RuntimeFeature — boolean-gated features a runtime may support (docs/05 §8).
@@ -18,7 +19,7 @@ export type RuntimeFeature =
   | 'interaction.question'
   | 'interaction.dialog' // Claude OnUserDialog
   | 'interaction.elicitation' // MCP elicitation
-  | 'mode.plan'
+  | 'work-mode.plan'
   | 'task.todo'
   | 'agent.subagent'
   | 'extension.skills'
@@ -61,6 +62,7 @@ export interface CapabilityDegradation {
 export interface RuntimeCapabilities {
   steer: SteerSupport
   modelSwitch: ModelSwitchSupport
+  execution: ExecutionCapabilities
   /** Boolean-gated features; absent key = unknown/unsupported. */
   features: Partial<Record<RuntimeFeature, boolean>>
   /** Open-ended runtime flags (Claude init.capabilities, Codex experimental gates). */

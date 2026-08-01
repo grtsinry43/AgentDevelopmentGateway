@@ -4,23 +4,44 @@ import {
   createProjectRequestSchema,
   createSessionRequestSchema,
   createSessionResponseSchema,
+  closeSessionRequestSchema,
+  controlReceiptSchema,
+  forkSessionRequestSchema,
   gatewayErrorResponseSchema,
   inputAdmissionReceiptSchema,
+  interruptSessionRequestSchema,
   projectListResponseSchema,
   projectSchema,
   runtimeEventWireSchema,
   sendSessionInputRequestSchema,
+  resolveInteractionRequestSchema,
+  resumeSessionRequestSchema,
+  setExecutionSettingsRequestSchema,
+  setSessionModelRequestSchema,
+  setSessionTitleRequestSchema,
+  setWorkModeRequestSchema,
   serverInfoSchema,
   sessionListResponseSchema,
+  sessionSchema,
   type CreateSessionRequest,
   type CreateSessionResponse,
+  type CloseSessionRequest,
+  type ForkSessionRequest,
   type GatewayAdapterAvailability,
   type GatewayProject,
   type GatewayServerInfo,
   type GatewaySession,
   type InputAdmissionReceipt,
+  type InterruptSessionRequest,
+  type ResolveInteractionRequest,
+  type ResumeSessionRequest,
+  type RuntimeControlReceipt,
   type RuntimeEventWire,
-  type SendSessionInputRequest
+  type SendSessionInputRequest,
+  type SetExecutionSettingsRequest,
+  type SetSessionModelRequest,
+  type SetSessionTitleRequest,
+  type SetWorkModeRequest
 } from '@agent-gateway/shared'
 import { net } from 'electron'
 
@@ -85,6 +106,10 @@ export class GatewayServerClient {
       .sessions
   }
 
+  session(sessionId: string): Promise<GatewaySession> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, sessionSchema)
+  }
+
   createSession(projectId: string, input: CreateSessionRequest): Promise<CreateSessionResponse> {
     return this.request(
       `/api/v1/projects/${projectId}/sessions`,
@@ -98,6 +123,68 @@ export class GatewayServerClient {
       method: 'POST',
       body: sendSessionInputRequestSchema.parse(input)
     })
+  }
+
+  interruptSession(sessionId: string, input: InterruptSessionRequest): Promise<void> {
+    return this.requestVoid(`/api/v1/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
+      method: 'POST',
+      body: interruptSessionRequestSchema.parse(input)
+    })
+  }
+
+  resolveInteraction(
+    sessionId: string,
+    interactionId: string,
+    input: ResolveInteractionRequest
+  ): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/interactions/${encodeURIComponent(interactionId)}/resolve`,
+      { method: 'POST', body: resolveInteractionRequestSchema.parse(input) }
+    )
+  }
+
+  closeSession(sessionId: string, input: CloseSessionRequest): Promise<RuntimeControlReceipt> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}/close`, controlReceiptSchema, {
+      method: 'POST',
+      body: closeSessionRequestSchema.parse(input)
+    })
+  }
+
+  resumeSession(sessionId: string, input: ResumeSessionRequest): Promise<GatewaySession> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}/resume`, sessionSchema, {
+      method: 'POST',
+      body: resumeSessionRequestSchema.parse(input)
+    })
+  }
+
+  forkSession(sessionId: string, input: ForkSessionRequest): Promise<GatewaySession> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}/forks`, sessionSchema, {
+      method: 'POST',
+      body: forkSessionRequestSchema.parse(input)
+    })
+  }
+
+  setSessionTitle(sessionId: string, input: SetSessionTitleRequest): Promise<RuntimeControlReceipt> {
+    return this.patchControl(sessionId, 'title', setSessionTitleRequestSchema.parse(input))
+  }
+
+  setSessionModel(sessionId: string, input: SetSessionModelRequest): Promise<RuntimeControlReceipt> {
+    return this.patchControl(sessionId, 'model', setSessionModelRequestSchema.parse(input))
+  }
+
+  setWorkMode(sessionId: string, input: SetWorkModeRequest): Promise<RuntimeControlReceipt> {
+    return this.patchControl(sessionId, 'work-mode', setWorkModeRequestSchema.parse(input))
+  }
+
+  setExecutionSettings(
+    sessionId: string,
+    input: SetExecutionSettingsRequest
+  ): Promise<RuntimeControlReceipt> {
+    return this.patchControl(
+      sessionId,
+      'execution-settings',
+      setExecutionSettingsRequestSchema.parse(input)
+    )
   }
 
   async *events(
@@ -120,7 +207,7 @@ export class GatewayServerClient {
   private async request<T>(
     path: string,
     schema: Schema<T>,
-    options: { method?: 'GET' | 'POST'; body?: unknown } = {}
+    options: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown } = {}
   ): Promise<T> {
     const response = await net.fetch(`${this.baseUrl}${path}`, {
       method: options.method ?? 'GET',
@@ -133,6 +220,31 @@ export class GatewayServerClient {
     })
     if (!response.ok) throw await this.responseError(response)
     return schema.parse(await response.json())
+  }
+
+  private async requestVoid(
+    path: string,
+    options: { method: 'POST' | 'PATCH'; body?: unknown }
+  ): Promise<void> {
+    const response = await net.fetch(`${this.baseUrl}${path}`, {
+      method: options.method,
+      ...(options.body === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(options.body) })
+    })
+    if (!response.ok) throw await this.responseError(response)
+  }
+
+  private patchControl(
+    sessionId: string,
+    resource: string,
+    body: unknown
+  ): Promise<RuntimeControlReceipt> {
+    return this.request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/${resource}`,
+      controlReceiptSchema,
+      { method: 'PATCH', body }
+    )
   }
 
   private async responseError(response: Response): Promise<Error> {

@@ -1,4 +1,8 @@
 import type { RuntimeAdapterDescriptor, RuntimeCapabilities } from '../domain/descriptor.js'
+import type {
+  ExecutionConfigurationResult,
+  SessionExecutionSettings,
+} from '../domain/execution.js'
 import type { SessionId } from '../ids.js'
 import type { AdapterEvent } from '../events/event-map.js'
 import type {
@@ -73,6 +77,11 @@ export interface RuntimeAdapter {
   interrupt(sessionId: SessionId, options?: InterruptOptions): Promise<void>
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>
+  /** Atomically apply work mode, approval policy, and sandbox intent. */
+  configureExecution?(
+    sessionId: SessionId,
+    settings: SessionExecutionSettings,
+  ): Promise<ExecutionConfigurationResult>
   disposeSession(sessionId: SessionId): Promise<void>
 
   /** Pre-envelope events for a session; the runtime layer seals them into the store (§8.3). */

@@ -9,6 +9,8 @@ import type { ToolCall } from '../model/tool-call.js'
 import type { TurnStatus } from '../model/turn.js'
 import type { RateLimitWindow, Usage } from '../model/usage.js'
 import type { RuntimeError } from '../model/runtime-error.js'
+import type { SessionExecutionState } from '../domain/execution.js'
+import type { ModelSelection } from '../adapter/io.js'
 
 /**
  * One payload interface per base runtime event (requirements §9.4).
@@ -40,6 +42,13 @@ export interface SessionCapabilitiesChangedPayload {
 export interface SessionTitleChangedPayload {
   title: string
   source?: 'provider' | 'user'
+}
+export interface SessionModelChangedPayload {
+  model: ModelSelection
+}
+export interface SessionExecutionChangedPayload {
+  execution: SessionExecutionState
+  controlRevision: number
 }
 
 // --- turn ---
@@ -120,10 +129,19 @@ export interface ToolCompletedPayload {
 
 // --- interaction (structured; see model/interaction.ts + adapter/io.ts) ---
 export interface InteractionPermissionRequestedPayload {
-  request: InteractionRequest
+  request: Extract<InteractionRequest, { kind: 'tool_permission' }>
 }
 export interface InteractionQuestionRequestedPayload {
-  request: InteractionRequest
+  request: Extract<InteractionRequest, { kind: 'question' }>
+}
+export interface InteractionGrantRequestedPayload {
+  request: Extract<InteractionRequest, { kind: 'permission_grant' }>
+}
+export interface InteractionDialogRequestedPayload {
+  request: Extract<InteractionRequest, { kind: 'host_dialog' }>
+}
+export interface InteractionElicitationRequestedPayload {
+  request: Extract<InteractionRequest, { kind: 'elicitation' }>
 }
 /** A resolved interaction (permission/question/grant/dialog/elicitation). Idempotent. */
 export interface InteractionResolvedPayload {

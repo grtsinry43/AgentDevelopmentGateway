@@ -1,4 +1,5 @@
 import type { RuntimeCapabilities } from '../domain/descriptor.js'
+import type { ExecutionConfigurationResult } from '../domain/execution.js'
 import type { SessionId } from '../ids.js'
 
 /** Context passed to `detect()` — describes the host to probe (§9.3). */
@@ -56,4 +57,6 @@ export interface RuntimeSessionHandle {
   runtimeSessionId?: string
   /** Id of the turn started on create/resume, if any (Codex returns a turn). */
   activeTurnId?: string
+  /** Adapter-confirmed execution policy in force immediately after create/resume/fork. */
+  execution?: ExecutionConfigurationResult
 }

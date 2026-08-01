@@ -9,11 +9,21 @@ import type { ContextProfile, NewProjectInput, RecentProject } from './project.j
 import type {
 	CreateSessionRequest,
 	CreateSessionResponse,
+	CloseSessionRequest,
+	ForkSessionRequest,
 	GatewayAdapterAvailability,
 	GatewaySession,
 	InputAdmissionReceipt,
+	InterruptSessionRequest,
+	ResolveInteractionRequest,
+	ResumeSessionRequest,
+	RuntimeControlReceipt,
 	RuntimeEventWire,
-	SendSessionInputRequest
+	SendSessionInputRequest,
+	SetExecutionSettingsRequest,
+	SetSessionModelRequest,
+	SetSessionTitleRequest,
+	SetWorkModeRequest
 } from '@agent-gateway/shared';
 
 /** 窗口种类。renderer 一启动就要知道自己是谁。 */
@@ -46,6 +56,16 @@ export const IPC = {
 	sessionsAdapters: 'sessions:adapters',
 	sessionsCreate: 'sessions:create',
 	sessionsSend: 'sessions:send',
+	sessionsGet: 'sessions:get',
+	sessionsInterrupt: 'sessions:interrupt',
+	sessionsResolveInteraction: 'sessions:resolveInteraction',
+	sessionsClose: 'sessions:close',
+	sessionsResume: 'sessions:resume',
+	sessionsFork: 'sessions:fork',
+	sessionsSetTitle: 'sessions:setTitle',
+	sessionsSetModel: 'sessions:setModel',
+	sessionsSetWorkMode: 'sessions:setWorkMode',
+	sessionsSetExecution: 'sessions:setExecution',
 	sessionsWatch: 'sessions:watch',
 	sessionsUnwatch: 'sessions:unwatch',
 
@@ -176,9 +196,26 @@ export interface DesktopBridge {
 
 	sessions: {
 		list(projectKey: string): Promise<GatewaySession[]>;
+		get(sessionId: string): Promise<GatewaySession>;
 		adapters(projectKey: string): Promise<GatewayAdapterAvailability[]>;
 		create(projectKey: string, input: CreateSessionRequest): Promise<CreateSessionResponse>;
 		send(sessionId: string, input: SendSessionInputRequest): Promise<InputAdmissionReceipt>;
+		interrupt(sessionId: string, input?: InterruptSessionRequest): Promise<void>;
+		resolveInteraction(
+			sessionId: string,
+			interactionId: string,
+			input: ResolveInteractionRequest
+		): Promise<void>;
+		close(sessionId: string, input?: CloseSessionRequest): Promise<RuntimeControlReceipt>;
+		resume(sessionId: string, input?: ResumeSessionRequest): Promise<GatewaySession>;
+		fork(sessionId: string, input?: ForkSessionRequest): Promise<GatewaySession>;
+		setTitle(sessionId: string, input: SetSessionTitleRequest): Promise<RuntimeControlReceipt>;
+		setModel(sessionId: string, input: SetSessionModelRequest): Promise<RuntimeControlReceipt>;
+		setWorkMode(sessionId: string, input: SetWorkModeRequest): Promise<RuntimeControlReceipt>;
+		setExecutionSettings(
+			sessionId: string,
+			input: SetExecutionSettingsRequest
+		): Promise<RuntimeControlReceipt>;
 		watch(sessionId: string, afterSequence?: number): Promise<void>;
 		unwatch(sessionId: string): Promise<void>;
 	};

@@ -1,5 +1,7 @@
 import type { AdapterId, SessionId } from '../ids.js'
 import type { ResumeCursor } from '../adapter/io.js'
+import type { ModelSelection } from '../adapter/io.js'
+import type { SessionExecutionState } from './execution.js'
 
 /**
  * SessionStatus — structured, not a boolean `turnActive` (docs/05 §3.2).
@@ -25,6 +27,10 @@ export interface AgentSession {
   /** The runtime's own id: Claude UUID / Codex thread_id / OpenCode ses_*. */
   runtimeSessionId?: string
   providerProfileId?: string
+  model?: ModelSelection
+  execution: SessionExecutionState
+  /** Optimistic-concurrency revision for user-mutable control state. */
+  controlRevision: number
   status: SessionStatus
 
   // --- lineage (Codex fork / subagent thread; OpenCode move) — docs/05 §3.1 ---

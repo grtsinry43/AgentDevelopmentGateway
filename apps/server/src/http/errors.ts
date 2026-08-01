@@ -12,6 +12,11 @@ export type GatewayErrorCode =
   | 'PROJECT_HAS_ACTIVE_SESSIONS'
   | 'SESSION_NOT_FOUND'
   | 'SESSION_NOT_ACTIVE'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'SESSION_ALREADY_ACTIVE'
+  | 'SESSION_REVISION_CONFLICT'
+  | 'INTERACTION_ID_MISMATCH'
+  | 'CAPABILITY_UNSUPPORTED'
   | 'ADAPTER_NOT_REGISTERED'
   | 'ADAPTER_UNAVAILABLE'
   | 'INSTALLATION_SELECTION_REQUIRED'
@@ -64,6 +69,10 @@ function mapAdapterError(error: AdapterError): GatewayHttpError {
     case 'gateway.installation.not_found':
     case 'gateway.installation.unavailable':
       return new GatewayHttpError(422, 'ADAPTER_UNAVAILABLE', error.message)
+    case 'gateway.session.revision_conflict':
+      return new GatewayHttpError(409, 'SESSION_REVISION_CONFLICT', error.message)
+    case 'gateway.capability.unsupported':
+      return new GatewayHttpError(422, 'CAPABILITY_UNSUPPORTED', error.message)
     default:
       return new GatewayHttpError(502, 'RUNTIME_START_FAILED', 'Runtime session failed to start')
   }

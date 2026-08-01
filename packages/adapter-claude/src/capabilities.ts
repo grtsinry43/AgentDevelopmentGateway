@@ -4,6 +4,15 @@ import type { SDKSystemMessage } from '@anthropic-ai/claude-agent-sdk'
 export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
   steer: 'queue-fallback',
   modelSwitch: 'in-session',
+  execution: {
+    workModes: ['build', 'plan'],
+    approvalActions: ['allow', 'ask', 'deny'],
+    approvalReviewers: ['user', 'provider'],
+    filesystemSandbox: ['read-only', 'workspace-write', 'unrestricted'],
+    networkAccess: ['deny', 'ask', 'allow'],
+    update: 'in-session',
+    granularRules: true,
+  },
   features: {
     'session.resume': true,
     'output.partial_text': true,
@@ -11,7 +20,7 @@ export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
     'tool.input_stream': true,
     'interaction.permission': true,
     'interaction.question': true,
-    'mode.plan': true,
+    'work-mode.plan': true,
   },
   raw: [],
 }

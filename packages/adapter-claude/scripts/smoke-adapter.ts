@@ -18,7 +18,11 @@ try {
   if (!handle.runtimeSessionId) throw new Error('Claude adapter did not return a runtime session id')
 
   const events = adapter.events(sessionId)
-  await adapter.send(sessionId, { text: 'Reply with exactly: gateway adapter smoke' }, { turnId })
+  await adapter.send(
+    sessionId,
+    { clientMessageId: 'gateway-adapter-smoke', text: 'Reply with exactly: gateway adapter smoke' },
+    { turnId },
+  )
 
   const eventTypes: string[] = []
   const iterator = events[Symbol.asyncIterator]()

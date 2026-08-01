@@ -72,6 +72,25 @@ const migrations: Migration[] = [
       CREATE INDEX session_events_session_id_idx ON session_events(session_id);
       CREATE INDEX session_events_timestamp_idx ON session_events(timestamp);
     `
+  },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE sessions ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'build'
+        CHECK (work_mode IN ('build', 'plan'));
+      ALTER TABLE sessions ADD COLUMN execution_settings_json TEXT NOT NULL DEFAULT
+        '{"workMode":"build","approval":{"defaultAction":"ask","reviewer":"user","rules":[]},"sandbox":{"filesystem":"workspace-write","network":"ask"}}';
+      ALTER TABLE sessions ADD COLUMN effective_execution_settings_json TEXT NOT NULL DEFAULT
+        '{"workMode":"build","approval":{"defaultAction":"ask","reviewer":"user","rules":[]},"sandbox":{"filesystem":"workspace-write","network":"ask"}}';
+      ALTER TABLE sessions ADD COLUMN execution_limitations_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE sessions ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT
+        '{"steer":"unsupported","modelSwitch":"unsupported","execution":{"workModes":[],"approvalActions":[],"approvalReviewers":[],"filesystemSandbox":[],"networkAccess":[],"update":"unsupported","granularRules":false},"features":{},"raw":[],"degradations":[{"capability":"runtime.snapshot","status":"unsupported","reason":"Capability snapshot predates protocol version 2"}]}';
+      ALTER TABLE sessions ADD COLUMN control_revision INTEGER NOT NULL DEFAULT 0;
+      UPDATE sessions SET work_mode = 'plan' WHERE mode = 'plan';
+      UPDATE sessions SET execution_settings_json = json_set(execution_settings_json, '$.workMode', 'plan'),
+        effective_execution_settings_json = json_set(effective_execution_settings_json, '$.workMode', 'plan')
+        WHERE mode = 'plan';
+    `
   }
 ]
 

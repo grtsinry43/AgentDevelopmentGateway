@@ -1,9 +1,11 @@
 import type { SDKControlInitializeResponse, SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk'
 import { AsyncQueue, type ClaudeQuery } from '../../src/index.js'
 
 export class FakeClaudeQuery implements ClaudeQuery {
   readonly messages = new AsyncQueue<SDKMessage>()
   readonly models: Array<string | undefined> = []
+  readonly permissionModes: PermissionMode[] = []
   interruptCount = 0
   closed = false
 
@@ -35,6 +37,11 @@ export class FakeClaudeQuery implements ClaudeQuery {
 
   setModel(model?: string): Promise<unknown> {
     this.models.push(model)
+    return Promise.resolve(undefined)
+  }
+
+  setPermissionMode(mode: PermissionMode): Promise<unknown> {
+    this.permissionModes.push(mode)
     return Promise.resolve(undefined)
   }
 

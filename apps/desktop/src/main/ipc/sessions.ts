@@ -1,7 +1,16 @@
 import {
   createSessionRequestSchema,
+  closeSessionRequestSchema,
+  forkSessionRequestSchema,
   gatewayIdSchema,
+  interruptSessionRequestSchema,
+  resolveInteractionRequestSchema,
+  resumeSessionRequestSchema,
   sendSessionInputRequestSchema,
+  setExecutionSettingsRequestSchema,
+  setSessionModelRequestSchema,
+  setSessionTitleRequestSchema,
+  setWorkModeRequestSchema,
   sessionEventsQuerySchema
 } from '@agent-gateway/shared'
 import { ipcMain } from 'electron'
@@ -40,6 +49,92 @@ export function registerSessionHandlers(): void {
     const input = sendSessionInputRequestSchema.parse(rawInput)
     return gatewayServer.sendInput(sessionId, input)
   })
+
+  ipcMain.handle(IPC.sessionsGet, (_event, rawSessionId: unknown) =>
+    gatewayServer.session(gatewayIdSchema.parse(rawSessionId))
+  )
+
+  ipcMain.handle(
+    IPC.sessionsInterrupt,
+    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
+      gatewayServer.interruptSession(
+        gatewayIdSchema.parse(rawSessionId),
+        interruptSessionRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsResolveInteraction,
+    (_event, rawSessionId: unknown, rawInteractionId: unknown, rawInput: unknown) =>
+      gatewayServer.resolveInteraction(
+        gatewayIdSchema.parse(rawSessionId),
+        gatewayIdSchema.parse(rawInteractionId),
+        resolveInteractionRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsClose,
+    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
+      gatewayServer.closeSession(
+        gatewayIdSchema.parse(rawSessionId),
+        closeSessionRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsResume,
+    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
+      gatewayServer.resumeSession(
+        gatewayIdSchema.parse(rawSessionId),
+        resumeSessionRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsFork,
+    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
+      gatewayServer.forkSession(
+        gatewayIdSchema.parse(rawSessionId),
+        forkSessionRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsSetTitle,
+    (_event, rawSessionId: unknown, rawInput: unknown) =>
+      gatewayServer.setSessionTitle(
+        gatewayIdSchema.parse(rawSessionId),
+        setSessionTitleRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsSetModel,
+    (_event, rawSessionId: unknown, rawInput: unknown) =>
+      gatewayServer.setSessionModel(
+        gatewayIdSchema.parse(rawSessionId),
+        setSessionModelRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsSetWorkMode,
+    (_event, rawSessionId: unknown, rawInput: unknown) =>
+      gatewayServer.setWorkMode(
+        gatewayIdSchema.parse(rawSessionId),
+        setWorkModeRequestSchema.parse(rawInput)
+      )
+  )
+
+  ipcMain.handle(
+    IPC.sessionsSetExecution,
+    (_event, rawSessionId: unknown, rawInput: unknown) =>
+      gatewayServer.setExecutionSettings(
+        gatewayIdSchema.parse(rawSessionId),
+        setExecutionSettingsRequestSchema.parse(rawInput)
+      )
+  )
 
   ipcMain.handle(
     IPC.sessionsWatch,

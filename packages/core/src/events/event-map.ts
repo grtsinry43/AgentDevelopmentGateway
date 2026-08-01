@@ -14,6 +14,9 @@ import type {
   InputAdmittedPayload,
   InputQueueUpdatedPayload,
   InteractionCanceledPayload,
+  InteractionDialogRequestedPayload,
+  InteractionElicitationRequestedPayload,
+  InteractionGrantRequestedPayload,
   InteractionPermissionRequestedPayload,
   InteractionQuestionRequestedPayload,
   InteractionResolvedPayload,
@@ -23,6 +26,8 @@ import type {
   RuntimeWarningPayload,
   SessionCapabilitiesChangedPayload,
   SessionCreatedPayload,
+  SessionExecutionChangedPayload,
+  SessionModelChangedPayload,
   SessionStatusChangedPayload,
   SessionTitleChangedPayload,
   TaskUpdatedPayload,
@@ -54,6 +59,8 @@ export interface RuntimeEventMap {
   'session.status_changed': SessionStatusChangedPayload
   'session.capabilities_changed': SessionCapabilitiesChangedPayload
   'session.title_changed': SessionTitleChangedPayload
+  'session.model_changed': SessionModelChangedPayload
+  'session.execution_changed': SessionExecutionChangedPayload
   // turn
   'turn.started': TurnStartedPayload
   'turn.completed': TurnCompletedPayload
@@ -76,6 +83,9 @@ export interface RuntimeEventMap {
   // interaction
   'interaction.permission_requested': InteractionPermissionRequestedPayload
   'interaction.question_requested': InteractionQuestionRequestedPayload
+  'interaction.grant_requested': InteractionGrantRequestedPayload
+  'interaction.dialog_requested': InteractionDialogRequestedPayload
+  'interaction.elicitation_requested': InteractionElicitationRequestedPayload
   'interaction.resolved': InteractionResolvedPayload
   'interaction.canceled': InteractionCanceledPayload
   // input scheduling

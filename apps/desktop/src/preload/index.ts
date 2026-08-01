@@ -9,7 +9,19 @@ import {
   type WorkspaceLayoutState
 } from '../contract/bridge.js'
 import type { ContextProfile, NewProjectInput } from '../contract/project.js'
-import type { CreateSessionRequest, SendSessionInputRequest } from '@agent-gateway/shared'
+import type {
+  CloseSessionRequest,
+  CreateSessionRequest,
+  ForkSessionRequest,
+  InterruptSessionRequest,
+  ResolveInteractionRequest,
+  ResumeSessionRequest,
+  SendSessionInputRequest,
+  SetExecutionSettingsRequest,
+  SetSessionModelRequest,
+  SetSessionTitleRequest,
+  SetWorkModeRequest
+} from '@agent-gateway/shared'
 
 /**
  * 从 additionalArguments 读取主进程注入的启动数据。
@@ -77,11 +89,33 @@ const bridge: DesktopBridge = {
 
   sessions: {
     list: (projectKey: string) => ipcRenderer.invoke(IPC.sessionsList, projectKey),
+    get: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsGet, sessionId),
     adapters: (projectKey: string) => ipcRenderer.invoke(IPC.sessionsAdapters, projectKey),
     create: (projectKey: string, input: CreateSessionRequest) =>
       ipcRenderer.invoke(IPC.sessionsCreate, projectKey, input),
     send: (sessionId: string, input: SendSessionInputRequest) =>
       ipcRenderer.invoke(IPC.sessionsSend, sessionId, input),
+    interrupt: (sessionId: string, input: InterruptSessionRequest = {}) =>
+      ipcRenderer.invoke(IPC.sessionsInterrupt, sessionId, input),
+    resolveInteraction: (
+      sessionId: string,
+      interactionId: string,
+      input: ResolveInteractionRequest
+    ) => ipcRenderer.invoke(IPC.sessionsResolveInteraction, sessionId, interactionId, input),
+    close: (sessionId: string, input: CloseSessionRequest = {}) =>
+      ipcRenderer.invoke(IPC.sessionsClose, sessionId, input),
+    resume: (sessionId: string, input: ResumeSessionRequest = {}) =>
+      ipcRenderer.invoke(IPC.sessionsResume, sessionId, input),
+    fork: (sessionId: string, input: ForkSessionRequest = {}) =>
+      ipcRenderer.invoke(IPC.sessionsFork, sessionId, input),
+    setTitle: (sessionId: string, input: SetSessionTitleRequest) =>
+      ipcRenderer.invoke(IPC.sessionsSetTitle, sessionId, input),
+    setModel: (sessionId: string, input: SetSessionModelRequest) =>
+      ipcRenderer.invoke(IPC.sessionsSetModel, sessionId, input),
+    setWorkMode: (sessionId: string, input: SetWorkModeRequest) =>
+      ipcRenderer.invoke(IPC.sessionsSetWorkMode, sessionId, input),
+    setExecutionSettings: (sessionId: string, input: SetExecutionSettingsRequest) =>
+      ipcRenderer.invoke(IPC.sessionsSetExecution, sessionId, input),
     watch: (sessionId: string, afterSequence = 0) =>
       ipcRenderer.invoke(IPC.sessionsWatch, sessionId, afterSequence),
     unwatch: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsUnwatch, sessionId)

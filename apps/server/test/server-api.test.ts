@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { asInteractionId, asSessionId, asToolCallId } from '@agent-gateway/core'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { buildServer } from '../src/app.js'
@@ -70,7 +71,13 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   const createdSession = await first.inject({
     method: 'POST',
     url: `/api/v1/projects/${project.id}/sessions`,
-    payload: { adapterId: 'claude-code', initialInput: { text: 'Inspect this project' } }
+    payload: {
+      adapterId: 'claude-code',
+      initialInput: {
+        clientMessageId: '28d560a7-4fe7-49f3-b6c2-d5e5376262f9',
+        text: 'Inspect this project'
+      }
+    }
   })
   assert.equal(createdSession.statusCode, 201)
   const createdSessionBody = createdSession.json<{
@@ -85,7 +92,12 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   const continued = await first.inject({
     method: 'POST',
     url: `/api/v1/sessions/${session.id}/inputs`,
-    payload: { input: { text: 'Continue the inspection' } }
+    payload: {
+      input: {
+        clientMessageId: 'f59e9b9d-7590-4ed1-a8b2-51e939714e8f',
+        text: 'Continue the inspection'
+      }
+    }
   })
   assert.equal(continued.statusCode, 202)
 
@@ -98,6 +110,107 @@ test('serves the project and session lifecycle through validated HTTP contracts'
     blockedDelete.json<{ error: { code: string } }>().error.code,
     'PROJECT_HAS_ACTIVE_SESSIONS'
   )
+
+  const changedMode = await first.inject({
+    method: 'PATCH',
+    url: `/api/v1/sessions/${session.id}/work-mode`,
+    payload: { workMode: 'plan', expectedRevision: 0 }
+  })
+  assert.equal(changedMode.statusCode, 200)
+  assert.equal(changedMode.json<{ controlRevision: number }>().controlRevision, 1)
+
+  const staleMode = await first.inject({
+    method: 'PATCH',
+    url: `/api/v1/sessions/${session.id}/work-mode`,
+    payload: { workMode: 'build', expectedRevision: 0 }
+  })
+  assert.equal(staleMode.statusCode, 409)
+  assert.equal(
+    staleMode.json<{ error: { code: string } }>().error.code,
+    'SESSION_REVISION_CONFLICT'
+  )
+
+  const renamed = await first.inject({
+    method: 'PATCH',
+    url: `/api/v1/sessions/${session.id}/title`,
+    payload: { title: 'Controlled session', expectedRevision: 1 }
+  })
+  assert.equal(renamed.statusCode, 200)
+  assert.equal(renamed.json<{ controlRevision: number }>().controlRevision, 2)
+
+  const changedModel = await first.inject({
+    method: 'PATCH',
+    url: `/api/v1/sessions/${session.id}/model`,
+    payload: { model: 'test-model', expectedRevision: 2 }
+  })
+  assert.equal(changedModel.statusCode, 200)
+  assert.equal(changedModel.json<{ controlRevision: number }>().controlRevision, 3)
+
+  const interrupted = await first.inject({
+    method: 'POST',
+    url: `/api/v1/sessions/${session.id}/interrupt`,
+    payload: {}
+  })
+  assert.equal(interrupted.statusCode, 204)
+  assert.equal(adapter.interruptCount, 1)
+
+  const interactionId = asInteractionId('5d88a940-84b7-4800-aa6f-a2139900e05a')
+  adapter.emit(asSessionId(session.id), {
+    type: 'interaction.permission_requested',
+    payload: {
+      request: {
+        id: interactionId,
+        kind: 'tool_permission',
+        sessionId: asSessionId(session.id),
+        toolCallId: asToolCallId('tool-call'),
+        createdAt: Date.now(),
+        prompt: 'Allow test tool?',
+        availableDecisions: ['allow', 'deny']
+      }
+    }
+  })
+  await waitFor(async () => {
+    const response = await first.inject({ method: 'GET', url: `/api/v1/sessions/${session.id}` })
+    return response.json<{ pendingInteractions: unknown[] }>().pendingInteractions.length === 1
+  })
+
+  const resolvedInteraction = await first.inject({
+    method: 'POST',
+    url: `/api/v1/sessions/${session.id}/interactions/${interactionId}/resolve`,
+    payload: {
+      resolution: {
+        kind: 'tool_permission',
+        id: interactionId,
+        decision: { behavior: 'allow' }
+      }
+    }
+  })
+  assert.equal(resolvedInteraction.statusCode, 204)
+  assert.equal(adapter.resolutions.length, 1)
+
+  const closed = await first.inject({
+    method: 'POST',
+    url: `/api/v1/sessions/${session.id}/close`,
+    payload: { expectedRevision: 3 }
+  })
+  assert.equal(closed.statusCode, 200)
+  assert.equal(closed.json<{ controlRevision: number }>().controlRevision, 4)
+
+  const resumed = await first.inject({
+    method: 'POST',
+    url: `/api/v1/sessions/${session.id}/resume`,
+    payload: {}
+  })
+  assert.equal(resumed.statusCode, 200)
+  assert.equal(resumed.json<{ controlRevision: number }>().controlRevision, 4)
+
+  const forked = await first.inject({
+    method: 'POST',
+    url: `/api/v1/sessions/${session.id}/forks`,
+    payload: {}
+  })
+  assert.equal(forked.statusCode, 201)
+  assert.notEqual(forked.json<{ id: string }>().id, session.id)
 
   const leaked = await first.inject({ method: 'GET', url: '/test-response-leak' })
   assert.equal(leaked.statusCode, 500)
@@ -145,6 +258,14 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   assert.equal(restored.json<{ id: string }>().id, project.id)
 })
 
+async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await predicate()) return
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  throw new Error('Timed out waiting for condition')
+}
+
 test('requires an installation choice when an adapter has multiple installations', async (t) => {
   const server = buildServer({
     adapters: [
@@ -167,7 +288,13 @@ test('requires an installation choice when an adapter has multiple installations
   const response = await server.inject({
     method: 'POST',
     url: `/api/v1/projects/${projectId}/sessions`,
-    payload: { adapterId: 'claude-code', initialInput: { text: 'Start a session' } }
+    payload: {
+      adapterId: 'claude-code',
+      initialInput: {
+        clientMessageId: '3469774d-6862-4a19-985f-565651801a86',
+        text: 'Start a session'
+      }
+    }
   })
 
   assert.equal(response.statusCode, 409)
@@ -192,7 +319,13 @@ test('removes a newly created session when initial input delivery fails', async 
   const failed = await server.inject({
     method: 'POST',
     url: `/api/v1/projects/${projectId}/sessions`,
-    payload: { adapterId: 'claude-code', initialInput: { text: 'This must fail atomically' } }
+    payload: {
+      adapterId: 'claude-code',
+      initialInput: {
+        clientMessageId: 'b3c110a3-25b6-4c3f-9648-9b7dca16a771',
+        text: 'This must fail atomically'
+      }
+    }
   })
   assert.equal(failed.statusCode, 500)
 

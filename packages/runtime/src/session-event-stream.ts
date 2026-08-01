@@ -13,7 +13,10 @@ export class RuntimeSessionEventStream {
     private readonly sessionId: SessionId,
     private readonly adapterId: AdapterId,
     private readonly nextEventId: () => number,
-  ) {}
+    initialSequence = 0,
+  ) {
+    this.sequence = initialSequence
+  }
 
   append(event: AdapterEvent, beforeCommit?: (event: RuntimeEvent) => void): RuntimeEvent {
     if (this.terminal) throw new Error(`Cannot append to terminal event stream: ${this.sessionId}`)

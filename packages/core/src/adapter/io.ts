@@ -1,5 +1,6 @@
 import type { InteractionId, SessionId, TurnId } from '../ids.js'
 import type { SessionContext, TurnContext } from '../domain/context.js'
+import type { SessionExecutionSettings } from '../domain/execution.js'
 import type { RuntimeConnection } from './connection.js'
 
 /**
@@ -11,6 +12,8 @@ import type { RuntimeConnection } from './connection.js'
  * `admitOnly` mirrors OpenCode `resume:false` — durably admit the input without executing.
  */
 export interface UserInput {
+  /** Client-generated id used to make active-session retries idempotent. */
+  clientMessageId: string
   text: string
   delivery?: 'steer' | 'queue'
   attachments?: InputAttachment[]
@@ -143,7 +146,7 @@ export interface CreateSessionInput {
   connection: RuntimeConnection
   providerProfileId?: string
   model?: ModelSelection
-  mode?: 'default' | 'plan'
+  execution?: SessionExecutionSettings
   /** Stable, resolved context foundation for the new runtime session. */
   context?: SessionContext
 }
@@ -162,6 +165,7 @@ export interface ResumeSessionInput {
   providerStateSnapshot?: string
   /** The pinned context snapshot to restore alongside the provider session. */
   context?: SessionContext
+  execution?: SessionExecutionSettings
 }
 
 /** Input to fork a session into a new branch (§9.3 `forkSession`). */
@@ -176,4 +180,5 @@ export interface ForkSessionInput {
   forkPoint?: ResumeCursor
   /** New stable context, for example when continuing under refreshed rules. */
   context?: SessionContext
+  execution?: SessionExecutionSettings
 }

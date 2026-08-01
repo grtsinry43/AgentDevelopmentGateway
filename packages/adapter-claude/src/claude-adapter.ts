@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import {
   AdapterError,
+  cloneSessionExecutionSettings,
+  createDefaultSessionExecutionSettings,
   toRuntimeError,
   type AdapterEvent,
   type CreateSessionInput,
   type InteractionResolution,
   type InterruptOptions,
   type ModelSelection,
+  type ExecutionConfigurationResult,
   type ResumeSessionInput,
   type RuntimeAdapter,
   type RuntimeAdapterDescriptor,
@@ -18,6 +21,8 @@ import {
   type RuntimeSessionHandle,
   type SendOptions,
   type SessionId,
+  type SessionExecutionSettings,
+  type SessionExecutionState,
   type TurnId,
   type UserInput,
 } from '@agent-gateway/core'
@@ -31,11 +36,13 @@ import { AsyncQueue } from './async-queue.js'
 import { CLAUDE_BASE_CAPABILITIES } from './capabilities.js'
 import { ClaudeInteractionBridge } from './interaction-bridge.js'
 import { ClaudeMessageMapper } from './message-mapper.js'
+import { createClaudePreToolUseHook, resolveClaudeExecution } from './execution-policy.js'
 
 export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
   initializationResult(): Promise<SDKControlInitializeResponse>
   interrupt(): Promise<unknown>
   setModel(model?: string): Promise<unknown>
+  setPermissionMode(mode: import('@anthropic-ai/claude-agent-sdk').PermissionMode): Promise<unknown>
   close(): void
 }
 
@@ -56,6 +63,7 @@ interface ClaudeSessionState {
   mapper: ClaudeMessageMapper
   bridge: ClaudeInteractionBridge
   capabilities: RuntimeCapabilities
+  execution: SessionExecutionState
   activeTurnId?: TurnId
   lastTurnId?: TurnId
   disposed: boolean
@@ -116,11 +124,15 @@ export class ClaudeAdapter implements RuntimeAdapter {
       projectPath: input.projectPath,
       connection: input.connection,
       model: input.model,
-      mode: input.mode,
+      execution: input.execution,
       querySessionOptions: { sessionId: runtimeSessionId },
       publishCreated: true,
     })
-    return { sessionId: session.id, runtimeSessionId: session.runtimeSessionId }
+    return {
+      sessionId: session.id,
+      runtimeSessionId: session.runtimeSessionId,
+      execution: executionResult(session.execution),
+    }
   }
 
   async resumeSession(input: ResumeSessionInput): Promise<RuntimeSessionHandle> {
@@ -136,13 +148,18 @@ export class ClaudeAdapter implements RuntimeAdapter {
       runtimeSessionId: input.runtimeSessionId,
       projectPath: input.projectPath,
       connection: input.connection,
+      execution: input.execution,
       querySessionOptions: {
         resume: input.runtimeSessionId,
         ...(input.cursor?.by === 'message' ? { resumeSessionAt: input.cursor.messageUuid } : {}),
       },
       publishCreated: false,
     })
-    return { sessionId: session.id, runtimeSessionId: session.runtimeSessionId }
+    return {
+      sessionId: session.id,
+      runtimeSessionId: session.runtimeSessionId,
+      execution: executionResult(session.execution),
+    }
   }
 
   send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void> {
@@ -218,6 +235,25 @@ export class ClaudeAdapter implements RuntimeAdapter {
     await this.getSession(sessionId).query.setModel(model.model)
   }
 
+  async configureExecution(
+    sessionId: SessionId,
+    settings: SessionExecutionSettings,
+  ): Promise<ExecutionConfigurationResult> {
+    const session = this.getSession(sessionId)
+    const configured = cloneSessionExecutionSettings(settings)
+    const resolved = resolveClaudeExecution(configured)
+    await session.query.setPermissionMode(resolved.permissionMode)
+    session.execution = {
+      configured,
+      effective: cloneSessionExecutionSettings(resolved.effective),
+      limitations: resolved.limitations.map((limitation) => ({ ...limitation })),
+    }
+    return {
+      effective: cloneSessionExecutionSettings(resolved.effective),
+      limitations: resolved.limitations.map((limitation) => ({ ...limitation })),
+    }
+  }
+
   async disposeSession(sessionId: SessionId): Promise<void> {
     const session = this.getSession(sessionId)
     session.bridge.cancelAll('aborted', 'Session disposed')
@@ -250,7 +286,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
     projectPath: string
     connection: RuntimeConnection
     model?: ModelSelection
-    mode?: 'default' | 'plan'
+    execution?: SessionExecutionSettings
     querySessionOptions: { sessionId: string } | { resume: string; resumeSessionAt?: string }
     publishCreated: boolean
   }): Promise<ClaudeSessionState> {
@@ -259,6 +295,10 @@ export class ClaudeAdapter implements RuntimeAdapter {
     const events = new AsyncQueue<AdapterEvent>()
     const sdkInput = new AsyncQueue<SDKUserMessage>()
     const sessionReference: { current?: ClaudeSessionState } = {}
+    const configuredExecution = cloneSessionExecutionSettings(
+      input.execution ?? createDefaultSessionExecutionSettings(),
+    )
+    const resolvedExecution = resolveClaudeExecution(configuredExecution)
     const bridge = new ClaudeInteractionBridge(
       input.id,
       () => sessionReference.current?.activeTurnId,
@@ -278,7 +318,24 @@ export class ClaudeAdapter implements RuntimeAdapter {
         settingSources: ['user', 'project', 'local'],
         env: { ...process.env, ...connection.context.env },
         canUseTool: bridge.canUseTool,
-        permissionMode: input.mode === 'plan' ? 'plan' : 'default',
+        permissionMode: resolvedExecution.permissionMode,
+        // The SDK gate must be enabled when the Query is created so a later, explicit
+        // unrestricted+allow update can enter bypass mode without restarting the session.
+        // resolveClaudeExecution is the only place that can actually select bypassPermissions.
+        allowDangerouslySkipPermissions: true,
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                createClaudePreToolUseHook(
+                  () =>
+                    sessionReference.current?.execution.configured ?? configuredExecution,
+                  input.projectPath,
+                ),
+              ],
+            },
+          ],
+        },
         model: input.model?.model,
         effort: mapEffort(input.model?.reasoningEffort),
         pathToClaudeCodeExecutable:
@@ -297,6 +354,11 @@ export class ClaudeAdapter implements RuntimeAdapter {
       mapper: new ClaudeMessageMapper(),
       bridge,
       capabilities: cloneCapabilities(input.connection.capabilities),
+      execution: {
+        configured: configuredExecution,
+        effective: cloneSessionExecutionSettings(resolvedExecution.effective),
+        limitations: resolvedExecution.limitations.map((limitation) => ({ ...limitation })),
+      },
       disposed: false,
       pump: Promise.resolve(),
     }
@@ -468,10 +530,25 @@ function adapterError(code: 'connection' | 'not_implemented' | 'protocol', messa
 function cloneCapabilities(capabilities: RuntimeCapabilities): RuntimeCapabilities {
   return {
     ...capabilities,
+    execution: {
+      ...capabilities.execution,
+      workModes: [...capabilities.execution.workModes],
+      approvalActions: [...capabilities.execution.approvalActions],
+      approvalReviewers: [...capabilities.execution.approvalReviewers],
+      filesystemSandbox: [...capabilities.execution.filesystemSandbox],
+      networkAccess: [...capabilities.execution.networkAccess],
+    },
     features: { ...capabilities.features },
     raw: [...capabilities.raw],
     ...(capabilities.degradations
       ? { degradations: capabilities.degradations.map((degradation) => ({ ...degradation })) }
       : {}),
+  }
+}
+
+function executionResult(state: SessionExecutionState): ExecutionConfigurationResult {
+  return {
+    effective: cloneSessionExecutionSettings(state.effective),
+    limitations: state.limitations.map((limitation) => ({ ...limitation })),
   }
 }

@@ -1,5 +1,4 @@
 import {
-  AdapterError,
   type AdapterEvent,
   type AdapterId,
   type CreateSessionInput,
@@ -8,6 +7,12 @@ import {
   type RuntimeConnection,
   type RuntimeInstallation,
   type RuntimeSessionHandle,
+  type ResumeSessionInput,
+  type ForkSessionInput,
+  type SessionExecutionSettings,
+  type ExecutionConfigurationResult,
+  type InteractionResolution,
+  type ModelSelection,
   type SendOptions,
   type SessionId,
   type UserInput,
@@ -19,6 +24,10 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly disposeCalls: SessionId[] = []
   readonly disposeFailures = new Set<SessionId>()
   readonly sendInputs: Array<{ sessionId: SessionId; input: UserInput; options: SendOptions }> = []
+  readonly executionSettings: SessionExecutionSettings[] = []
+  readonly models: ModelSelection[] = []
+  readonly resolutions: InteractionResolution[] = []
+  interruptCount = 0
   connectCount = 0
   detectError?: unknown
   createError?: unknown
@@ -40,8 +49,17 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
       protocolVersion: 'test',
       capabilities: {
         steer: 'queue-fallback',
-        modelSwitch: 'unsupported',
-        features: {},
+        modelSwitch: 'in-session',
+        execution: {
+          workModes: ['build', 'plan'],
+          approvalActions: ['allow', 'ask', 'deny'],
+          approvalReviewers: ['user'],
+          filesystemSandbox: ['read-only', 'workspace-write', 'unrestricted'],
+          networkAccess: ['deny', 'ask', 'allow'],
+          update: 'in-session',
+          granularRules: true,
+        },
+        features: { 'session.resume': true, 'session.fork': true },
         raw: [],
       },
     }
@@ -64,24 +82,32 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   createSession(input: CreateSessionInput): Promise<RuntimeSessionHandle> {
     if (this.createError) return Promise.reject(this.createError)
     this.createInputs.push(input)
+    return this.openSession(input.sessionId, `${this.descriptor.id}-native-${input.sessionId}`)
+  }
+
+  resumeSession(input: ResumeSessionInput): Promise<RuntimeSessionHandle> {
+    return this.openSession(input.sessionId, input.runtimeSessionId)
+  }
+
+  forkSession(input: ForkSessionInput): Promise<RuntimeSessionHandle> {
+    return this.openSession(input.sessionId, `${this.descriptor.id}-fork-${input.runtimeSessionId}`)
+  }
+
+  private openSession(sessionId: SessionId, runtimeSessionId: string): Promise<RuntimeSessionHandle> {
     const stream = new TestEventStream()
-    this.streams.set(input.sessionId, stream)
+    this.streams.set(sessionId, stream)
     stream.push({
       type: 'session.created',
       payload: {
-        runtimeSessionId: `${this.descriptor.id}-native-${input.sessionId}`,
+        runtimeSessionId,
         capabilities: this.descriptor.capabilities,
       },
     })
     stream.push({ type: 'session.status_changed', payload: { status: 'idle' } })
     return Promise.resolve({
-      sessionId: input.sessionId,
-      runtimeSessionId: `${this.descriptor.id}-native-${input.sessionId}`,
+      sessionId,
+      runtimeSessionId,
     })
-  }
-
-  resumeSession(): Promise<RuntimeSessionHandle> {
-    return Promise.reject(notImplemented('resumeSession'))
   }
 
   send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void> {
@@ -92,11 +118,30 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   }
 
   interrupt(): Promise<void> {
-    return Promise.reject(notImplemented('interrupt'))
+    this.interruptCount += 1
+    return Promise.resolve()
   }
 
-  resolveInteraction(): Promise<void> {
-    return Promise.reject(notImplemented('resolveInteraction'))
+  resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void> {
+    this.resolutions.push(resolution)
+    this.requireStream(sessionId).push({
+      type: 'interaction.resolved',
+      payload: { id: resolution.id, resolution },
+    })
+    return Promise.resolve()
+  }
+
+  setModel(_sessionId: SessionId, model: ModelSelection): Promise<void> {
+    this.models.push(model)
+    return Promise.resolve()
+  }
+
+  configureExecution(
+    _sessionId: SessionId,
+    settings: SessionExecutionSettings,
+  ): Promise<ExecutionConfigurationResult> {
+    this.executionSettings.push(settings)
+    return Promise.resolve({ effective: settings, limitations: [] })
   }
 
   async disposeSession(sessionId: SessionId): Promise<void> {
@@ -171,8 +216,4 @@ class TestEventStream implements AsyncIterable<AdapterEvent> {
       else waiter.resolve({ value: undefined, done: true })
     }
   }
-}
-
-function notImplemented(method: string): AdapterError {
-  return new AdapterError({ code: 'not_implemented', message: method })
 }

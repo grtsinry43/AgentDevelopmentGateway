@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { asSessionId, type RuntimeEvent } from '@agent-gateway/core'
+import {
+  asInteractionId,
+  asSessionId,
+  asToolCallId,
+  type RuntimeEvent,
+} from '@agent-gateway/core'
 import { AdapterRegistry } from '../src/adapter-registry.js'
 import { RuntimeSessionManager } from '../src/session-manager.js'
 import { FakeRuntimeAdapter } from './fakes/fake-adapter.js'
@@ -115,7 +120,10 @@ test('durably admits input before delivering it to the bound adapter', async () 
     assert.equal(persisted.at(-1)?.type, 'input.admitted')
   }
 
-  const receipt = await manager.send(created.session.id, { text: 'Inspect the workspace' })
+  const receipt = await manager.send(created.session.id, {
+    clientMessageId: 'message-1',
+    text: 'Inspect the workspace',
+  })
   const admitted = manager.eventSnapshot(created.session.id).at(-1)
 
   assert.equal(admitted?.type, 'input.admitted')
@@ -141,7 +149,10 @@ test('records a failed turn when adapter delivery rejects', async () => {
   await waitForEvents(manager, created.session.id, 2)
   claude.sendError = new Error('delivery failed')
 
-  await assert.rejects(manager.send(created.session.id, { text: 'Fail this turn' }), /delivery failed/)
+  await assert.rejects(
+    manager.send(created.session.id, { clientMessageId: 'message-fail', text: 'Fail this turn' }),
+    /delivery failed/,
+  )
 
   assert.deepEqual(
     manager.eventSnapshot(created.session.id).slice(-2).map((event) => event.type),
@@ -227,6 +238,93 @@ test('attempts to dispose every session when one adapter disposal fails', async 
   assert.equal(manager.getSession(second.session.id).session.status, 'closed')
 })
 
+test('serializes control changes, rejects stale revisions, and deduplicates client input', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+
+  const mode = await manager.setWorkMode(created.session.id, 'plan', { expectedRevision: 0 })
+  assert.equal(mode.controlRevision, 1)
+  assert.equal(claude.executionSettings.at(-1)?.workMode, 'plan')
+  await assert.rejects(
+    manager.setWorkMode(created.session.id, 'build', { expectedRevision: 0 }),
+    /revision is 1, expected 0/,
+  )
+
+  const model = await manager.setModel(
+    created.session.id,
+    { model: 'test-model' },
+    { expectedRevision: 1 },
+  )
+  assert.equal(model.controlRevision, 2)
+
+  const input = { clientMessageId: 'deduplicated', text: 'Run once' }
+  const first = await manager.send(created.session.id, input)
+  const duplicate = await manager.send(created.session.id, input)
+  assert.deepEqual(duplicate, first)
+  assert.equal(claude.sendInputs.length, 1)
+})
+
+test('projects pending interactions and resumes event sequences without collision', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+  const interactionId = asInteractionId('interaction-1')
+  claude.emit(created.session.id, {
+    type: 'interaction.permission_requested',
+    payload: {
+      request: {
+        id: interactionId,
+        kind: 'tool_permission',
+        sessionId: created.session.id,
+        toolCallId: asToolCallId('tool-1'),
+        createdAt: Date.now(),
+        prompt: 'Allow tool?',
+      },
+    },
+  })
+  await waitForEvents(manager, created.session.id, 3)
+  assert.equal(manager.getSession(created.session.id).pendingInteractions.length, 1)
+  await manager.resolveInteraction(created.session.id, {
+    kind: 'tool_permission',
+    id: interactionId,
+    decision: { behavior: 'allow' },
+  })
+  await waitForEvents(manager, created.session.id, 4)
+  assert.equal(manager.getSession(created.session.id).pendingInteractions.length, 0)
+
+  await manager.disposeSession(created.session.id)
+  const closed = manager.getSession(created.session.id).session
+  const resumed = await manager.resumeSession({
+    sessionId: closed.id,
+    previousSession: closed,
+    projectId: closed.projectId,
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: closed.adapterId,
+    runtimeSessionId: closed.runtimeSessionId!,
+    execution: closed.execution.configured,
+  })
+  await waitForLastSequence(manager, resumed.session.id, closed.lastEventSequence + 2)
+  const resumedEvents = manager.eventSnapshot(resumed.session.id)
+  assert.ok(resumedEvents.every((event) => event.sequence > closed.lastEventSequence))
+
+  const forked = await manager.forkSession({ sourceSessionId: resumed.session.id })
+  assert.equal(forked.session.forkedFromSessionId, resumed.session.id)
+})
+
 async function waitForEvents(
   manager: RuntimeSessionManager,
   sessionId: ReturnType<typeof asSessionId>,
@@ -249,4 +347,16 @@ async function waitForStatus(
     await new Promise((resolve) => setImmediate(resolve))
   }
   throw new Error(`Timed out waiting for session status ${status}`)
+}
+
+async function waitForLastSequence(
+  manager: RuntimeSessionManager,
+  sessionId: ReturnType<typeof asSessionId>,
+  sequence: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (manager.getSession(sessionId).session.lastEventSequence >= sequence) return
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  throw new Error(`Timed out waiting for event sequence ${sequence}`)
 }

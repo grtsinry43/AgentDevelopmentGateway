@@ -157,7 +157,7 @@ class SessionWorkspace {
 			const created = await createSession(this.projectKey, {
 				adapterId,
 				...(installationPath ? { installationPath } : {}),
-				initialInput: { text }
+				initialInput: { clientMessageId: crypto.randomUUID(), text }
 			});
 			this.#applySessions([...this.sessions, created.session]);
 			await this.select(created.session.id);
@@ -175,7 +175,9 @@ class SessionWorkspace {
 		this.sending = true;
 		this.error = undefined;
 		try {
-			await sendSessionInput(this.selectedSessionId, { input: { text } });
+			await sendSessionInput(this.selectedSessionId, {
+				input: { clientMessageId: crypto.randomUUID(), text }
+			});
 			return true;
 		} catch (error) {
 			this.error = errorMessage(error);

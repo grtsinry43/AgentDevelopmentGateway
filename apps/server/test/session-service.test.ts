@@ -35,7 +35,10 @@ test('persists runtime snapshots and interrupts live sessions on shutdown', asyn
 
   const created = await service.create(projectId, {
     adapterId: 'claude-code',
-    initialInput: { text: 'Inspect this project' }
+    initialInput: {
+      clientMessageId: '38b8d3b3-33c3-4af9-9f16-8f78e8bf16c8',
+      text: 'Inspect this project'
+    }
   })
   await waitFor(() => service.get(created.session.id).status === 'idle')
   assert.equal(service.get(created.session.id).adapterId, 'claude-code')

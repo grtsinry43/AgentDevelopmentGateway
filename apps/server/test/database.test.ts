@@ -17,7 +17,8 @@ test('migrates a file database and preserves server identity across reopen', asy
   assert.deepEqual(firstDatabase.prepare('SELECT version FROM schema_migrations').all(), [
     { version: 1 },
     { version: 2 },
-    { version: 3 }
+    { version: 3 },
+    { version: 4 }
   ])
   firstDatabase.close()
 

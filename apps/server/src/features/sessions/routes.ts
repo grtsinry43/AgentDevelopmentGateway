@@ -5,13 +5,24 @@ import type { SessionService } from './service.js'
 import {
   createSessionBodySchema,
   createSessionResponseSchema,
+  closeSessionRequestSchema,
+  controlReceiptSchema,
+  forkSessionRequestSchema,
   inputAdmissionReceiptSchema,
+  interruptSessionRequestSchema,
   projectSessionsParamsSchema,
   sendSessionInputRequestSchema,
+  resolveInteractionRequestSchema,
+  resumeSessionRequestSchema,
+  setExecutionSettingsRequestSchema,
+  setSessionModelRequestSchema,
+  setSessionTitleRequestSchema,
+  setWorkModeRequestSchema,
   sessionErrorResponses,
   sessionEventsQuerySchema,
   sessionListResponseSchema,
   sessionParamsSchema,
+  sessionInteractionParamsSchema,
   sessionSchema
 } from './schemas.js'
 
@@ -47,6 +58,127 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       const result = await options.sessions.create(request.params.projectId, request.body)
       return reply.code(201).send(result)
     }
+  )
+
+  server.post(
+    '/sessions/:sessionId/interrupt',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: interruptSessionRequestSchema,
+        response: { ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.sessions.interrupt(request.params.sessionId, request.body)
+      reply.code(204)
+    }
+  )
+
+  server.post(
+    '/sessions/:sessionId/interactions/:interactionId/resolve',
+    {
+      schema: {
+        params: sessionInteractionParamsSchema,
+        body: resolveInteractionRequestSchema,
+        response: { ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.sessions.resolveInteraction(
+        request.params.sessionId,
+        request.params.interactionId,
+        request.body
+      )
+      reply.code(204)
+    }
+  )
+
+  server.post(
+    '/sessions/:sessionId/close',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: closeSessionRequestSchema,
+        response: { 200: controlReceiptSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.close(request.params.sessionId, request.body)
+  )
+
+  server.post(
+    '/sessions/:sessionId/resume',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: resumeSessionRequestSchema,
+        response: { 200: sessionSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.resume(request.params.sessionId, request.body)
+  )
+
+  server.post(
+    '/sessions/:sessionId/forks',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: forkSessionRequestSchema,
+        response: { 201: sessionSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      const session = await options.sessions.fork(request.params.sessionId, request.body)
+      return reply.code(201).send(session)
+    }
+  )
+
+  server.patch(
+    '/sessions/:sessionId/title',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: setSessionTitleRequestSchema,
+        response: { 200: controlReceiptSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.setTitle(request.params.sessionId, request.body)
+  )
+
+  server.patch(
+    '/sessions/:sessionId/model',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: setSessionModelRequestSchema,
+        response: { 200: controlReceiptSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.setModel(request.params.sessionId, request.body)
+  )
+
+  server.patch(
+    '/sessions/:sessionId/work-mode',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: setWorkModeRequestSchema,
+        response: { 200: controlReceiptSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.setWorkMode(request.params.sessionId, request.body)
+  )
+
+  server.patch(
+    '/sessions/:sessionId/execution-settings',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: setExecutionSettingsRequestSchema,
+        response: { 200: controlReceiptSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.setExecutionSettings(request.params.sessionId, request.body)
   )
 
   server.get(

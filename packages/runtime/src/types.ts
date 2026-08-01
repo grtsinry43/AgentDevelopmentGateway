@@ -1,6 +1,7 @@
 import type {
   AdapterId,
   AgentSession,
+  InteractionRequest,
   ModelSelection,
   RuntimeAdapterDescriptor,
   RuntimeConnection,
@@ -9,6 +10,7 @@ import type {
   RuntimeInstallation,
   RuntimeEvent,
   SessionId,
+  SessionExecutionSettings,
 } from '@agent-gateway/core'
 
 export interface RuntimeAdapterAvailability {
@@ -28,12 +30,36 @@ export interface CreateRuntimeSessionInput {
   installationPath?: string
   providerProfileId?: string
   model?: ModelSelection
-  mode?: 'default' | 'plan'
+  execution?: SessionExecutionSettings
 }
 
 export interface RuntimeSessionSnapshot {
   session: AgentSession
   connection: RuntimeConnection
+  capabilities: RuntimeConnection['capabilities']
+  pendingInteractions: InteractionRequest[]
+}
+
+export interface RuntimeControlOptions {
+  expectedRevision?: number
+}
+
+export interface RuntimeControlReceipt {
+  controlRevision: number
+}
+
+export interface ResumeRuntimeSessionInput extends CreateRuntimeSessionInput {
+  sessionId: SessionId
+  runtimeSessionId: string
+  previousSession: AgentSession
+  cursor?: import('@agent-gateway/core').ResumeCursor
+  providerStateSnapshot?: string
+}
+
+export interface ForkRuntimeSessionInput {
+  sourceSessionId: SessionId
+  forkPoint?: import('@agent-gateway/core').ResumeCursor
+  execution?: SessionExecutionSettings
 }
 
 /** Synchronous durability boundary. append must finish before an event becomes observable. */
