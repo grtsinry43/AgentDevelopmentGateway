@@ -6,6 +6,9 @@
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import Badge from '$lib/ui/primitives/Badge.svelte';
 	import type { SessionWorkspaceState } from '../session-workspace.svelte';
+	import AgentMarkdown from './AgentMarkdown.svelte';
+	import AgentWorkingIndicator from './AgentWorkingIndicator.svelte';
+	import ReasoningBlock from './ReasoningBlock.svelte';
 	import SessionComposer from './SessionComposer.svelte';
 
 	interface Props {
@@ -19,6 +22,10 @@
 	const sessionVisual = $derived(
 		workspace.selectedSession ? SESSION_STATUS[workspace.selectedSession.status] : undefined
 	);
+	const showWorkingIndicator = $derived(
+		workspace.selectedSession?.status === 'running' &&
+			!workspace.messages.some((message) => message.streaming)
+	);
 
 	function updateScrollPin(): void {
 		if (!transcript) return;
@@ -29,7 +36,7 @@
 		workspace.messages.map(
 			(message) => `${message.id}:${message.text.length}:${message.streaming}`
 		);
-		if (!pinnedToBottom) return;
+		if (!pinnedToBottom || (!showWorkingIndicator && workspace.messages.length === 0)) return;
 		void tick().then(() => transcript?.scrollTo({ top: transcript.scrollHeight }));
 	});
 </script>
@@ -89,23 +96,38 @@
 		{:else}
 			<div class="mx-auto w-full max-w-3xl px-5 py-4">
 				{#each workspace.messages as message (message.id)}
-					<article
-						class={cx(
-							'content-auto selectable border-b border-subtle py-3 last:border-b-0',
-							message.role === 'user' && 'font-mono'
-						)}
-					>
-						<div class="mb-1 flex items-center gap-2 text-2xs tracking-wide text-faint uppercase">
-							<span>{message.role === 'user' ? 'You' : 'Agent'}</span>
-							{#if message.streaming}
-								<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-status-running"></span>
+					{#if message.contentKind === 'reasoning'}
+						<ReasoningBlock
+							text={message.text}
+							streaming={message.streaming}
+							durationMs={message.durationMs}
+						/>
+					{:else}
+						<article
+							class={cx(
+								'content-auto selectable border-b border-subtle py-3 last:border-b-0',
+								message.role === 'user' && 'font-mono'
+							)}
+						>
+							<div class="mb-1 flex items-center gap-2 text-2xs tracking-wide text-faint uppercase">
+								<span>{message.role === 'user' ? 'You' : 'Agent'}</span>
+								{#if message.streaming}
+									<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-status-running"></span>
+								{/if}
+							</div>
+							{#if message.role === 'assistant'}
+								<AgentMarkdown content={message.text || (message.streaming ? '…' : '')} />
+							{:else}
+								<p class="text-sm leading-6 whitespace-pre-wrap text-normal">
+									{message.text || (message.streaming ? '…' : '')}
+								</p>
 							{/if}
-						</div>
-						<p class="text-sm leading-6 whitespace-pre-wrap text-normal">
-							{message.text || (message.streaming ? '…' : '')}
-						</p>
-					</article>
+						</article>
+					{/if}
 				{/each}
+				{#if showWorkingIndicator}
+					<AgentWorkingIndicator />
+				{/if}
 			</div>
 		{/if}
 	</div>

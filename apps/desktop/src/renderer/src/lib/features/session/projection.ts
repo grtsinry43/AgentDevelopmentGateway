@@ -4,10 +4,13 @@ import type { RuntimeEventWire } from '@agent-gateway/shared';
 export interface ConversationMessage {
 	id: string;
 	role: 'user' | 'assistant';
+	contentKind: 'text' | 'reasoning';
 	text: string;
 	sequence: number;
 	turnId?: string;
 	streaming: boolean;
+	startedAt?: number;
+	durationMs?: number;
 }
 
 export interface ConversationProjection {
@@ -42,6 +45,7 @@ export function projectRuntimeEvent(
 					{
 						id: `input-${event.sequence}`,
 						role: 'user',
+						contentKind: 'text',
 						text,
 						sequence: event.sequence,
 						...(event.turnId ? { turnId: event.turnId } : {}),
@@ -53,22 +57,74 @@ export function projectRuntimeEvent(
 		case 'content.text.started': {
 			const blockId = payloadString(event.payload, 'blockId');
 			if (!blockId) return defer(base, event);
-			return upsertAssistantBlock(base, event, blockId, '', true);
+			// Some Claude SDK snapshots renumber a streamed text block (for example :1 → :0).
+			// Do not create a second row while the same turn already has one active text block.
+			if (findAssistantBlockIndex(base, event, 'text', blockId, true) >= 0) return base;
+			return upsertAssistantBlock(base, event, 'text', blockId, '', true);
 		}
 		case 'content.text.delta': {
 			const blockId = payloadString(event.payload, 'blockId');
 			const delta = payloadString(event.payload, 'delta');
 			if (!blockId || delta === undefined) return defer(base, event);
-			const id = assistantBlockId(event, blockId);
-			const existing = current.messages.find((message) => message.id === id);
-			return upsertAssistantBlock(base, event, blockId, `${existing?.text ?? ''}${delta}`, true);
+			const index = findAssistantBlockIndex(current, event, 'text', blockId, true);
+			const existing = index >= 0 ? current.messages[index] : undefined;
+			return upsertAssistantBlock(
+				base,
+				event,
+				'text',
+				blockId,
+				`${existing?.text ?? ''}${delta}`,
+				true,
+				true
+			);
 		}
 		case 'content.text.completed': {
 			const blockId = payloadString(event.payload, 'blockId');
 			const text = payloadString(event.payload, 'text');
 			if (!blockId || text === undefined) return defer(base, event);
 			// Completed is authoritative; it replaces any accumulated live delta.
-			return upsertAssistantBlock(base, event, blockId, text, false);
+			return upsertAssistantBlock(base, event, 'text', blockId, text, false, true);
+		}
+		case 'content.reasoning.started': {
+			const blockId = payloadString(event.payload, 'blockId');
+			if (!blockId) return defer(base, event);
+			if (findAssistantBlockIndex(base, event, 'reasoning', blockId, true) >= 0) return base;
+			return upsertAssistantBlock(base, event, 'reasoning', blockId, '', true, false, {
+				startedAt: event.timestamp
+			});
+		}
+		case 'content.reasoning.delta': {
+			const blockId = payloadString(event.payload, 'blockId');
+			const delta = payloadString(event.payload, 'delta');
+			if (!blockId || delta === undefined) return defer(base, event);
+			const index = findAssistantBlockIndex(current, event, 'reasoning', blockId, true);
+			const existing = index >= 0 ? current.messages[index] : undefined;
+			return upsertAssistantBlock(
+				base,
+				event,
+				'reasoning',
+				blockId,
+				`${existing?.text ?? ''}${delta}`,
+				true,
+				true
+			);
+		}
+		case 'content.reasoning.completed': {
+			const blockId = payloadString(event.payload, 'blockId');
+			const text = payloadString(event.payload, 'text');
+			if (!blockId || text === undefined) return defer(base, event);
+			const index = findAssistantBlockIndex(current, event, 'reasoning', blockId, true);
+			const startedAt = index >= 0 ? current.messages[index]?.startedAt : undefined;
+			return upsertAssistantBlock(
+				base,
+				event,
+				'reasoning',
+				blockId,
+				text,
+				false,
+				true,
+				startedAt === undefined ? {} : { durationMs: Math.max(0, event.timestamp - startedAt) }
+			);
 		}
 		case 'session.status_changed': {
 			const status = sessionStatus(event.payload);
@@ -91,19 +147,28 @@ export function projectRuntimeEvent(
 function upsertAssistantBlock(
 	current: ConversationProjection,
 	event: RuntimeEventWire,
+	contentKind: ConversationMessage['contentKind'],
 	blockId: string,
 	text: string,
-	streaming: boolean
+	streaming: boolean,
+	reconcileActiveTurn = false,
+	metadata: Pick<ConversationMessage, 'startedAt' | 'durationMs'> = {}
 ): ConversationProjection {
-	const id = assistantBlockId(event, blockId);
-	const index = current.messages.findIndex((message) => message.id === id);
+	const id = assistantBlockId(event, contentKind, blockId);
+	const index = findAssistantBlockIndex(current, event, contentKind, blockId, reconcileActiveTurn);
+	const existing = index >= 0 ? current.messages[index] : undefined;
 	const message: ConversationMessage = {
-		id,
+		// Preserve the live block's UI identity when an authoritative snapshot renumbers it.
+		id: existing?.id ?? id,
 		role: 'assistant',
+		contentKind,
 		text,
-		sequence: index >= 0 ? current.messages[index]!.sequence : event.sequence,
+		sequence: existing?.sequence ?? event.sequence,
 		...(event.turnId ? { turnId: event.turnId } : {}),
-		streaming
+		streaming,
+		...(existing?.startedAt === undefined ? {} : { startedAt: existing.startedAt }),
+		...(existing?.durationMs === undefined ? {} : { durationMs: existing.durationMs }),
+		...metadata
 	};
 	if (index < 0) return { ...current, messages: [...current.messages, message] };
 	return {
@@ -112,8 +177,39 @@ function upsertAssistantBlock(
 	};
 }
 
-function assistantBlockId(event: RuntimeEventWire, blockId: string): string {
-	return `assistant-${event.turnId ?? 'session'}-${blockId}`;
+function findAssistantBlockIndex(
+	current: ConversationProjection,
+	event: RuntimeEventWire,
+	contentKind: ConversationMessage['contentKind'],
+	blockId: string,
+	reconcileActiveTurn: boolean
+): number {
+	const exactId = assistantBlockId(event, contentKind, blockId);
+	const exact = current.messages.findIndex((message) => message.id === exactId);
+	if (exact >= 0 || !reconcileActiveTurn) return exact;
+
+	// Blocks of the same kind are sequential within a turn. A still-streaming block is the
+	// same semantic block when a later authoritative SDK snapshot changes only its id/index.
+	for (let index = current.messages.length - 1; index >= 0; index -= 1) {
+		const message = current.messages[index];
+		if (
+			message?.role === 'assistant' &&
+			message.contentKind === contentKind &&
+			message.streaming &&
+			message.turnId === event.turnId
+		) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+function assistantBlockId(
+	event: RuntimeEventWire,
+	contentKind: ConversationMessage['contentKind'],
+	blockId: string
+): string {
+	return `assistant-${contentKind}-${event.turnId ?? 'session'}-${blockId}`;
 }
 
 function defer(current: ConversationProjection, event: RuntimeEventWire): ConversationProjection {
