@@ -110,6 +110,30 @@ describe('session itemizer', () => {
     assert.equal(tool.changeSet?.id, 'c1')
   })
 
+  it('attaches a change set that arrives after tool.completed', () => {
+    const state = feed(
+      createSessionItemState(),
+      event('tool.started', { toolCall: { id: 't1', name: 'Edit', kind: 'file-edit', status: 'running' } }),
+      event('tool.completed', {
+        toolCall: { id: 't1', name: 'Edit', kind: 'file-edit', status: 'completed' },
+      }),
+      // diff 汇总晚到(Claude 的常见顺序):tool 已定型也要补挂,且不产生重复块。
+      event('changes.updated', {
+        changeSet: {
+          id: 'c1',
+          scope: 'tool',
+          toolCallId: 't1',
+          files: [{ path: 'a.ts', hunks: [] }],
+        },
+      }),
+    )
+    const timeline = sessionTimeline(state)
+    assert.equal(timeline.length, 1)
+    const tool = timeline[0] as { changeSet?: { id: string; files: unknown[] } }
+    assert.equal(tool.changeSet?.id, 'c1')
+    assert.equal(tool.changeSet?.files.length, 1)
+  })
+
   it('ignores out-of-order / duplicate events', () => {
     const state = createSessionItemState()
     const first: RuntimeEventWire = {

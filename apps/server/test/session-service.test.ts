@@ -62,6 +62,81 @@ test('persists runtime snapshots and interrupts live sessions on shutdown', asyn
   assert.deepEqual(observerErrors, [])
 })
 
+test('itemsWindow tail page keeps the newest materialized item', async (t) => {
+  const database = openGatewayDatabase(':memory:')
+  t.after(() => database.close())
+  const projects = new ProjectRepository(database)
+  const sessions = new SessionRepository(database)
+  const events = new SessionEventRepository(database)
+  const items = new SessionItemRepository(database)
+  const itemizer = new SessionItemizer(items, {
+    listAfter: (sessionId, after) => events.listAfter(sessionId, after)
+  })
+  const sink = new MaterializedEventSink(events, itemizer)
+  const projectId = 'e4f0a9a1-7b2c-4d3e-9f8a-0c1d2e3f4a5b'
+  const now = Date.now()
+  projects.create({
+    id: projectId,
+    hostId: '9d3e5ddf-b870-4728-872e-d66c32f55086',
+    path: '/workspace/project',
+    normalizedPath: '/workspace/project',
+    name: 'project',
+    createdAt: now,
+    updatedAt: now
+  })
+  const runtime = new RuntimeSessionManager(
+    new AdapterRegistry([new FakeRuntimeAdapter()]),
+    sink
+  )
+  const service = new SessionService(sessions, events, items, itemizer, projects, runtime, {}, () => {})
+  const created = await service.create(projectId, {
+    adapterId: 'claude-code',
+    initialInput: { clientMessageId: '59f34a10-9b8c-4d2e-9f11-aa22bb33cc44', text: 'start' }
+  })
+  const sessionId = created.session.id
+
+  // 追加超过 limit 的成品消息(每条 input.admitted = 一条 message item)。
+  // 序号必须高于 itemizer 的 lastSequence(live-only 增量事件序号可能高于 durable max)。
+  const limit = 10
+  const extra = limit + 3
+  const before = items.listBefore(sessionId, Number.MAX_SAFE_INTEGER, 10000).length
+  let seq = events.maxSequence(sessionId) + 1000
+  for (let i = 0; i < extra; i += 1) {
+    seq += 1
+    sink.append({
+      id: seq,
+      sequence: seq,
+      sessionId,
+      adapterId: 'claude-code',
+      timestamp: now + seq,
+      type: 'input.admitted',
+      payload: {
+        entry: {
+          id: `c-${i}`,
+          input: { text: `msg ${i}`, clientMessageId: `c-${i}` },
+          requestedDelivery: 'steer',
+          status: 'delivered',
+          admittedSequence: seq,
+          createdAt: now + seq,
+          updatedAt: now + seq
+        }
+      }
+    })
+  }
+
+  // 尾页必须包含最新一条,而不是把它丢给 hasMore 探查。
+  const tail = service.itemsWindow(sessionId, undefined, limit)
+  assert.equal(tail.hasMore, true)
+  assert.equal(tail.items.length, limit)
+  assert.equal((tail.items[tail.items.length - 1] as { text: string }).text, `msg ${extra - 1}`)
+
+  // 翻更早页:before 取尾页最旧,同样不丢该页最新一条。
+  const older = service.itemsWindow(sessionId, tail.oldestSequence, limit)
+  assert.equal(older.hasMore, false)
+  assert.equal(older.items.length, before + extra - limit)
+  assert.equal((older.items[older.items.length - 1] as { text: string }).text, `msg ${extra - limit - 1}`)
+})
+
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate()) return

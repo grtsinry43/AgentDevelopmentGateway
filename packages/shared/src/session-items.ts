@@ -71,6 +71,12 @@ export interface SessionItemState {
 	changeSets: Record<string, ChangeSet>;
 	toolInputDeltas: Record<string, string>;
 	toolOutputDeltas: Record<string, string>;
+	/**
+	 * 已定型 tool 块按 toolCallId 索引(跨 consume 保留)。Claude 类提供方常在
+	 * `tool.completed` 之后才发 `changes.updated`(diff 汇总),tool 已定型时 changeSet
+	 * 要能补挂到对应成品块 —— 没有这张表就丢了 diff。
+	 */
+	finalizedTools: Record<string, SessionItemTool>;
 	lastSequence: number;
 }
 
@@ -86,6 +92,7 @@ export function createSessionItemState(): SessionItemState {
 		changeSets: {},
 		toolInputDeltas: {},
 		toolOutputDeltas: {},
+		finalizedTools: {},
 		lastSequence: 0
 	};
 }
@@ -224,6 +231,7 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 			};
 			if (index >= 0) state.live.splice(index, 1);
 			state.items.push(item);
+			state.finalizedTools[toolCall.id] = item;
 			return [item];
 		}
 		case 'changes.updated': {
@@ -231,11 +239,25 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 			if (!changeSet) return [];
 			state.changeSets[changeSet.id] = changeSet;
 			if (changeSet.scope === 'tool' && changeSet.toolCallId) {
-				const index = state.live.findIndex(
+				const liveIndex = state.live.findIndex(
 					(item): item is SessionItemTool =>
 						item.itemKind === 'tool' && item.toolCall.id === changeSet.toolCallId
 				);
-				if (index >= 0) (state.live[index] as SessionItemTool).changeSet = changeSet;
+				if (liveIndex >= 0) {
+					(state.live[liveIndex] as SessionItemTool).changeSet = changeSet;
+					return [];
+				}
+				// 已定型 tool:补挂 diff 并重新产出(服务端 upsert 按 id 覆盖;渲染端就地更新)。
+				const finalized = state.finalizedTools[changeSet.toolCallId];
+				if (finalized) {
+					finalized.changeSet = changeSet;
+					const itemsIndex = state.items.findIndex(
+						(item): item is SessionItemTool =>
+							item.itemKind === 'tool' && item.toolCall.id === changeSet.toolCallId
+					);
+					if (itemsIndex >= 0) state.items[itemsIndex] = finalized;
+					return [finalized];
+				}
 				return [];
 			}
 			const item: SessionItemChanges = {

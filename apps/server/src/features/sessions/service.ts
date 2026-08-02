@@ -450,7 +450,8 @@ export class SessionService {
     const cursor = before ?? this.eventsRepository.maxSequence(id) + 1
     const candidates = this.eventsRepository.listBefore(id, cursor, limit + 1)
     const hasMore = candidates.length > limit
-    const events = hasMore ? candidates.slice(0, limit) : candidates
+    // candidates 升序;slice(-limit) 取最新 limit 条,避免把最新一条丢给「探查」项。
+    const events = hasMore ? candidates.slice(-limit) : candidates
     return {
       events: events.map((event) => ({ ...event })) as EventsHistoryResponse['events'],
       oldestSequence: events[0]?.sequence ?? 0,
@@ -463,10 +464,13 @@ export class SessionService {
     if (!this.repository.findById(id)) {
       throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
     }
+    // 首次访问回填:把历史(含存量会话)物化到 session_items,之后分页读成品。
+    this.itemizer.ensureMaterialized(id)
     const cursor = before ?? Number.MAX_SAFE_INTEGER
     const candidates = this.itemsRepository.listBefore(id, cursor, limit + 1)
     const hasMore = candidates.length > limit
-    const items = hasMore ? candidates.slice(0, limit) : candidates
+    // candidates 升序;slice(-limit) 取最新 limit 条,避免把最新一条丢给「探查」项。
+    const items = hasMore ? candidates.slice(-limit) : candidates
     return {
       items,
       oldestSequence: items[0]?.sequence ?? 0,
