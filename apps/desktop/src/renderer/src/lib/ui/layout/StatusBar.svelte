@@ -4,6 +4,8 @@
 	import type { Snippet } from 'svelte';
 	import { cx } from '$lib/shared/utils/cx';
 	import { HOST_STATUS } from '$lib/shared/utils/status';
+	import { perfMonitor } from '$lib/shared/perf/perf-monitor.svelte';
+	import { renderScan } from '$lib/shared/perf/render-scan.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 
 	interface Props {
@@ -81,6 +83,38 @@
 					connectionStatus === 'connecting' && 'animate-pulse'
 				)}
 			></span>
+		</span>
+
+		<span title="渲染热点高亮">
+			<button
+				type="button"
+				class={cx(
+					'flex h-7 w-7 items-center justify-center transition-colors',
+					renderScan.enabled
+						? 'text-status-running hover:text-status-running'
+						: 'text-faint hover:text-strong'
+				)}
+				aria-label="渲染热点高亮"
+				onclick={() => (renderScan.enabled = !renderScan.enabled)}
+			>
+				<Icon name="eye" size={12} />
+			</button>
+		</span>
+
+		<span title="性能监视 (⌥⌘P)">
+			<button
+				type="button"
+				class={cx(
+					'flex h-7 w-7 items-center justify-center transition-colors',
+					perfMonitor.enabled
+						? 'text-status-running hover:text-status-running'
+						: 'text-faint hover:text-strong'
+				)}
+				aria-label="性能监视"
+				onclick={() => perfMonitor.toggle()}
+			>
+				<Icon name="activity" size={12} />
+			</button>
 		</span>
 
 		<span title="设置">

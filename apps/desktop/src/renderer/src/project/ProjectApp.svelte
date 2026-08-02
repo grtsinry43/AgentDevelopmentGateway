@@ -178,7 +178,10 @@
 			{ keys: 'mod+b', label: '侧栏', run: () => layout.toggleLeft() },
 			{ keys: 'mod+alt+b', label: '右侧面板', run: () => layout.toggleRight() },
 			// 性能监视 HUD(dev 打点)
-			{ keys: 'mod+alt+p', label: '性能监视', run: () => perfMonitor.toggle() },
+			{ keys: 'mod+alt+p', label: '性能监视', run: () => {
+				console.log('[perf] ⌥⌘P 触发,enabled 将翻转为', !perfMonitor.enabled);
+				perfMonitor.toggle();
+			} },
 			// ⌘⇧1..4 切左侧 tab
 			...visibleLeftTabs.map((tab, index) => ({
 				keys: `mod+shift+${index + 1}`,
@@ -308,6 +311,5 @@
 	<div class="pointer-events-none fixed inset-0 -z-20 bg-surface-base"></div>
 {/if}
 
-{#if import.meta.env.DEV}
-	<PerfTools />
-{/if}
+<!-- 性能监视 HUD:⌥⌘P 开关,生产构建也可用(render-scan 在 PerfTools 内部按 DEV 门控)。 -->
+<PerfTools />

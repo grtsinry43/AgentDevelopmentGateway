@@ -52,6 +52,7 @@ class PerfMonitor {
 	);
 
 	toggle(): void {
+		console.log('[perf] toggle →', this.enabled ? 'stop' : 'start');
 		if (this.enabled) this.stop();
 		else this.start();
 	}
