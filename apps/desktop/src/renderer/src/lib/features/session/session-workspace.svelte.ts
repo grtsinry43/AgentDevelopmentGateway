@@ -168,7 +168,9 @@ class SessionWorkspace {
 		return [
 			...this.items,
 			...(this.liveState.items as ConversationTimelineItem[]),
-			...(this.liveState.live as ConversationTimelineItem[])
+			// 流式块每次重算都换成新对象引用:applySessionItemEvent 就地改 .text,
+			// 引用不变的话 keyed each 不会重渲染,文本就卡住不流式了。
+			...(this.liveState.live as ConversationTimelineItem[]).map((item) => ({ ...item }))
 		]
 			.filter((item) => {
 				if (item.itemKind === 'subagent') {
