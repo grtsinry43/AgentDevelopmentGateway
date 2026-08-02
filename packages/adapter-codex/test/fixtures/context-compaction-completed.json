@@ -1,0 +1,12 @@
+{
+  "method": "item/completed",
+  "params": {
+    "item": {
+      "type": "contextCompaction",
+      "id": "compaction-1"
+    },
+    "threadId": "native-thread",
+    "turnId": "native-turn",
+    "completedAtMs": 1785600000000
+  }
+}

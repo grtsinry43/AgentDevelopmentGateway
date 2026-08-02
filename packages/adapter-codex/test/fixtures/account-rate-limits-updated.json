@@ -1,0 +1,24 @@
+{
+  "method": "account/rateLimits/updated",
+  "params": {
+    "rateLimits": {
+      "limitId": "codex",
+      "limitName": "Codex",
+      "primary": {
+        "usedPercent": 42,
+        "windowDurationMins": 300,
+        "resetsAt": 1785610800
+      },
+      "secondary": {
+        "usedPercent": 17,
+        "windowDurationMins": 10080,
+        "resetsAt": 1786129200
+      },
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": false,
+      "planType": "plus",
+      "rateLimitReachedType": null
+    }
+  }
+}

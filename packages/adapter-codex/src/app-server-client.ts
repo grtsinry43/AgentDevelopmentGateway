@@ -1,24 +1,43 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
+export type RequestId = string | number
+
+export interface RpcErrorBody {
+  code: number
+  message: string
+  data?: unknown
+}
+
 export interface RpcMessage {
-  jsonrpc?: '2.0'
-  id?: number
+  id?: RequestId
   method?: string
   params?: unknown
   result?: unknown
-  error?: { code: number; message: string; data?: unknown }
+  error?: RpcErrorBody
 }
 
 export interface ServerRequest extends RpcMessage {
-  id: number
+  id: RequestId
   method: string
+}
+
+export class CodexRpcError extends Error {
+  readonly code: number
+  readonly data?: unknown
+
+  constructor(error: RpcErrorBody) {
+    super(error.message)
+    this.name = 'CodexRpcError'
+    this.code = error.code
+    if (error.data !== undefined) this.data = error.data
+  }
 }
 
 export class CodexAppServerClient {
   private readonly child: ChildProcessWithoutNullStreams
   private readonly pending = new Map<
-    number,
+    string,
     { resolve: (value: unknown) => void; reject: (error: Error) => void }
   >()
   private nextId = 1
@@ -40,7 +59,13 @@ export class CodexAppServerClient {
       this.stderr += chunk.toString('utf8')
     })
     const lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity })
-    lines.on('line', (line) => this.handleLine(line))
+    lines.on('line', (line) => {
+      try {
+        this.handleLine(line)
+      } catch (error) {
+        this.terminate(toError(error))
+      }
+    })
     this.child.once('error', (error) => this.terminate(error))
     this.child.once('exit', (code, signal) => {
       this.terminate(
@@ -56,24 +81,34 @@ export class CodexAppServerClient {
       clientInfo: { name: 'agent-development-gateway', title: 'Agent Gateway', version },
       capabilities: { experimentalApi: true },
     })
+    await this.notify('initialized')
   }
 
   request(method: string, params?: unknown): Promise<unknown> {
     if (this.closed) return Promise.reject(new Error('Codex app-server is closed'))
     const id = this.nextId++
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.write({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) }).catch(
+      this.pending.set(String(id), { resolve, reject })
+      this.write({ id, method, ...(params === undefined ? {} : { params }) }).catch(
         (error: unknown) => {
-          this.pending.delete(id)
+          this.pending.delete(String(id))
           reject(toError(error))
         },
       )
     })
   }
 
+  notify(method: string, params?: unknown): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('Codex app-server is closed'))
+    return this.write({ method, ...(params === undefined ? {} : { params }) })
+  }
+
   async close(): Promise<void> {
     if (this.closed) return
+    this.closed = true
+    const closeError = new Error('Codex app-server closed')
+    this.rejectPending(closeError)
+    if (this.child.exitCode !== null || this.child.signalCode !== null) return
     this.child.kill('SIGTERM')
     await new Promise<void>((resolve) => {
       if (this.child.exitCode !== null || this.child.signalCode !== null) {
@@ -82,14 +117,15 @@ export class CodexAppServerClient {
       }
       const timeout = setTimeout(() => {
         this.child.kill('SIGKILL')
-        resolve()
+        forceTimeout = setTimeout(resolve, 1_000)
       }, 5_000)
+      let forceTimeout: NodeJS.Timeout | undefined
       this.child.once('exit', () => {
         clearTimeout(timeout)
+        if (forceTimeout) clearTimeout(forceTimeout)
         resolve()
       })
     })
-    this.terminate(new Error('Codex app-server closed'))
   }
 
   private handleLine(line: string): void {
@@ -101,16 +137,19 @@ export class CodexAppServerClient {
     } catch {
       return
     }
-    if (typeof message.id === 'number' && !message.method) {
-      const pending = this.pending.get(message.id)
+    if (isRequestId(message.id) && !message.method) {
+      const key = String(message.id)
+      const pending = this.pending.get(key)
       if (!pending) return
-      this.pending.delete(message.id)
-      if (message.error) pending.reject(new Error(message.error.message))
+      this.pending.delete(key)
+      if (message.error) pending.reject(new CodexRpcError(message.error))
       else pending.resolve(message.result)
       return
     }
-    if (typeof message.id === 'number' && typeof message.method === 'string') {
-      void this.replyToServerRequest(message as ServerRequest)
+    if (isRequestId(message.id) && typeof message.method === 'string') {
+      void this.replyToServerRequest(message as ServerRequest).catch((error: unknown) => {
+        this.terminate(toError(error))
+      })
       return
     }
     if (typeof message.method === 'string') this.onNotification(message)
@@ -119,12 +158,11 @@ export class CodexAppServerClient {
   private async replyToServerRequest(request: ServerRequest): Promise<void> {
     try {
       const result = await this.onServerRequest(request)
-      await this.write({ jsonrpc: '2.0', id: request.id, result })
+      await this.write({ id: request.id, result })
     } catch (error) {
       await this.write({
-        jsonrpc: '2.0',
         id: request.id,
-        error: { code: -32_000, message: toError(error).message },
+        error: rpcErrorFrom(error),
       })
     }
   }
@@ -140,10 +178,30 @@ export class CodexAppServerClient {
   private terminate(error: Error): void {
     if (this.closed) return
     this.closed = true
-    for (const pending of this.pending.values()) pending.reject(error)
-    this.pending.clear()
+    this.rejectPending(error)
     this.onClose(error)
   }
+
+  private rejectPending(error: Error): void {
+    for (const pending of this.pending.values()) pending.reject(error)
+    this.pending.clear()
+  }
+}
+
+function isRequestId(value: unknown): value is RequestId {
+  return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))
+}
+
+function rpcErrorFrom(value: unknown): RpcErrorBody {
+  if (value instanceof CodexRpcError) {
+    return {
+      code: value.code,
+      message: value.message,
+      ...(value.data === undefined ? {} : { data: value.data }),
+    }
+  }
+  const error = toError(value)
+  return { code: -32_000, message: error.message }
 }
 
 function toError(value: unknown): Error {

@@ -1,0 +1,17 @@
+{
+  "method": "item/started",
+  "params": {
+    "threadId": "native-thread",
+    "turnId": "native-turn",
+    "item": {
+      "type": "collabAgentToolCall",
+      "id": "call_spawn_1",
+      "tool": "spawnAgent",
+      "status": "inProgress",
+      "senderThreadId": "native-thread",
+      "receiverThreadIds": [],
+      "prompt": "Please introduce yourself briefly.",
+      "agentsStates": {}
+    }
+  }
+}

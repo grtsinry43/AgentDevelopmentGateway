@@ -1,0 +1,22 @@
+{
+  "method": "turn/plan/updated",
+  "params": {
+    "threadId": "native-thread",
+    "turnId": "native-turn",
+    "explanation": "Track the protocol work explicitly.",
+    "plan": [
+      {
+        "step": "Inspect generated protocol types",
+        "status": "completed"
+      },
+      {
+        "step": "Map notifications into Core events",
+        "status": "inProgress"
+      },
+      {
+        "step": "Verify adapter behavior",
+        "status": "pending"
+      }
+    ]
+  }
+}

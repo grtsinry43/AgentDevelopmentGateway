@@ -1,0 +1,15 @@
+{
+  "method": "item/tool/call",
+  "id": "dynamic-request-1",
+  "params": {
+    "threadId": "native-thread",
+    "turnId": "native-turn",
+    "callId": "dynamic-call-1",
+    "namespace": "workspace",
+    "tool": "search_symbols",
+    "arguments": {
+      "query": "CodexAdapter",
+      "limit": 20
+    }
+  }
+}
