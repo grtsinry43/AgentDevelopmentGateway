@@ -69,6 +69,7 @@ export class SessionService {
       adapterId: input.adapterId,
       installationPath: input.installationPath,
       providerProfileId: input.providerProfileId,
+      ...(input.providerConfig ? { providerConfig: { ...input.providerConfig } } : {}),
       model,
       execution: input.execution
     })
@@ -214,7 +215,8 @@ export class SessionService {
       projectPath: project.path,
       adapterId: stored.session.adapterId,
       installationPath: body.installationPath,
-      providerProfileId: stored.session.providerProfileId,
+      providerProfileId: body.providerProfileId ?? stored.session.providerProfileId,
+      ...(body.providerConfig ? { providerConfig: { ...body.providerConfig } } : {}),
       model: stored.session.model,
       execution: stored.session.execution.configured,
       runtimeSessionId: stored.session.runtimeSessionId,

@@ -13,6 +13,7 @@ import type {
 	HostProfileInput,
 	RemoteProvisionStage
 } from './hosts.js';
+import type { ManagedModel, ProviderProfile, ProviderProfileInput } from './providers.js';
 import type { ContextProfile, HostType, NewProjectInput, RecentProject } from './project.js';
 import type {
 	CreateSessionRequest,
@@ -99,6 +100,13 @@ export const IPC = {
 	hostsSave: 'hosts:save',
 	hostsRemove: 'hosts:remove',
 	hostsPickKeyFile: 'hosts:pickKeyFile',
+
+	providersList: 'providers:list',
+	providersSave: 'providers:save',
+	providersRemove: 'providers:remove',
+	providersScanModels: 'providers:scanModels',
+
+	previewOpen: 'preview:open',
 
 	remoteStatus: 'remote:status',
 	remoteReconnect: 'remote:reconnect',
@@ -248,6 +256,8 @@ export type PushEvent =
 	| { kind: 'contextProfiles.changed'; projectKey: string }
 	/** 本地 HostProfile 列表已变更(新建/更新/删除)。 */
 	| { kind: 'hosts.changed'; hosts: HostProfile[] }
+	/** 本地提供商 Profile 列表已变更。 */
+	| { kind: 'providers.changed'; providers: ProviderProfile[] }
 	/** 远程连接建立进度。Launcher 新建远程工程时据此展示内联状态。 */
 	| {
 			kind: 'remote.progress';
@@ -482,6 +492,20 @@ export interface DesktopBridge {
 		remove(id: string): Promise<void>;
 		/** 打开原生文件选择器选私钥。取消返回 null。 */
 		pickKeyFile(): Promise<string | null>;
+	};
+
+	/** 提供商与模型 Profile。明文 API key 永远不出主进程。 */
+	providers: {
+		list(): Promise<ProviderProfile[]>;
+		save(input: ProviderProfileInput): Promise<ProviderProfile>;
+		remove(id: string): Promise<void>;
+		/** 用 profile 的 baseUrl+key 探测模型列表(打 /v1/models)并保存进 profile。 */
+		scanModels(id: string): Promise<ManagedModel[]>;
+	};
+
+	/** Web 预览:把 agent 报告的端口解析成客户端可访问的本地 URL(远程走 SSH 中转)。 */
+	preview: {
+		open(port: number): Promise<{ url: string; host: string; port: number }>;
 	};
 
 	/** 远程连接状态与操作(仅 hostType = ssh 的工程有意义)。 */

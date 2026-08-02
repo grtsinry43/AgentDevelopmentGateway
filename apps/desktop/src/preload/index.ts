@@ -10,6 +10,7 @@ import {
 } from '../contract/bridge.js'
 import type { ContextProfile, NewProjectInput } from '../contract/project.js'
 import type { HostProfileInput } from '../contract/hosts.js'
+import type { ProviderProfileInput } from '../contract/providers.js'
 import type {
   CloseSessionRequest,
   CreateSessionRequest,
@@ -101,6 +102,17 @@ const bridge: DesktopBridge = {
     save: (input: HostProfileInput) => ipcRenderer.invoke(IPC.hostsSave, input),
     remove: (id: string) => ipcRenderer.invoke(IPC.hostsRemove, id),
     pickKeyFile: () => ipcRenderer.invoke(IPC.hostsPickKeyFile)
+  },
+
+  providers: {
+    list: () => ipcRenderer.invoke(IPC.providersList),
+    save: (input: ProviderProfileInput) => ipcRenderer.invoke(IPC.providersSave, input),
+    remove: (id: string) => ipcRenderer.invoke(IPC.providersRemove, id),
+    scanModels: (id: string) => ipcRenderer.invoke(IPC.providersScanModels, id)
+  },
+
+  preview: {
+    open: (port: number) => ipcRenderer.invoke(IPC.previewOpen, port)
   },
 
   remote: {

@@ -63,6 +63,8 @@ export class RemoteConnectionManager {
   private readonly infos = new Map<string, RemoteConnectionInfo>()
   private readonly states = new Map<string, ConnectionState>()
   private readonly stateMessages = new Map<string, string | undefined>()
+  /** Web 预览隧道(profileId:remotePort → 本地转发)。 */
+  private readonly previewTunnels = new Map<string, TunnelHandle>()
 
   constructor(
     private readonly context: SshContext,
@@ -146,7 +148,30 @@ export class RemoteConnectionManager {
     this.infos.delete(profileId)
     const connection = await task?.catch(() => undefined)
     connection?.tunnel.close()
+    this.closePreviewTunnels(profileId)
     this.setState(profileId, 'disconnected')
+  }
+
+  /**
+   * Web 预览中转:把远端 localhost:<remotePort> 转发到本地,返回本地端口。
+   * 同一 (profileId, remotePort) 复用已有隧道;连接释放时统一关闭。
+   */
+  async previewTunnel(profileId: string, endpoint: SshEndpoint, remotePort: number): Promise<number> {
+    const key = `${profileId}:${remotePort}`
+    const existing = this.previewTunnels.get(key)
+    if (existing) return existing.localPort
+    await ensureMaster(this.context, endpoint)
+    const tunnel = await startTunnel(this.context, endpoint, remotePort)
+    this.previewTunnels.set(key, tunnel)
+    return tunnel.localPort
+  }
+
+  private closePreviewTunnels(profileId: string): void {
+    for (const [key, tunnel] of [...this.previewTunnels]) {
+      if (!key.startsWith(`${profileId}:`)) continue
+      this.previewTunnels.delete(key)
+      tunnel.close()
+    }
   }
 
   /** 应用退出:收掉全部隧道与 SSH 控制连接。 */
@@ -158,6 +183,8 @@ export class RemoteConnectionManager {
       const connection = await task.catch(() => undefined)
       connection?.tunnel.close()
     }
+    for (const tunnel of [...this.previewTunnels.values()]) tunnel.close()
+    this.previewTunnels.clear()
     for (const endpoint of endpoints.values()) {
       await stopMaster(this.context, endpoint).catch(() => {})
     }

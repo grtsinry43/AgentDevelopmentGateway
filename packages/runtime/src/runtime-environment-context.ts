@@ -24,6 +24,9 @@ export const RUNTIME_ENVIRONMENT_INSTRUCTIONS = [
   'Paths must NEVER contain literal spaces.',
   'INVALID: [my file.ts](agent-gateway://src/my file.ts)',
   "The link text between [ ] must ALWAYS be ONLY the file's base name (e.g., index.ts), never the full path or relative path.",
+  '',
+  '--- Web preview ---',
+  'You have access to a `preview` tool (MCP server `gateway-preview`). After you start a local web server (e.g. `npm run dev`, `python3 -m http.server 8000`, `npx serve`), call `preview` with the port the server listens on. The Gateway opens http://localhost:<port> in its right-side preview panel so the user can see the running app. Prefer calling `preview` right after a server is confirmed listening; use it for any HTML/web UI you produce, not only frameworks.',
 ].join('\n')
 
 /** Build the pinned SessionContext snapshot injected on create / resume / fork. */

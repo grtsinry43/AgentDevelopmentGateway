@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { access } from 'node:fs/promises'
+import { access, mkdir, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 import {
@@ -20,6 +21,7 @@ import {
   type ListModelsInput,
   type ModelCatalog,
   type ModelSelection,
+  type ProviderRuntimeConfig,
   type ResumeSessionInput,
   type RuntimeAdapter,
   type RuntimeCapabilities,
@@ -193,9 +195,10 @@ export class CodexAdapter implements RuntimeAdapter {
         : {}),
       capabilities: cloneCapabilities(CODEX_CAPABILITIES),
     }
+    const env = await applyCodexProviderConfig(options.providerConfig, options.context.env ?? {})
     const client = new CodexAppServerClient(
       options.installation.path,
-      options.context.env ?? {},
+      env,
       (message) => {
         const current = this.connections.get(id)
         if (current) this.handleNotification(current, message)
@@ -500,6 +503,13 @@ export class CodexAdapter implements RuntimeAdapter {
         this.serverRequestHandlers.delete(handler)
       },
     }
+  }
+
+  async closeConnection(connection: RuntimeConnection): Promise<void> {
+    const state = this.connections.get(connection.id)
+    if (!state) return
+    this.connections.delete(connection.id)
+    await state.client.close()
   }
 
   async dispose(): Promise<void> {
@@ -952,4 +962,33 @@ async function executableVersion(path: string): Promise<string | undefined> {
 
 function cloneCapabilities(value: RuntimeCapabilities): RuntimeCapabilities {
   return structuredClone(value)
+}
+
+/**
+ * Connection-level provider config injection for `codex app-server`.
+ *
+ * Codex discovers `config.toml` / `auth.json` under `$CODEX_HOME`. To inject a relay
+ * (base URL) and API key without touching the user's real `~/.codex`, write a
+ * gateway-managed CODEX_HOME and point the app-server at it. Only applied when a
+ * profile with a baseUrl and/or apiKey is present; otherwise the default CODEX_HOME
+ * (user's own config/auth) is kept.
+ */
+async function applyCodexProviderConfig(
+  config: ProviderRuntimeConfig | undefined,
+  env: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  if (!config || (!config.baseUrl && !config.apiKey)) return env
+  const codexHome = join(homedir(), '.agent-development-gateway', 'codex')
+  await mkdir(codexHome, { recursive: true })
+  if (config.baseUrl) {
+    await writeFile(join(codexHome, 'config.toml'), `openai_base_url = "${config.baseUrl}"\n`)
+  }
+  if (config.apiKey) {
+    await writeFile(join(codexHome, 'auth.json'), JSON.stringify({ OPENAI_API_KEY: config.apiKey }))
+  }
+  return {
+    ...env,
+    CODEX_HOME: codexHome,
+    ...(config.apiKey ? { OPENAI_API_KEY: config.apiKey } : {}),
+  }
 }

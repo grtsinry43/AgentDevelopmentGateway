@@ -20,6 +20,8 @@
 		| 'git-branch'
 		| 'file-text'
 		| 'pencil'
+		| 'trash'
+		| 'refresh'
 		| 'globe'
 		| 'plug'
 		| 'agent'
@@ -68,6 +70,8 @@
 		],
 		'file-text': ['M4 2.5h5L12 5.5v8H4z', 'M6 8h4', 'M6 10.5h4'],
 		pencil: ['M3 13l2.75-.75L13 5l-2-2-7.25 7.25z', 'M9.75 4.25l2 2'],
+		refresh: ['M14.5 8a5.5 5.5 0 1 0 1 3', 'M14.5 3.5V8H10'],
+		trash: ['M3 4h9', 'M6.5 4V2.75h2V4', 'M4.5 4l.5 8h4.5l.5-8', 'M7 6.5v3.5'],
 		globe: [
 			'M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z',
 			'M2.5 8h11',

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	/**
 	 * Project 窗口根组件。
 	 *
@@ -14,6 +15,7 @@
 	import { appError } from '$lib/features/project/app-error.svelte';
 	import ProjectSwitcher from '$lib/features/project/components/ProjectSwitcher.svelte';
 	import { LEFT_TABS, layout } from '$lib/features/workspace/layout.svelte';
+	import { webPreview } from '$lib/shared/preview/web-preview.svelte';
 	import { registerWorkspacePanels } from '$lib/features/workspace/panels';
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
 	import RightToolRail from '$lib/features/workspace/components/RightToolRail.svelte';
@@ -53,6 +55,21 @@
 	// Session workspace owns push subscriptions and the selected Session SSE registration.
 	$effect(() => sessionWorkspace.start(projectKey));
 	$effect(() => gitWorkspace.start());
+	// agent 调用 preview 工具 → 打开右侧 Web 预览面板并最大化;关闭时移除面板(右栏收起)。
+	// 用命令式订阅而非 $effect:避免在 effect 里读写 $state 触发渲染死循环。
+	let previewOpened = false;
+	onDestroy(
+		webPreview.subscribe((entry) => {
+			if (entry) {
+				previewOpened = true;
+				layout.ensurePanel('preview-web');
+				layout.maximizeRight();
+			} else if (previewOpened) {
+				previewOpened = false;
+				layout.removePanelsByType('preview-web');
+			}
+		})
+	);
 
 	// 远程工程:连接状态 + 资源占用(本地工程的 status 返回 isRemote=false,chip 不渲染)。
 	$effect(() => {

@@ -94,6 +94,8 @@ export interface RuntimeAdapter {
     settings: SessionExecutionSettings,
   ): Promise<ExecutionConfigurationResult>
   disposeSession(sessionId: SessionId): Promise<void>
+  /** Release a single connection's transport/process (used when reconnecting with a different profile). */
+  closeConnection?(connection: RuntimeConnection): Promise<void>
   /** Release adapter-owned transports/processes during host shutdown. */
   dispose?(): Promise<void>
 

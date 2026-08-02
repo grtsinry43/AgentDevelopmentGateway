@@ -179,7 +179,9 @@
 									<span class="truncate">正在生成标题…</span>
 								</span>
 							{:else}
-								<span class="block truncate text-xs text-strong">{session.title ?? '未命名会话'}</span>
+								<span class="block truncate text-xs text-strong"
+									>{session.title ?? '未命名会话'}</span
+								>
 							{/if}
 							<span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-2xs text-faint">
 								<span class="truncate font-mono">{session.adapterId}</span>

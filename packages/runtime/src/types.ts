@@ -5,6 +5,7 @@ import type {
   InputQueueEntry,
   ModelCatalog,
   ModelSelection,
+  ProviderRuntimeConfig,
   RuntimeAdapterDescriptor,
   RuntimeConnection,
   RuntimeError,
@@ -34,6 +35,7 @@ export interface CreateRuntimeSessionInput {
   adapterId: AdapterId
   installationPath?: string
   providerProfileId?: string
+  providerConfig?: ProviderRuntimeConfig
   model?: ModelSelection
   execution?: SessionExecutionSettings
 }
@@ -43,6 +45,7 @@ export interface ListRuntimeModelsInput {
   projectPath: string
   adapterId: AdapterId
   installationPath?: string
+  providerConfig?: ProviderRuntimeConfig
 }
 
 export type RuntimeModelCatalog = ModelCatalog

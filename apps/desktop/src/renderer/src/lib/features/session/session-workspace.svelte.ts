@@ -1,5 +1,7 @@
 import { pushBus } from '$lib/shared/bridge/events';
 import { SvelteSet } from 'svelte/reactivity';
+import { desktop } from '$lib/shared/bridge/desktop';
+import { webPreview } from '$lib/shared/preview/web-preview.svelte';
 import {
 	createDefaultSessionExecutionSettings,
 	type Host,
@@ -78,6 +80,8 @@ class SessionWorkspace {
 	modelCatalogError = $state<string | undefined>(undefined);
 	draftModel = $state<string | undefined>(undefined);
 	draftReasoningEffort = $state<string | undefined>(undefined);
+	/** 新会话选择的提供商 profile(默认 undefined = 不用 profile)。 */
+	draftProviderProfileId = $state<string | undefined>(undefined);
 	draftExecution = $state.raw<SessionExecutionSettings>(createDefaultSessionExecutionSettings());
 	pendingModelSelection = $state.raw<PendingModelSelection | undefined>(undefined);
 	resolvingInteractionId = $state<string | undefined>(undefined);
@@ -299,6 +303,8 @@ class SessionWorkspace {
 		this.selectedSessionId = sessionId;
 		this.selectedSubagentRunId = undefined;
 		this.projection = emptyConversationProjection();
+		// 预览属于具体会话:切换会话时清掉,避免旧会话的页面还挂在右侧面板。
+		webPreview.clear();
 		this.#clearReplay();
 		this.streamState = 'connecting';
 		this.streamMessage = undefined;
@@ -462,6 +468,7 @@ class SessionWorkspace {
 			const created = await createSession(this.projectKey, {
 				adapterId,
 				...(installationPath ? { installationPath } : {}),
+				...(this.draftProviderProfileId ? { providerProfileId: this.draftProviderProfileId } : {}),
 				...(this.draftModel ? { model: this.draftModel } : {}),
 				...(this.draftModel && this.draftReasoningEffort
 					? { reasoningEffort: this.draftReasoningEffort }
@@ -808,6 +815,11 @@ class SessionWorkspace {
 
 	#acceptEvent(event: RuntimeEventWire): void {
 		if (event.sessionId !== this.selectedSessionId) return;
+		// 扩展事件不投影;在此分发(如 gateway.preview.open → 打开 Web 预览面板)。
+		if (event.type === 'runtime.extension') {
+			this.#handleExtensionEvent(event);
+			return;
+		}
 		if (this.#replaySessionId === event.sessionId && this.#replayProjection) {
 			this.#replayProjection = projectRuntimeEvent(this.#replayProjection, event);
 			if (event.sequence >= this.#replayTargetSequence) {
@@ -871,6 +883,27 @@ class SessionWorkspace {
 					this.pendingModelSelection = undefined;
 				}
 			}
+		}
+	}
+
+	/** 分发扩展事件(Feature Registry 之外的小型 hook;未知 feature 忽略)。 */
+	#handleExtensionEvent(event: RuntimeEventWire): void {
+		const payload = event.payload as { feature?: string; payload?: { port?: number } } | undefined;
+		if (payload?.feature === 'gateway.preview.open') {
+			const port = payload.payload?.port;
+			if (typeof port === 'number' && Number.isInteger(port) && port > 0) {
+				void this.#openPreview(port);
+			}
+		}
+	}
+
+	/** 经主进程把 agent 报告的端口解析成客户端可访问地址(远程走 SSH 中转)。 */
+	async #openPreview(port: number): Promise<void> {
+		try {
+			const entry = await desktop.preview.open(port);
+			webPreview.open(entry);
+		} catch (error) {
+			console.error('[preview] 打开预览失败:', error);
 		}
 	}
 

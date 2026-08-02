@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import type { ExportRawItem } from '$contract/bridge';
 	import { appError } from '$lib/features/project/app-error.svelte';
+	import { providers } from '$lib/shared/settings/providers.svelte';
 	import { desktop } from '$lib/shared/bridge/desktop';
 	import { cx } from '$lib/shared/utils/cx';
 	import { SESSION_STATUS, isLiveStatus } from '$lib/shared/utils/status';
@@ -126,6 +127,24 @@
 	});
 	const showWorkingIndicator = $derived(workspace.selectedSession?.status === 'running');
 
+	/** 会话绑定的提供商 profile(只读展示;创建时在 composer 选择)。 */
+	const providerChip = $derived.by(() => {
+		const profileId = workspace.selectedSession?.providerProfileId;
+		if (!profileId) return undefined;
+		const profile = providers.profiles.find((item) => item.id === profileId);
+		if (!profile) {
+			return { label: '自定义提供商', hint: '提供商 profile 已被删除' };
+		}
+		return {
+			label: profile.name,
+			hint: [
+				`提供商: ${profile.name}`,
+				`中继: ${profile.baseUrl ?? '默认地址'}`,
+				profile.hasApiKey ? '已注入 API Key' : '未配置 Key'
+			].join('\n')
+		};
+	});
+
 	function updateScrollPin(): void {
 		if (!transcript) return;
 		pinnedToBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 48;
@@ -191,6 +210,15 @@
 			<Badge dotClass={sessionVisual.dot} pulse={isLiveStatus(workspace.selectedSession.status)}>
 				{sessionVisual.label}
 			</Badge>
+		{/if}
+		{#if providerChip && workspace.selectedSession}
+			<span
+				class="flex h-6 shrink-0 cursor-default items-center gap-1.5 rounded-default border border-line bg-surface-raised px-2 text-2xs text-muted"
+				title={providerChip.hint}
+			>
+				<Icon name="plug" size={10} class="shrink-0" />
+				<span class="max-w-32 truncate">{providerChip.label}</span>
+			</span>
 		{/if}
 		<Button
 			variant="icon"

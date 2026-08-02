@@ -11,6 +11,7 @@ import RemoteLogPanel from '$lib/features/remote/components/RemoteLogPanel.svelt
 import ChangesPanel from './panels/ChangesPanel.svelte';
 import FilePreviewPanel from './panels/FilePreviewPanel.svelte';
 import PortsPanel from './panels/PortsPanel.svelte';
+import PreviewWebPanel from './panels/PreviewWebPanel.svelte';
 import TasksPanel from './panels/TasksPanel.svelte';
 import TerminalPanel from './panels/TerminalPanel.svelte';
 
@@ -38,6 +39,16 @@ export function registerWorkspacePanels(): void {
 		component: FilePreviewPanel,
 		contentOverflow: 'hidden',
 		// 打开文件预览后才出现在 rail
+		presence: 'contextual'
+	});
+
+	registerPanel({
+		type: 'preview-web',
+		title: 'Web 预览',
+		icon: 'globe',
+		component: PreviewWebPanel,
+		contentOverflow: 'hidden',
+		// agent 调用 preview 工具后才出现
 		presence: 'contextual'
 	});
 

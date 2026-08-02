@@ -346,6 +346,8 @@ export const userTextInputSchema = z.strictObject({
   clientMessageId: gatewayIdSchema,
   text: z.string().trim().min(1),
   delivery: z.enum(['steer', 'queue']).optional(),
+  // 与 core UserInput 对齐:runtime 会把 admitOnly 持久化进队列,严格 schema 必须接受。
+  admitOnly: z.boolean().optional(),
 })
 
 export const inputQueueEntrySchema = z.strictObject({
@@ -699,10 +701,19 @@ export const sessionSchema = z.strictObject({
   updatedAt: gatewayTimestampSchema,
 })
 
+export const providerRuntimeConfigSchema = z.strictObject({
+  baseUrl: z.string().min(1).optional(),
+  apiKey: z.string().min(1).optional(),
+  modelAliases: z.record(z.string(), z.string()).optional(),
+  openaiCompatible: z.boolean().optional(),
+})
+export type ProviderRuntimeConfigWire = z.infer<typeof providerRuntimeConfigSchema>
+
 export const createSessionRequestSchema = z.strictObject({
   adapterId: adapterIdSchema,
   installationPath: z.string().min(1).optional(),
   providerProfileId: z.string().min(1).optional(),
+  providerConfig: providerRuntimeConfigSchema.optional(),
   model: z.string().min(1).optional(),
   reasoningEffort: z.string().min(1).optional(),
   execution: sessionExecutionSettingsSchema.optional(),
@@ -763,6 +774,8 @@ export const setExecutionSettingsRequestSchema = controlOptionsSchema.extend({
 export const closeSessionRequestSchema = controlOptionsSchema
 export const resumeSessionRequestSchema = z.strictObject({
   installationPath: z.string().min(1).optional(),
+  providerProfileId: z.string().min(1).optional(),
+  providerConfig: providerRuntimeConfigSchema.optional(),
 })
 const resumeCursorSchema = z.discriminatedUnion('by', [
   z.strictObject({ by: z.literal('sequence'), sequence: z.number().int().nonnegative() }),

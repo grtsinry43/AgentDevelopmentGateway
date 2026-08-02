@@ -1,6 +1,7 @@
 import type { RuntimeCapabilities } from '../domain/descriptor.js'
 import type { ExecutionConfigurationResult } from '../domain/execution.js'
 import type { SessionId } from '../ids.js'
+import type { ProviderRuntimeConfig } from './io.js'
 
 /** Context passed to `detect()` — describes the host to probe (§9.3). */
 export interface RuntimeHostContext {
@@ -19,6 +20,8 @@ export interface RuntimeInstallation {
 export interface RuntimeConnectOptions {
   context: RuntimeHostContext
   installation?: RuntimeInstallation
+  /** Resolved provider credentials/relay applied at connect (connection-level, Codex/OpenCode). */
+  providerConfig?: ProviderRuntimeConfig
 }
 
 /**

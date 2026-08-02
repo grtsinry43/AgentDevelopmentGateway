@@ -3,6 +3,8 @@ import { registerExportIpc } from '../export/manager.js'
 import { registerFileHandlers } from './files.js'
 import { registerGitHandlers } from './git.js'
 import { registerHostHandlers } from './hosts.js'
+import { registerProviderHandlers } from './providers.js'
+import { registerPreviewHandlers } from './preview.js'
 import { registerLayoutHandlers, registerProjectHandlers } from './projects.js'
 import { registerRemoteHandlers } from './remote.js'
 import { registerSessionHandlers } from './sessions.js'
@@ -15,6 +17,8 @@ export function registerIpcHandlers(): void {
   registerWindowHandlers()
   registerProjectHandlers()
   registerHostHandlers()
+  registerProviderHandlers()
+  registerPreviewHandlers()
   registerRemoteHandlers()
   registerExportIpc()
   registerSessionHandlers()

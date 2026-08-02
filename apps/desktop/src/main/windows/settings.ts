@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { baseWindowOptions, entryUrl } from './chrome.js'
 
-const DEFAULT_SIZE = { width: 420, height: 360 }
+const DEFAULT_SIZE = { width: 960, height: 640 }
 
 let window: BrowserWindow | null = null
 
@@ -17,8 +17,8 @@ export async function openSettingsWindow(): Promise<BrowserWindow> {
     ...baseWindowOptions({ kind: 'settings' }),
     width: DEFAULT_SIZE.width,
     height: DEFAULT_SIZE.height,
-    minWidth: 360,
-    minHeight: 300,
+    minWidth: 720,
+    minHeight: 520,
     maximizable: false,
     fullscreenable: false,
     title: '设置'

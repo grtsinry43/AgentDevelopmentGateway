@@ -137,6 +137,24 @@ export interface ModelSelection {
   reasoningEffort?: string
 }
 
+/**
+ * Resolved provider runtime config the client passes down to an adapter for a session.
+ * The desktop owns the credential store (safeStorage) and resolves a ProviderProfile to
+ * this shape; the server stays stateless about secret material. Adapters use it to point
+ * at a relay/base URL and inject the API key (Claude) or write provider config
+ * (Codex/OpenCode, connection-level).
+ */
+export interface ProviderRuntimeConfig {
+  /** Relay/gateway base URL; omit for the provider default. */
+  baseUrl?: string
+  /** API key for the provider backend. */
+  apiKey?: string
+  /** Claude-only model alias mapping: alias → actual model id. */
+  modelAliases?: Record<string, string>
+  /** OpenCode-only: relay speaks OpenAI-compatible wire (true) or Anthropic wire (false). */
+  openaiCompatible?: boolean
+}
+
 /** Provider-advertised reasoning option. Order is meaningful and must be preserved. */
 export interface ModelReasoningEffort {
   id: string
@@ -192,6 +210,8 @@ export interface CreateSessionInput {
   projectPath: string
   connection: RuntimeConnection
   providerProfileId?: string
+  /** Resolved provider credentials/relay/aliases (desktop → adapter, never stored server-side). */
+  providerConfig?: ProviderRuntimeConfig
   model?: ModelSelection
   execution?: SessionExecutionSettings
   /** Stable, resolved context foundation for the new runtime session. */

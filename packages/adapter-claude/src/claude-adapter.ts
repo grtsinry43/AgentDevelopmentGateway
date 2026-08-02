@@ -11,6 +11,7 @@ import {
   type ListModelsInput,
   type ModelCatalog,
   type ModelSelection,
+  type ProviderRuntimeConfig,
   type ExecutionConfigurationResult,
   type ResumeSessionInput,
   type RuntimeAdapter,
@@ -32,11 +33,14 @@ import {
   query as createClaudeQuery,
   renameSession as claudeRenameSession,
   getSessionInfo as claudeGetSessionInfo,
+  createSdkMcpServer,
+  tool as defineMcpTool,
   type ModelInfo,
   type SDKControlInitializeResponse,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
+import { z } from 'zod'
 import { AsyncQueue } from './async-queue.js'
 import { CLAUDE_BASE_CAPABILITIES } from './capabilities.js'
 import { ClaudeInteractionBridge } from './interaction-bridge.js'
@@ -76,6 +80,8 @@ interface ClaudeSessionState {
   bridge: ClaudeInteractionBridge
   capabilities: RuntimeCapabilities
   execution: SessionExecutionState
+  /** Provider credentials/relay/aliases this session was created with (alias mapping). */
+  providerConfig?: ProviderRuntimeConfig
   activeTurnId?: TurnId
   lastTurnId?: TurnId
   /** Last provider-generated title we published, to dedupe `title_changed` events. */
@@ -127,15 +133,14 @@ export class ClaudeAdapter implements RuntimeAdapter {
   }
 
   async createSession(input: CreateSessionInput): Promise<RuntimeSessionHandle> {
-    if (input.providerProfileId) {
-      throw adapterError('not_implemented', 'Claude provider profiles are not wired yet')
-    }
     const runtimeSessionId = randomUUID()
     const session = await this.startSession({
       id: input.sessionId,
       runtimeSessionId,
       projectPath: input.projectPath,
       connection: input.connection,
+      providerProfileId: input.providerProfileId,
+      providerConfig: input.providerConfig,
       model: input.model,
       execution: input.execution,
       systemPromptAppend: mapSessionContext(input.context),
@@ -274,9 +279,9 @@ export class ClaudeAdapter implements RuntimeAdapter {
   }
 
   async setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {
-    const query = this.getSession(sessionId).query
-    await query.applyFlagSettings({
-      model: model.model,
+    const session = this.getSession(sessionId)
+    await session.query.applyFlagSettings({
+      model: resolveClaudeModel(model.model, session.providerConfig),
       effortLevel: model.reasoningEffort ? mapEffort(model.reasoningEffort) : null,
     })
   }
@@ -337,6 +342,8 @@ export class ClaudeAdapter implements RuntimeAdapter {
     runtimeSessionId: string
     projectPath: string
     connection: RuntimeConnection
+    providerProfileId?: string
+    providerConfig?: ProviderRuntimeConfig
     model?: ModelSelection
     execution?: SessionExecutionSettings
     systemPromptAppend?: string
@@ -363,6 +370,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       },
       input.projectPath,
     )
+    const resolvedModelId = resolveClaudeModel(input.model?.model, input.providerConfig)
     const query = this.queryFactory({
       prompt: sdkInput,
       options: {
@@ -370,14 +378,56 @@ export class ClaudeAdapter implements RuntimeAdapter {
         persistSession: true,
         includePartialMessages: true,
         forwardSubagentText: true,
-        settingSources: ['user', 'project', 'local'],
-        env: { ...process.env, ...connection.context.env },
+        // With an injected provider profile the profile's base URL / credentials must be
+        // authoritative: Claude Code applies ~/.claude/settings.json env on top of the
+        // process env, so a host CC Switch config would silently override the injection.
+        settingSources: input.providerConfig
+          ? ['project', 'local']
+          : ['user', 'project', 'local'],
+        env: claudeQueryEnv(connection.context.env, input.providerConfig),
         canUseTool: bridge.canUseTool,
         permissionMode: resolvedExecution.permissionMode,
         // The SDK gate must be enabled when the Query is created so a later, explicit
         // unrestricted+allow update can enter bypass mode without restarting the session.
         // resolveClaudeExecution is the only place that can actually select bypassPermissions.
         allowDangerouslySkipPermissions: true,
+        // In-process MCP server exposing the `preview` tool (JetBrains Air-style): the
+        // agent starts a localhost server, then calls `preview` with the port to display
+        // it in the Gateway's right preview panel. The handler publishes a
+        // `gateway.preview.open` extension event routed back to the desktop.
+        mcpServers: {
+          'gateway-preview': createSdkMcpServer({
+            name: 'gateway-preview',
+            version: '0.0.0',
+            alwaysLoad: true,
+            tools: [
+              defineMcpTool(
+                'preview',
+                'Open a local web server in the Agent Development Gateway preview panel. Call this after starting a localhost web server (e.g. `npm run dev`, `python3 -m http.server 8000`) so the user can see it. Pass the port the server listens on; the preview is opened at http://localhost:<port>.',
+                { port: z.number().int().positive() },
+                async ({ port }) => {
+                  const current = sessionReference.current
+                  if (!current) throw new Error('Gateway session is not ready')
+                  this.publish(current, {
+                    type: 'runtime.extension',
+                    payload: {
+                      feature: 'gateway.preview.open',
+                      payload: { port },
+                    },
+                  })
+                  return {
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `Preview opened for http://localhost:${port}`,
+                      },
+                    ],
+                  }
+                },
+              ),
+            ],
+          }),
+        },
         ...(input.systemPromptAppend
           ? {
               systemPrompt: {
@@ -400,7 +450,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
             },
           ],
         },
-        model: input.model?.model,
+        model: resolvedModelId,
         effort: mapEffort(input.model?.reasoningEffort),
         pathToClaudeCodeExecutable:
           connection.installation?.source === 'path' || connection.installation?.source === 'custom'
@@ -418,6 +468,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       events,
       mapper: new ClaudeMessageMapper(input.projectPath, input.id),
       bridge,
+      ...(input.providerConfig ? { providerConfig: { ...input.providerConfig } } : {}),
       capabilities: cloneCapabilities(input.connection.capabilities),
       execution: {
         configured: configuredExecution,
@@ -658,4 +709,23 @@ function executionResult(state: SessionExecutionState): ExecutionConfigurationRe
     effective: cloneSessionExecutionSettings(state.effective),
     limitations: state.limitations.map((limitation) => ({ ...limitation })),
   }
+}
+
+/** Query subprocess env with provider credential/relay overrides merged on top. */
+function claudeQueryEnv(
+  hostEnv: Record<string, string | undefined> | undefined,
+  config?: ProviderRuntimeConfig,
+): Record<string, string | undefined> {
+  return {
+    ...process.env,
+    ...hostEnv,
+    ...(config?.apiKey ? { ANTHROPIC_API_KEY: config.apiKey } : {}),
+    ...(config?.baseUrl ? { ANTHROPIC_BASE_URL: config.baseUrl } : {}),
+  }
+}
+
+/** Resolve a user-facing model id through the profile's alias map (identity when unset). */
+function resolveClaudeModel(model?: string, config?: ProviderRuntimeConfig): string | undefined {
+  if (!model) return undefined
+  return config?.modelAliases?.[model] ?? model
 }

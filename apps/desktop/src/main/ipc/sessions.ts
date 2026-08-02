@@ -17,10 +17,12 @@ import {
   setWorkModeRequestSchema,
   sessionEventsQuerySchema
 } from '@agent-gateway/shared'
+import type { GatewayAdapterId, ProviderRuntimeConfigWire } from '@agent-gateway/shared'
 import { ipcMain } from 'electron'
 import { IPC } from '../../contract/bridge.js'
 import { resolveForSender, resolveServerProject } from '../server/gateway.js'
 import type { GatewayServerClient } from '../server/client.js'
+import { getProviderApiKey, getProviderProfile } from '../store/provider-profiles.js'
 import { sessionStreams } from '../server/session-streams.js'
 import { broadcast } from './broadcast.js'
 
@@ -64,7 +66,11 @@ export function registerSessionHandlers(): void {
       const projectKey = parseProjectKey(rawProjectKey)
       const input = createSessionRequestSchema.parse(rawInput)
       const resolved = await resolveServerProject(projectKey)
-      const created = await resolved.client.createSession(resolved.serverProjectId, input)
+      const providerConfig = await resolveProviderConfig(input.providerProfileId, input.adapterId)
+      const created = await resolved.client.createSession(resolved.serverProjectId, {
+        ...input,
+        ...(providerConfig ? { providerConfig } : {}),
+      })
       void refreshSessions(resolved.recent.key, resolved.serverProjectId, resolved.client)
       return created
     }
@@ -156,10 +162,12 @@ export function registerSessionHandlers(): void {
     IPC.sessionsResume,
     async (event, rawSessionId: unknown, rawInput: unknown = {}) => {
       const { client } = await resolveForSender(event.sender)
-      return client.resumeSession(
-        gatewayIdSchema.parse(rawSessionId),
-        resumeSessionRequestSchema.parse(rawInput)
-      )
+      const input = resumeSessionRequestSchema.parse(rawInput)
+      const providerConfig = await resolveProviderConfig(input.providerProfileId)
+      return client.resumeSession(gatewayIdSchema.parse(rawSessionId), {
+        ...input,
+        ...(providerConfig ? { providerConfig } : {}),
+      })
     }
   )
 
@@ -239,6 +247,40 @@ export function registerSessionHandlers(): void {
 function parseProjectKey(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error('无效的工程标识')
   return value
+}
+
+/**
+ * 把渲染层选的 providerProfileId 解析成发给 server 的 providerConfig。
+ * 明文 key 只在主进程解密,经(本地 loopback / 远程 SSH 隧道)到达 server;server 不落盘。
+ * adapterId 不匹配时忽略 profile(防止跨 provider 误用)。
+ */
+async function resolveProviderConfig(
+  providerProfileId: string | undefined,
+  adapterId?: GatewayAdapterId
+): Promise<ProviderRuntimeConfigWire | undefined> {
+  if (!providerProfileId) return undefined
+  const profile = await getProviderProfile(providerProfileId)
+  if (!profile || !profile.enabled) return undefined
+  if (adapterId && profile.adapterId !== adapterId) return undefined
+  const apiKey = await getProviderApiKey(profile.id)
+  const modelAliases = Object.keys(profile.modelAliases).length
+    ? { ...profile.modelAliases }
+    : undefined
+  const openaiCompatible = profile.openaiCompatible
+  if (
+    !profile.baseUrl &&
+    !apiKey &&
+    !modelAliases &&
+    openaiCompatible === undefined
+  ) {
+    return undefined
+  }
+  return {
+    ...(profile.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+    ...(apiKey ? { apiKey } : {}),
+    ...(modelAliases ? { modelAliases } : {}),
+    ...(openaiCompatible !== undefined ? { openaiCompatible } : {}),
+  }
 }
 
 async function refreshSessions(

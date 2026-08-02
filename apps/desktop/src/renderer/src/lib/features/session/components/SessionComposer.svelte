@@ -2,6 +2,7 @@
 	import { cx } from '$lib/shared/utils/cx';
 	import MarkdownEditor from '$lib/ui/editor/MarkdownEditor.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
+	import { providers } from '$lib/shared/settings/providers.svelte';
 	import type { GatewayAdapterAvailability, GatewaySession } from '@agent-gateway/shared';
 	import { Prec, type Extension } from '@codemirror/state';
 	import { EditorView, keymap } from '@codemirror/view';
@@ -19,6 +20,18 @@
 	let adapterOverride = $state<GatewayAdapterAvailability['adapterId'] | undefined>(undefined);
 	let installationOverride = $state<string | undefined>(undefined);
 
+	function changeProviderProfile(profileId: string): void {
+		workspace.draftProviderProfileId = profileId || undefined;
+		const profile = profileId
+			? providers.profiles.find((item) => item.id === profileId)
+			: undefined;
+		// 默认选第一个可用的模型(profile 存的模型或 Claude 别名),避免发出去是 provider 默认模型。
+		const first =
+			profile?.models[0]?.id ??
+			(profile?.adapterId === 'claude-code' ? Object.keys(profile.modelAliases)[0] : undefined);
+		workspace.draftModel = first;
+	}
+
 	const creating = $derived(!workspace.selectedSessionId);
 	const selectedAdapterId = $derived(
 		adapterOverride ?? workspace.availableAdapters[0]?.adapterId ?? ''
@@ -26,6 +39,33 @@
 	const selectedAdapter = $derived(
 		workspace.availableAdapters.find((adapter) => adapter.adapterId === selectedAdapterId)
 	);
+	/** 当前适配器启用的提供商 profile(创建会话时可选)。 */
+	const selectedProfiles = $derived(
+		creating && selectedAdapterId ? providers.enabledFor(selectedAdapterId) : []
+	);
+	/** 选中的 profile(用于模型列表展示)。 */
+	const selectedProfile = $derived(
+		creating && workspace.draftProviderProfileId
+			? providers.profiles.find((item) => item.id === workspace.draftProviderProfileId)
+			: undefined
+	);
+	/** profile 提供的模型选项:优先存的模型列表,否则 Claude 别名。 */
+	const profileModelOptions = $derived.by<Array<{ id: string; displayName: string }>>(() => {
+		if (!selectedProfile) return [];
+		if (selectedProfile.models.length > 0) {
+			return selectedProfile.models.map((model) => ({
+				id: model.id,
+				displayName: model.displayName
+			}));
+		}
+		if (selectedProfile.adapterId === 'claude-code') {
+			return Object.entries(selectedProfile.modelAliases).map(([alias, target]) => ({
+				id: alias,
+				displayName: `${alias} → ${target}`
+			}));
+		}
+		return [];
+	});
 	const selectedInstallation = $derived(
 		installationOverride ?? selectedAdapter?.installations[0]?.path
 	);
@@ -45,12 +85,16 @@
 	const defaultModel = $derived(workspace.modelCatalog?.models.find((model) => model.isDefault));
 	const selectedModelId = $derived(
 		creating
-			? (workspace.draftModel ?? defaultModel?.id ?? '')
+			? (workspace.draftModel ??
+					(profileModelOptions.length > 0 ? profileModelOptions[0]?.id : defaultModel?.id) ??
+					'')
 			: (pendingModel?.model ?? workspace.selectedSession?.model ?? defaultModel?.id ?? '')
 	);
-	const selectedModel = $derived(
-		workspace.modelCatalog?.models.find((model) => model.id === selectedModelId)
-	);
+	const selectedModel = $derived.by(() => {
+		const profileModel = profileModelOptions.find((model) => model.id === selectedModelId);
+		if (profileModel) return { ...profileModel, reasoningEfforts: [] };
+		return workspace.modelCatalog?.models.find((model) => model.id === selectedModelId);
+	});
 	const reasoningOptions = $derived(selectedModel?.reasoningEfforts ?? []);
 	const selectedReasoningEffort = $derived(
 		creating
@@ -80,7 +124,7 @@
 			workspace.controlling ||
 			workspace.modelCatalogLoading ||
 			!modelCanUpdate ||
-			(workspace.modelCatalog?.models.length ?? 0) === 0
+			(profileModelOptions.length > 0 ? false : (workspace.modelCatalog?.models.length ?? 0) === 0)
 	);
 	const executionCapabilities = $derived(
 		creating
@@ -147,6 +191,7 @@
 	function changeAdapter(adapterId: GatewayAdapterAvailability['adapterId']): void {
 		adapterOverride = adapterId;
 		installationOverride = undefined;
+		workspace.draftProviderProfileId = undefined;
 		const adapter = workspace.availableAdapters.find((entry) => entry.adapterId === adapterId);
 		workspace.resetDraftExecution(adapterId);
 		void workspace.loadDraftModels(adapterId, adapter?.installations[0]?.path);
@@ -324,6 +369,24 @@
 					{/each}
 				</select>
 			{/if}
+
+			{#if selectedProfiles.length > 0}
+				<span class="h-3.5 w-px bg-subtle" aria-hidden="true"></span>
+				<label class="sr-only" for="session-provider-profile">提供商</label>
+				<select
+					id="session-provider-profile"
+					class="h-7 max-w-40 rounded-default bg-transparent px-1.5 text-2xs text-muted hover:bg-surface-hover disabled:text-faint"
+					value={workspace.draftProviderProfileId ?? ''}
+					disabled={workspace.sending}
+					title="选择提供商(API Key / 中继地址)"
+					onchange={(event) => changeProviderProfile(event.currentTarget.value)}
+				>
+					<option value="">默认(无配置)</option>
+					{#each selectedProfiles as profile (profile.id)}
+						<option value={profile.id}>{profile.name}</option>
+					{/each}
+				</select>
+			{/if}
 		{:else}
 			<span class="px-1.5 text-xs font-medium text-strong">{adapterLabel}</span>
 		{/if}
@@ -340,12 +403,18 @@
 			onchange={(event) => changeModel(event.currentTarget.value)}
 		>
 			<option value="" disabled={!creating}>Agent 默认模型</option>
-			{#if selectedModelId && !selectedModel}
-				<option value={selectedModelId}>{selectedModelId}</option>
+			{#if profileModelOptions.length > 0}
+				{#each profileModelOptions as model (model.id)}
+					<option value={model.id}>{model.displayName}</option>
+				{/each}
+			{:else}
+				{#if selectedModelId && !selectedModel}
+					<option value={selectedModelId}>{selectedModelId}</option>
+				{/if}
+				{#each workspace.modelCatalog?.models ?? [] as model (model.id)}
+					<option value={model.id}>{model.displayName}</option>
+				{/each}
 			{/if}
-			{#each workspace.modelCatalog?.models ?? [] as model (model.id)}
-				<option value={model.id}>{model.displayName}</option>
-			{/each}
 		</select>
 
 		{#if workspace.modelCatalogLoading}

@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { access } from 'node:fs/promises'
+import { access, mkdir, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { createServer } from 'node:net'
 import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -17,6 +18,7 @@ import {
   type ListModelsInput,
   type ModelCatalog,
   type ModelSelection,
+  type ProviderRuntimeConfig,
   type ResumeSessionInput,
   type RuntimeAdapter,
   type RuntimeAdapterDescriptor,
@@ -217,11 +219,12 @@ export class OpenCodeAdapter implements RuntimeAdapter {
   async connect(options: RuntimeConnectOptions): Promise<RuntimeConnection> {
     if (!options.installation) throw adapterError('connection', 'OpenCode installation is required')
     const port = await reservePort()
+    const env = await applyOpenCodeProviderConfig(options.providerConfig, options.context.env ?? {})
     const processHandle = spawn(
       options.installation.path,
       ['serve', '--hostname', '127.0.0.1', '--port', String(port), '--print-logs'],
       {
-        env: { ...process.env, ...options.context.env },
+        env: { ...process.env, ...env },
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     )
@@ -540,6 +543,17 @@ export class OpenCodeAdapter implements RuntimeAdapter {
 
   getCapabilities(): Promise<RuntimeCapabilities> {
     return Promise.resolve(cloneCapabilities(OPENCODE_CAPABILITIES))
+  }
+
+  async closeConnection(connection: RuntimeConnection): Promise<void> {
+    const state = this.connections.get(connection.id)
+    if (!state) return
+    this.connections.delete(connection.id)
+    state.globalPump?.abort.abort()
+    await Promise.allSettled(state.globalPump ? [state.globalPump.done] : [])
+    if (state.process.exitCode === null && state.process.signalCode === null) {
+      state.process.kill('SIGTERM')
+    }
   }
 
   async dispose(): Promise<void> {
@@ -1270,6 +1284,32 @@ function waitForServer(
 
 function cloneCapabilities(value: RuntimeCapabilities): RuntimeCapabilities {
   return structuredClone(value)
+}
+
+/**
+ * Connection-level provider config injection for `opencode serve`.
+ *
+ * OpenCode merges provider config from directories in `ConfigPaths.directories`;
+ * `OPENCODE_CONFIG_DIR` adds a directory with the highest merge precedence. Write a
+ * gateway-managed `opencode.json` overriding the built-in `openai` (OpenAI wire) or
+ * `anthropic` (Anthropic wire) provider options and point the server at it.
+ */
+async function applyOpenCodeProviderConfig(
+  config: ProviderRuntimeConfig | undefined,
+  env: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  if (!config || (!config.baseUrl && !config.apiKey)) return env
+  const configDir = join(homedir(), '.agent-development-gateway', 'opencode')
+  await mkdir(configDir, { recursive: true })
+  const providerId = config.openaiCompatible === false ? 'anthropic' : 'openai'
+  const provider: Record<string, unknown> = {
+    options: {
+      ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
+      ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+    },
+  }
+  await writeFile(join(configDir, 'opencode.json'), JSON.stringify({ provider: { [providerId]: provider } }))
+  return { ...env, OPENCODE_CONFIG_DIR: configDir }
 }
 
 function adapterError(

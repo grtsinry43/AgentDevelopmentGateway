@@ -40,6 +40,8 @@ export function baseWindowOptions(identity: WindowIdentity): BrowserWindowConstr
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Web 预览面板用 <webview> 嵌入 localhost 页面,以便拦截外部导航。
+      webviewTag: true,
       preload: join(__dirname, '../preload/index.js'),
       // preload 通过 process.argv 读取。JSON 序列化以便携带 projectKey。
       additionalArguments: [

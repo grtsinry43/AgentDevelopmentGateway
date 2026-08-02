@@ -114,7 +114,12 @@ export class RuntimeSessionManager {
     if (!adapter.listModels || !adapter.descriptor.capabilities.features['model.catalog']) {
       throw unsupported('model catalog')
     }
-    const connection = await this.connections.connect(input.adapterId, input.host, input.installationPath)
+    const connection = await this.connections.connect(
+      input.adapterId,
+      input.host,
+      input.installationPath,
+      input.providerConfig,
+    )
     return this.loadModelCatalog(adapter, connection, input.projectPath)
   }
 
@@ -170,7 +175,12 @@ export class RuntimeSessionManager {
 
   async createSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionSnapshot> {
     const adapter = this.registry.get(input.adapterId)
-    const connection = await this.connections.connect(input.adapterId, input.host, input.installationPath)
+    const connection = await this.connections.connect(
+      input.adapterId,
+      input.host,
+      input.installationPath,
+      input.providerConfig,
+    )
     const sessionId = asSessionId(randomUUID())
     const now = Date.now()
     const configuredExecution = cloneSessionExecutionSettings(
@@ -215,6 +225,7 @@ export class RuntimeSessionManager {
       skippedSessionInjection: sessionContext.skipped,
     }
     this.sessions.set(sessionId, managed)
+    this.connections.registerSession(connection.id)
 
     try {
       const handle = await adapter.createSession({
@@ -222,6 +233,7 @@ export class RuntimeSessionManager {
         projectPath: input.projectPath,
         connection,
         providerProfileId: input.providerProfileId,
+        ...(input.providerConfig ? { providerConfig: { ...input.providerConfig } } : {}),
         model: input.model,
         execution: configuredExecution,
         ...(sessionContext.context ? { context: sessionContext.context } : {}),
@@ -275,6 +287,7 @@ export class RuntimeSessionManager {
       input.adapterId,
       input.host,
       input.installationPath,
+      input.providerConfig,
     )
     const configured = cloneSessionExecutionSettings(
       input.execution ?? createDefaultSessionExecutionSettings(),
@@ -336,6 +349,7 @@ export class RuntimeSessionManager {
       skippedSessionInjection: sessionContext.skipped,
     }
     this.sessions.set(input.sessionId, managed)
+    this.connections.registerSession(connection.id)
     try {
       const handle = await adapter.resumeSession({
         sessionId: input.sessionId,
@@ -423,6 +437,7 @@ export class RuntimeSessionManager {
       skippedSessionInjection: sessionContext.skipped,
     }
     this.sessions.set(sessionId, managed)
+    this.connections.registerSession(source.connection.id)
     try {
       const handle = await source.adapter.forkSession({
         sessionId,
@@ -688,6 +703,7 @@ export class RuntimeSessionManager {
         })
       }
       managed.events.close()
+      this.connections.unregisterSession(managed.connection.id)
     } catch (error) {
       managed.session = { ...managed.session, status: 'error', updatedAt: Date.now() }
       managed.events.fail(error)

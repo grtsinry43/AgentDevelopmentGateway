@@ -127,6 +127,13 @@ class WorkspaceLayout {
 		this.#persist();
 	}
 
+	/** 最大化右侧面板:收起左栏,右栏宽度拉到拖拽允许的最大值。 */
+	maximizeRight(): void {
+		this.leftCollapsed = true;
+		this.rightWidth = 640;
+		this.#persist();
+	}
+
 	toggleLeft(): void {
 		this.leftCollapsed = !this.leftCollapsed;
 		this.#persist();
@@ -291,9 +298,7 @@ class WorkspaceLayout {
 export function normalizeLayout(raw: WorkspaceLayoutState): WorkspaceLayoutState {
 	const panels = dedupePanels(raw.rightPanels ?? []).slice(0, MAX_SPLIT_SLOTS);
 	const rightContentCollapsed =
-		raw.rightContentCollapsed ??
-		raw.rightCollapsed ??
-		panels.length === 0;
+		raw.rightContentCollapsed ?? raw.rightCollapsed ?? panels.length === 0;
 	const activePanelType =
 		raw.activePanelType && panels.some((panel) => panel.type === raw.activePanelType)
 			? raw.activePanelType

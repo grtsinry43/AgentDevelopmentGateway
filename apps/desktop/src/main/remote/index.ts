@@ -13,7 +13,7 @@ import { z } from 'zod'
 import type { HostDetailData, RemoteStatus } from '../../contract/bridge.js'
 import type { HostProfile } from '../../contract/hosts.js'
 import { broadcast } from '../ipc/broadcast.js'
-import { getHostPassword } from '../store/host-profiles.js'
+import { getHostPassword, getHostProfile } from '../store/host-profiles.js'
 import { GatewayServerClient } from '../server/client.js'
 import { RemoteConnectionManager, type RemoteArtifactSource } from './manager.js'
 import {
@@ -130,6 +130,14 @@ export function ensureRemoteConnection(profile: HostProfile) {
   return endpointForProfile(profile).then((endpoint) =>
     getManager().ensure(profile.id, endpoint)
   )
+}
+
+/** Web 预览中转:把远端 localhost:<remotePort> 转发到本地,返回本地端口。 */
+export async function openPreviewTunnel(hostProfileId: string, remotePort: number): Promise<number> {
+  const profile = await getHostProfile(hostProfileId)
+  if (!profile) throw new Error('主机配置不存在或已被删除')
+  const endpoint = await endpointForProfile(profile)
+  return getManager().previewTunnel(profile.id, endpoint, remotePort)
 }
 
 /**
