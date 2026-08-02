@@ -1,6 +1,7 @@
 export * from './async-queue.js'
 export * from './capabilities.js'
 export * from './claude-adapter.js'
+export * from './input.js'
 export * from './interaction-bridge.js'
 export * from './message-mapper.js'
 export * from './tool-kind.js'

@@ -79,6 +79,74 @@ test('creates one initialized Query and reuses its input stream across turns', a
   assert.equal(fake.closed, true)
 })
 
+test('appends SessionContext instructions to the Claude Code system prompt preset', async () => {
+  const fake = new FakeClaudeQuery()
+  let captured: Parameters<ClaudeQueryFactory>[0] | undefined
+  const adapter = new ClaudeAdapter((parameters) => {
+    captured = parameters
+    return fake
+  })
+  const connection = await connect(adapter)
+  const creating = adapter.createSession({
+    sessionId: asSessionId('context-session'),
+    projectPath: '/workspace/project',
+    connection,
+    context: {
+      snapshotId: 'snapshot-1',
+      revision: 1,
+      digest: 'session-digest',
+      fragments: [
+        {
+          key: 'gateway.runtime-environment',
+          content: 'You are running inside Agent Development Gateway.',
+          role: 'instruction',
+          trust: 'application',
+          source: { kind: 'session-rules', id: 'gateway.runtime-environment' },
+          digest: 'fragment-digest',
+        },
+      ],
+    },
+  })
+  fake.resolveInitialization()
+  await creating
+
+  assert.deepEqual(captured?.options?.systemPrompt, {
+    type: 'preset',
+    preset: 'claude_code',
+    append:
+      '<gateway-context key="gateway.runtime-environment">\nYou are running inside Agent Development Gateway.\n</gateway-context>',
+  })
+})
+
+test('rejects SessionContext fragments that are not application instructions', async () => {
+  const fake = new FakeClaudeQuery()
+  const adapter = new ClaudeAdapter(() => fake)
+  const connection = await connect(adapter)
+  await assert.rejects(
+    adapter.createSession({
+      sessionId: asSessionId('bad-context-session'),
+      projectPath: '/workspace/project',
+      connection,
+      context: {
+        snapshotId: 'snapshot-1',
+        revision: 1,
+        digest: 'session-digest',
+        fragments: [
+          {
+            key: 'retrieved',
+            content: 'untrusted material',
+            role: 'reference',
+            trust: 'untrusted',
+            source: { kind: 'retrieved-context', id: 'retrieved' },
+            digest: 'fragment-digest',
+          },
+        ],
+      },
+    }),
+    /cannot preserve session fragment retrieved authority/,
+  )
+})
+
 test('resumes with the runtime-owned project path and message cursor', async () => {
   const fake = new FakeClaudeQuery()
   let captured: Parameters<ClaudeQueryFactory>[0] | undefined

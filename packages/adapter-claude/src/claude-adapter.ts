@@ -38,6 +38,7 @@ import {
 import { AsyncQueue } from './async-queue.js'
 import { CLAUDE_BASE_CAPABILITIES } from './capabilities.js'
 import { ClaudeInteractionBridge } from './interaction-bridge.js'
+import { mapSessionContext } from './input.js'
 import { ClaudeMessageMapper } from './message-mapper.js'
 import { createClaudePreToolUseHook, resolveClaudeExecution } from './execution-policy.js'
 
@@ -121,7 +122,6 @@ export class ClaudeAdapter implements RuntimeAdapter {
   }
 
   async createSession(input: CreateSessionInput): Promise<RuntimeSessionHandle> {
-    this.assertContextUnsupported(input.context)
     if (input.providerProfileId) {
       throw adapterError('not_implemented', 'Claude provider profiles are not wired yet')
     }
@@ -133,6 +133,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       connection: input.connection,
       model: input.model,
       execution: input.execution,
+      systemPromptAppend: mapSessionContext(input.context),
       querySessionOptions: { sessionId: runtimeSessionId },
       publishCreated: true,
     })
@@ -144,7 +145,6 @@ export class ClaudeAdapter implements RuntimeAdapter {
   }
 
   async resumeSession(input: ResumeSessionInput): Promise<RuntimeSessionHandle> {
-    this.assertContextUnsupported(input.context)
     if (input.providerStateSnapshot) {
       throw adapterError('protocol', 'Claude sessions do not resume from provider state snapshots')
     }
@@ -158,6 +158,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       connection: input.connection,
       model: input.model,
       execution: input.execution,
+      systemPromptAppend: mapSessionContext(input.context),
       querySessionOptions: {
         resume: input.runtimeSessionId,
         ...(input.cursor?.by === 'message' ? { resumeSessionAt: input.cursor.messageUuid } : {}),
@@ -327,6 +328,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
     connection: RuntimeConnection
     model?: ModelSelection
     execution?: SessionExecutionSettings
+    systemPromptAppend?: string
     querySessionOptions: { sessionId: string } | { resume: string; resumeSessionAt?: string }
     publishCreated: boolean
   }): Promise<ClaudeSessionState> {
@@ -365,6 +367,15 @@ export class ClaudeAdapter implements RuntimeAdapter {
         // unrestricted+allow update can enter bypass mode without restarting the session.
         // resolveClaudeExecution is the only place that can actually select bypassPermissions.
         allowDangerouslySkipPermissions: true,
+        ...(input.systemPromptAppend
+          ? {
+              systemPrompt: {
+                type: 'preset' as const,
+                preset: 'claude_code' as const,
+                append: input.systemPromptAppend,
+              },
+            }
+          : {}),
         hooks: {
           PreToolUse: [
             {
@@ -552,9 +563,6 @@ export class ClaudeAdapter implements RuntimeAdapter {
     return session
   }
 
-  private assertContextUnsupported(context: CreateSessionInput['context'] | ResumeSessionInput['context']): void {
-    if (context) throw adapterError('not_implemented', 'Claude session context injection is not implemented')
-  }
 }
 
 function mapEffort(value: string | undefined): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {

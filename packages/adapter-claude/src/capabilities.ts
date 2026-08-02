@@ -23,6 +23,7 @@ export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
     'interaction.question': true,
     'work-mode.plan': true,
     'task.todo': true,
+    'context.session_injection': true,
   },
   raw: [],
 }
