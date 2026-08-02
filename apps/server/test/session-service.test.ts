@@ -4,6 +4,9 @@ import { AdapterRegistry, RuntimeSessionManager } from '@agent-gateway/runtime'
 import { ProjectRepository } from '../src/features/projects/repository.js'
 import { SessionRepository } from '../src/features/sessions/repository.js'
 import { SessionEventRepository } from '../src/features/sessions/event-repository.js'
+import { SessionItemRepository } from '../src/features/sessions/item-repository.js'
+import { SessionItemizer } from '../src/features/sessions/session-itemizer.js'
+import { MaterializedEventSink } from '../src/features/sessions/materialized-event-sink.js'
 import { SessionService } from '../src/features/sessions/service.js'
 import { openGatewayDatabase } from '../src/infrastructure/database.js'
 import { FakeRuntimeAdapter } from './fakes/fake-adapter.js'
@@ -14,6 +17,10 @@ test('persists runtime snapshots and interrupts live sessions on shutdown', asyn
   const projects = new ProjectRepository(database)
   const sessions = new SessionRepository(database)
   const events = new SessionEventRepository(database)
+  const items = new SessionItemRepository(database)
+  const itemizer = new SessionItemizer(items, {
+    listAfter: (sessionId, after) => events.listAfter(sessionId, after)
+  })
   const hostId = '9d3e5ddf-b870-4728-872e-d66c32f55086'
   const projectId = 'ea8bb090-1cad-41b4-875f-a30c1c980187'
   const now = Date.now()
@@ -27,9 +34,12 @@ test('persists runtime snapshots and interrupts live sessions on shutdown', asyn
     updatedAt: now
   })
   const adapter = new FakeRuntimeAdapter()
-  const runtime = new RuntimeSessionManager(new AdapterRegistry([adapter]), events)
+  const runtime = new RuntimeSessionManager(
+    new AdapterRegistry([adapter]),
+    new MaterializedEventSink(events, itemizer)
+  )
   const observerErrors: unknown[] = []
-  const service = new SessionService(sessions, events, projects, runtime, {}, (error) =>
+  const service = new SessionService(sessions, events, items, itemizer, projects, runtime, {}, (error) =>
     observerErrors.push(error)
   )
 

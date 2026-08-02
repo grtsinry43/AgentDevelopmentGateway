@@ -9,6 +9,8 @@ import type {
 	GatewayModelCatalog,
 	GatewaySession,
 	InputAdmissionReceipt,
+	EventsHistoryResponse,
+	SessionItemsResponse,
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
@@ -154,4 +156,20 @@ export function watchSession(sessionId: string, afterSequence = 0): Promise<void
 
 export function unwatchSession(sessionId: string): Promise<void> {
 	return desktop.sessions.unwatch(sessionId);
+}
+
+export function sessionEventsHistory(
+	sessionId: string,
+	before: number | undefined,
+	limit: number
+): Promise<EventsHistoryResponse> {
+	return desktop.sessions.eventsHistory(sessionId, before, limit);
+}
+
+export function sessionItems(
+	sessionId: string,
+	before: number | undefined,
+	limit: number
+): Promise<SessionItemsResponse> {
+	return desktop.sessions.items(sessionId, before, limit);
 }

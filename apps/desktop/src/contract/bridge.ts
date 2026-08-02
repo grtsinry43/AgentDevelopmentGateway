@@ -37,6 +37,8 @@ import type {
 	ResumeSessionRequest,
 	RuntimeControlReceipt,
 	RuntimeEventWire,
+	EventsHistoryResponse,
+	SessionItemsResponse,
 	SendSessionInputRequest,
 	SetExecutionSettingsRequest,
 	SetSessionModelRequest,
@@ -143,6 +145,8 @@ export const IPC = {
 	sessionsSetExecution: 'sessions:setExecution',
 	sessionsWatch: 'sessions:watch',
 	sessionsUnwatch: 'sessions:unwatch',
+	sessionsEventsHistory: 'sessions:eventsHistory',
+	sessionsItems: 'sessions:items',
 	filesCapabilities: 'files:capabilities',
 	filesList: 'files:list',
 	filesRead: 'files:read',
@@ -574,6 +578,18 @@ export interface DesktopBridge {
 		): Promise<RuntimeControlReceipt>;
 		watch(sessionId: string, afterSequence?: number): Promise<void>;
 		unwatch(sessionId: string): Promise<void>;
+		/** 渐进加载:取 sequence < before 的最多 limit 条持久化事件。 */
+		eventsHistory(
+			sessionId: string,
+			before: number | undefined,
+			limit: number
+		): Promise<EventsHistoryResponse>;
+		/** 渐进加载:物化成品块分页。 */
+		items(
+			sessionId: string,
+			before: number | undefined,
+			limit: number
+		): Promise<SessionItemsResponse>;
 	};
 
 	files: {

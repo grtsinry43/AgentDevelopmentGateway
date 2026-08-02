@@ -147,6 +147,9 @@ importers:
       svelte-check:
         specifier: ^4.7.4
         version: 4.7.4(picomatch@4.0.5)(svelte@5.56.8(@typescript-eslint/types@8.65.0))(typescript@6.0.3)
+      svelte-render-scan:
+        specifier: ^1.1.0
+        version: 1.1.0(svelte@5.56.8(@typescript-eslint/types@8.65.0))
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -283,9 +286,19 @@ importers:
 
   packages/shared:
     dependencies:
+      '@agent-gateway/core':
+        specifier: workspace:*
+        version: link:../core
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.1
 
 packages:
 
@@ -2575,6 +2588,11 @@ packages:
     peerDependenciesMeta:
       svelte:
         optional: true
+
+  svelte-render-scan@1.1.0:
+    resolution: {integrity: sha512-9S73wEtcnn9Hn0HsOSufm+AC+3Es2rMXoWMEWk6Fa3w3yORBg6khOSsZ8+kj/rY4BJRZTyjuFQBytFPGC8YHGQ==}
+    peerDependencies:
+      svelte: ^5.0.0
 
   svelte-toolbelt@0.10.6:
     resolution: {integrity: sha512-YWuX+RE+CnWYx09yseAe4ZVMM7e7GRFZM6OYWpBKOb++s+SQ8RBIMMe+Bs/CznBMc0QPLjr+vDBxTAkozXsFXQ==}
@@ -4959,6 +4977,10 @@ snapshots:
       postcss-selector-parser: 7.1.4
       semver: 7.8.5
     optionalDependencies:
+      svelte: 5.56.8(@typescript-eslint/types@8.65.0)
+
+  svelte-render-scan@1.1.0(svelte@5.56.8(@typescript-eslint/types@8.65.0)):
+    dependencies:
       svelte: 5.56.8(@typescript-eslint/types@8.65.0)
 
   svelte-toolbelt@0.10.6(svelte@5.56.8(@typescript-eslint/types@8.65.0)):

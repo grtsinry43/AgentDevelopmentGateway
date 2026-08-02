@@ -16,6 +16,9 @@ import { ServerIdentityRepository, type ServerIdentity } from '../features/serve
 import { serverRoutes } from '../features/server/routes.js'
 import { SessionRepository } from '../features/sessions/repository.js'
 import { SessionEventRepository } from '../features/sessions/event-repository.js'
+import { SessionItemRepository } from '../features/sessions/item-repository.js'
+import { SessionItemizer } from '../features/sessions/session-itemizer.js'
+import { MaterializedEventSink } from '../features/sessions/materialized-event-sink.js'
 import { sessionRoutes } from '../features/sessions/routes.js'
 import { SessionService } from '../features/sessions/service.js'
 import type { TerminalPtyFactory } from '../features/terminals/pty.js'
@@ -46,14 +49,20 @@ export const applicationPlugin: FastifyPluginAsync<ApplicationPluginOptions> = a
   const sessionsRepository = new SessionRepository(database)
   const sessionEventsRepository = new SessionEventRepository(database)
   sessionEventsRepository.discardOrphans()
+  const sessionItemsRepository = new SessionItemRepository(database)
+  const sessionItemizer = new SessionItemizer(sessionItemsRepository, {
+    listAfter: (sessionId, after) => sessionEventsRepository.listAfter(sessionId, after)
+  })
   const runtime = new RuntimeSessionManager(
     new AdapterRegistry(options.adapters),
-    sessionEventsRepository,
+    new MaterializedEventSink(sessionEventsRepository, sessionItemizer),
     handleHostServerRequest
   )
   const sessions = new SessionService(
     sessionsRepository,
     sessionEventsRepository,
+    sessionItemsRepository,
+    sessionItemizer,
     projectsRepository,
     runtime,
     options.environment,

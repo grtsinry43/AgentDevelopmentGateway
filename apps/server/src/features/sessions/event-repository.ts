@@ -76,6 +76,22 @@ export class SessionEventRepository implements RuntimeEventSink {
       .map((row) => parseRuntimeEvent(rowSchema.parse(row).event_json))
   }
 
+  /**
+   * 取 `sequence < before` 的最多 `limit` 条持久化事件,升序返回。`limit` 上限调用方保证。
+   * 用于渐进加载:尾部窗口(before 取尾端)与翻更早页(before 取当前最旧 sequence)。
+   */
+  listBefore(sessionId: string, before: number, limit: number): RuntimeEvent[] {
+    return this.database
+      .prepare(
+        `SELECT event_json FROM session_events
+         WHERE session_id = ? AND sequence < ?
+         ORDER BY sequence DESC LIMIT ?`
+      )
+      .all(sessionId, before, limit)
+      .reverse()
+      .map((row) => parseRuntimeEvent(rowSchema.parse(row).event_json))
+  }
+
   discardSession(sessionId: SessionId): void {
     this.database.prepare('DELETE FROM session_events WHERE session_id = ?').run(sessionId)
   }

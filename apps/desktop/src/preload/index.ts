@@ -178,7 +178,11 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.sessionsSetExecution, sessionId, input),
     watch: (sessionId: string, afterSequence = 0) =>
       ipcRenderer.invoke(IPC.sessionsWatch, sessionId, afterSequence),
-    unwatch: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsUnwatch, sessionId)
+    unwatch: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsUnwatch, sessionId),
+    eventsHistory: (sessionId: string, before: number | undefined, limit: number) =>
+      ipcRenderer.invoke(IPC.sessionsEventsHistory, sessionId, before, limit),
+    items: (sessionId: string, before: number | undefined, limit: number) =>
+      ipcRenderer.invoke(IPC.sessionsItems, sessionId, before, limit)
   },
 
   files: {

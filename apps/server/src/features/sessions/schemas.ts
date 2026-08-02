@@ -17,8 +17,14 @@ import {
   setSessionTitleRequestSchema,
   setWorkModeRequestSchema,
   sessionEventsQuerySchema,
+  eventsHistoryQuerySchema,
+  eventsHistoryResponseSchema,
+  sessionItemsQuerySchema,
+  sessionItemsResponseSchema,
   sessionListResponseSchema,
   sessionSchema,
+  type EventsHistoryResponse,
+  type SessionItemsResponse,
   type CreateSessionRequest,
   type CreateSessionResponse,
   type GatewaySession,
@@ -59,8 +65,14 @@ export {
   setSessionTitleRequestSchema,
   setWorkModeRequestSchema,
   sessionEventsQuerySchema,
+  eventsHistoryQuerySchema,
+  eventsHistoryResponseSchema,
+  sessionItemsQuerySchema,
+  sessionItemsResponseSchema,
   sessionListResponseSchema,
-  sessionSchema
+  sessionSchema,
+  type EventsHistoryResponse,
+  type SessionItemsResponse
 }
 
 export const projectSessionsParamsSchema = z.strictObject({ projectId: idSchema })

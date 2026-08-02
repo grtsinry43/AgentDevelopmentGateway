@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { SessionItem } from './session-items.js'
 
 export const gatewayIdSchema = z.string().uuid()
 export const gatewayTimestampSchema = z.number().int().nonnegative()
@@ -805,6 +806,45 @@ export const runtimeEventWireSchema = z.strictObject({
   schemaVersion: z.number().int().positive().optional(),
   nativeRef: z.unknown().optional(),
 })
+
+/**
+ * 会话历史窗口查询(渐进加载用):取 `sequence < before` 的最多 `limit` 条持久化事件,
+ * 升序返回。`before` 排他上限,缺省取到尾端;翻更早页传当前窗口的 `oldestSequence`。
+ */
+export const eventsHistoryQuerySchema = z.strictObject({
+  before: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+})
+export const eventsHistoryResponseSchema = z.strictObject({
+  events: z.array(runtimeEventWireSchema),
+  /** 本窗口最旧一条的 sequence;空窗口为 0。翻更早页传这个值作 before。 */
+  oldestSequence: z.number().int().nonnegative(),
+  /** 还有更早的事件(可以继续翻)。 */
+  hasMore: z.boolean(),
+})
+export type EventsHistoryResponse = z.infer<typeof eventsHistoryResponseSchema>
+
+/**
+ * 物化成品块分页查询(渐进加载读 read model)。`before` 排他上限 = 块的起始 sequence,
+ * 缺省取到尾端;翻更早页传当前窗口的 `oldestSequence`。`headSequence` = 已物化到的
+ * 最大块 sequence,实时流从它之后接。
+ */
+export const sessionItemsQuerySchema = z.strictObject({
+  before: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+})
+export const sessionItemsResponseSchema = z.strictObject({
+  items: z.array(z.unknown()),
+  oldestSequence: z.number().int().nonnegative(),
+  hasMore: z.boolean(),
+  headSequence: z.number().int().nonnegative(),
+})
+export interface SessionItemsResponse {
+  items: SessionItem[]
+  oldestSequence: number
+  hasMore: boolean
+  headSequence: number
+}
 
 export type GatewayAdapterId = z.infer<typeof adapterIdSchema>
 export type GatewayErrorResponse = z.infer<typeof gatewayErrorResponseSchema>

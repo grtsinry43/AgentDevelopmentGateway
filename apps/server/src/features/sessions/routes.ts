@@ -21,6 +21,10 @@ import {
   setSessionModelRequestSchema,
   setSessionTitleRequestSchema,
   setWorkModeRequestSchema,
+  eventsHistoryQuerySchema,
+  eventsHistoryResponseSchema,
+  sessionItemsQuerySchema,
+  sessionItemsResponseSchema,
   sessionErrorResponses,
   sessionEventsQuerySchema,
   sessionListResponseSchema,
@@ -284,6 +288,40 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       await options.sessions.sendQueuedInputNow(request.params.sessionId, request.params.inputId)
       reply.code(204)
     }
+  )
+
+  server.get(
+    '/sessions/:sessionId/events/history',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        querystring: eventsHistoryQuerySchema,
+        response: { 200: eventsHistoryResponseSchema, ...sessionErrorResponses }
+      }
+    },
+    (request) =>
+      options.sessions.historyWindow(
+        request.params.sessionId,
+        request.query.before,
+        request.query.limit
+      )
+  )
+
+  server.get(
+    '/sessions/:sessionId/items',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        querystring: sessionItemsQuerySchema,
+        response: { 200: sessionItemsResponseSchema, ...sessionErrorResponses }
+      }
+    },
+    (request) =>
+      options.sessions.itemsWindow(
+        request.params.sessionId,
+        request.query.before,
+        request.query.limit
+      )
   )
 
   server.get(

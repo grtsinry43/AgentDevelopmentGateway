@@ -15,7 +15,9 @@ import {
   setSessionModelRequestSchema,
   setSessionTitleRequestSchema,
   setWorkModeRequestSchema,
-  sessionEventsQuerySchema
+  sessionEventsQuerySchema,
+  eventsHistoryQuerySchema,
+  sessionItemsQuerySchema
 } from '@agent-gateway/shared'
 import type { GatewayAdapterId, ProviderRuntimeConfigWire } from '@agent-gateway/shared'
 import { ipcMain } from 'electron'
@@ -235,6 +237,30 @@ export function registerSessionHandlers(): void {
       const { after } = sessionEventsQuerySchema.parse({ after: rawAfterSequence })
       const { client } = await resolveForSender(event.sender)
       sessionStreams.watch(event.sender, client, sessionId, after)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.sessionsEventsHistory,
+    async (event, rawSessionId: unknown, rawBefore: unknown, rawLimit: unknown) => {
+      const { before, limit } = eventsHistoryQuerySchema.parse({
+        before: rawBefore,
+        limit: rawLimit
+      })
+      const { client } = await resolveForSender(event.sender)
+      return client.eventsHistory(gatewayIdSchema.parse(rawSessionId), before, limit)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.sessionsItems,
+    async (event, rawSessionId: unknown, rawBefore: unknown, rawLimit: unknown) => {
+      const { before, limit } = sessionItemsQuerySchema.parse({
+        before: rawBefore,
+        limit: rawLimit
+      })
+      const { client } = await resolveForSender(event.sender)
+      return client.sessionItems(gatewayIdSchema.parse(rawSessionId), before, limit)
     }
   )
 

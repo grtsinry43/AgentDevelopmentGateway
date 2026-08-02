@@ -16,6 +16,8 @@
 	import ProjectSwitcher from '$lib/features/project/components/ProjectSwitcher.svelte';
 	import { LEFT_TABS, layout } from '$lib/features/workspace/layout.svelte';
 	import { webPreview } from '$lib/shared/preview/web-preview.svelte';
+	import PerfTools from '$lib/shared/perf/PerfTools.svelte';
+	import { perfMonitor } from '$lib/shared/perf/perf-monitor.svelte';
 	import { registerWorkspacePanels } from '$lib/features/workspace/panels';
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
 	import RightToolRail from '$lib/features/workspace/components/RightToolRail.svelte';
@@ -175,6 +177,8 @@
 		keymap.pushScope('project', [
 			{ keys: 'mod+b', label: '侧栏', run: () => layout.toggleLeft() },
 			{ keys: 'mod+alt+b', label: '右侧面板', run: () => layout.toggleRight() },
+			// 性能监视 HUD(dev 打点)
+			{ keys: 'mod+alt+p', label: '性能监视', run: () => perfMonitor.toggle() },
 			// ⌘⇧1..4 切左侧 tab
 			...visibleLeftTabs.map((tab, index) => ({
 				keys: `mod+shift+${index + 1}`,
@@ -302,4 +306,8 @@
 <!-- 非 macOS 平台没有原生 vibrancy,窗口底色必须不透明以免露出桌面 -->
 {#if systemInfo.platform !== 'darwin'}
 	<div class="pointer-events-none fixed inset-0 -z-20 bg-surface-base"></div>
+{/if}
+
+{#if import.meta.env.DEV}
+	<PerfTools />
 {/if}

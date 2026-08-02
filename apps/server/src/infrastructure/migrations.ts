@@ -104,6 +104,21 @@ const migrations: Migration[] = [
       ALTER TABLE sessions ADD COLUMN subagent_runs_json TEXT NOT NULL DEFAULT '[]';
       ALTER TABLE sessions ADD COLUMN input_queue_json TEXT NOT NULL DEFAULT '[]';
     `
+  },
+  {
+    version: 7,
+    sql: `
+      CREATE TABLE session_items (
+        session_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        item_json TEXT NOT NULL,
+        PRIMARY KEY (session_id, item_id)
+      ) STRICT;
+
+      CREATE INDEX session_items_session_seq_idx ON session_items(session_id, sequence);
+    `
   }
 ]
 

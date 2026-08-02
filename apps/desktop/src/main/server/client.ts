@@ -76,9 +76,13 @@ import {
   type SetWorkModeRequest,
   type WorkspaceDirectoryResponse,
   type WorkspaceFileContentResponse,
-  type WorkspaceFileEvent
-  ,type CreateTerminalRequest
-  ,type TerminalDescriptor
+  type WorkspaceFileEvent,
+  eventsHistoryResponseSchema,
+  type EventsHistoryResponse,
+  sessionItemsResponseSchema,
+  type SessionItemsResponse,
+  type CreateTerminalRequest,
+  type TerminalDescriptor
 } from '@agent-gateway/shared'
 import { net } from 'electron'
 
@@ -439,6 +443,30 @@ export class GatewayServerClient {
 
     callbacks.onOpen?.()
     yield* parseEventStream(response.body, runtimeEventWireSchema, callbacks.onActivity)
+  }
+
+  /** 渐进加载:取 `sequence < before` 的最多 limit 条持久化事件(升序)。 */
+  eventsHistory(sessionId: string, before: number | undefined, limit: number): Promise<EventsHistoryResponse> {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (before !== undefined) query.set('before', String(before))
+    return this.request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/events/history?${query.toString()}`,
+      eventsHistoryResponseSchema
+    )
+  }
+
+  /** 渐进加载:物化成品块分页(读 read model)。 */
+  async sessionItems(
+    sessionId: string,
+    before: number | undefined,
+    limit: number
+  ): Promise<SessionItemsResponse> {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (before !== undefined) query.set('before', String(before))
+    return (await this.request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items?${query.toString()}`,
+      sessionItemsResponseSchema
+    )) as SessionItemsResponse
   }
 
   private async request<T>(

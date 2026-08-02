@@ -5,6 +5,9 @@ import { asSessionId, createDefaultSessionExecutionSettings } from '@agent-gatew
 import { AdapterRegistry, RuntimeSessionManager } from '@agent-gateway/runtime'
 import { ProjectRepository } from '../src/features/projects/repository.js'
 import { SessionEventRepository } from '../src/features/sessions/event-repository.js'
+import { SessionItemRepository } from '../src/features/sessions/item-repository.js'
+import { SessionItemizer } from '../src/features/sessions/session-itemizer.js'
+import { MaterializedEventSink } from '../src/features/sessions/materialized-event-sink.js'
 import { SessionRepository } from '../src/features/sessions/repository.js'
 import { SessionService } from '../src/features/sessions/service.js'
 import { openGatewayDatabase } from '../src/infrastructure/database.js'
@@ -71,9 +74,16 @@ test('resume repairs a stale watermark so the next durable event does not collid
   const projects = new ProjectRepository(database)
   const sessions = new SessionRepository(database)
   const events = new SessionEventRepository(database)
+  const items = new SessionItemRepository(database)
+  const itemizer = new SessionItemizer(items, {
+    listAfter: (sessionId, after) => events.listAfter(sessionId, after)
+  })
   const adapter = new FakeRuntimeAdapter()
-  const runtime = new RuntimeSessionManager(new AdapterRegistry([adapter]), events)
-  const service = new SessionService(sessions, events, projects, runtime, {}, () => undefined)
+  const runtime = new RuntimeSessionManager(
+    new AdapterRegistry([adapter]),
+    new MaterializedEventSink(events, itemizer)
+  )
+  const service = new SessionService(sessions, events, items, itemizer, projects, runtime, {}, () => undefined)
   const projectId = randomUUID()
   const hostId = randomUUID()
   const now = Date.now()

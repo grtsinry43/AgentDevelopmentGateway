@@ -28,9 +28,13 @@ import type {
   SetExecutionSettingsBody,
   SetSessionModelBody,
   SetSessionTitleBody,
-  SetWorkModeBody
+  SetWorkModeBody,
+  EventsHistoryResponse,
+  SessionItemsResponse
 } from './schemas.js'
 import type { SessionEventRepository } from './event-repository.js'
+import type { SessionItemRepository } from './item-repository.js'
+import type { SessionItemizer } from './session-itemizer.js'
 import { SessionRepository, type StoredSession } from './repository.js'
 
 const liveStatuses = new Set<AgentSession['status']>(['starting', 'idle', 'running', 'waiting'])
@@ -41,6 +45,8 @@ export class SessionService {
   constructor(
     private readonly repository: SessionRepository,
     private readonly eventsRepository: SessionEventRepository,
+    private readonly itemsRepository: SessionItemRepository,
+    private readonly itemizer: SessionItemizer,
     private readonly projects: ProjectRepository,
     private readonly runtime: RuntimeSessionManager,
     private readonly hostEnvironment: Record<string, string>,
@@ -106,6 +112,7 @@ export class SessionService {
       if (observer) await observer.catch(() => undefined)
       this.repository.delete(snapshot.session.id)
       this.eventsRepository.discardSession(snapshot.session.id)
+      this.itemizer.discardSession(snapshot.session.id)
       throw error
     }
   }
@@ -263,6 +270,7 @@ export class SessionService {
       await this.runtime.disposeSession(snapshot.session.id).catch(() => undefined)
       this.repository.delete(snapshot.session.id)
       this.eventsRepository.discardSession(snapshot.session.id)
+      this.itemizer.discardSession(snapshot.session.id)
       throw error
     }
   }
@@ -432,6 +440,39 @@ export class SessionService {
 
     const tailCursor = history.at(-1)?.sequence ?? afterSequence
     return replayThenFollow(history, this.runtime.events(sessionId, tailCursor))
+  }
+
+  /** 渐进加载的历史窗口:取 `sequence < before` 的最多 limit 条持久化事件(升序)。 */
+  historyWindow(id: string, before: number | undefined, limit: number): EventsHistoryResponse {
+    if (!this.repository.findById(id)) {
+      throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
+    }
+    const cursor = before ?? this.eventsRepository.maxSequence(id) + 1
+    const candidates = this.eventsRepository.listBefore(id, cursor, limit + 1)
+    const hasMore = candidates.length > limit
+    const events = hasMore ? candidates.slice(0, limit) : candidates
+    return {
+      events: events.map((event) => ({ ...event })) as EventsHistoryResponse['events'],
+      oldestSequence: events[0]?.sequence ?? 0,
+      hasMore,
+    }
+  }
+
+  /** 物化成品块分页:取 `sequence < before` 的最多 limit 条(升序),附已物化到的 head。 */
+  itemsWindow(id: string, before: number | undefined, limit: number): SessionItemsResponse {
+    if (!this.repository.findById(id)) {
+      throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
+    }
+    const cursor = before ?? Number.MAX_SAFE_INTEGER
+    const candidates = this.itemsRepository.listBefore(id, cursor, limit + 1)
+    const hasMore = candidates.length > limit
+    const items = hasMore ? candidates.slice(0, limit) : candidates
+    return {
+      items,
+      oldestSequence: items[0]?.sequence ?? 0,
+      hasMore,
+      headSequence: this.itemsRepository.headSequence(id),
+    }
   }
 
   list(projectId: string): SessionResponse[] {
