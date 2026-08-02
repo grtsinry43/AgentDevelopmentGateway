@@ -1,118 +1,111 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import test from 'node:test'
 import { asSessionId, asTurnId } from '@agent-gateway/core'
-import { OpenCodeAdapter } from '../src/opencode-adapter.js'
+import { toNativeMessageId } from '../src/input.js'
+import { nativeSessionId } from './fixtures/opencode-v2.js'
+import { createV2Harness, waitForRequest } from './support/v2-harness.js'
 
-test('maps connected models and sends the selected variant after resume', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'gateway-opencode-adapter-'))
-  const executable = join(directory, 'fake-opencode')
-  await writeFile(executable, fakeOpenCodeServer, 'utf8')
-  await chmod(executable, 0o755)
-  const adapter = new OpenCodeAdapter()
+test('prefixes Gateway client message ids for OpenCode Message.ID', () => {
+  assert.equal(
+    toNativeMessageId('6689c1d1-aff3-417a-b941-b5d6460a7782'),
+    'msg_6689c1d1-aff3-417a-b941-b5d6460a7782',
+  )
+  assert.equal(toNativeMessageId('msg_already_prefixed'), 'msg_already_prefixed')
+})
 
+test('lists the v2 model catalog and preserves ordered variants', async () => {
+  const harness = await createV2Harness()
   try {
-    const connection = await adapter.connect({
-      context: { hostId: 'local', env: {} },
-      installation: { path: executable, version: 'test', source: 'custom' },
+    const catalog = await harness.adapter.listModels({
+      connection: harness.connection,
+      projectPath: harness.directory,
     })
-    const catalog = await adapter.listModels({ connection, projectPath: directory })
     assert.deepEqual(catalog, {
-      models: [
-        {
-          id: 'openai/gpt-test',
-          displayName: 'GPT Test',
-          isDefault: true,
-          reasoningEfforts: [
-            { id: 'low', displayName: 'low' },
-            { id: 'high', displayName: 'high' },
-          ],
-        },
-      ],
+      models: [{
+        id: 'openai/gpt-test',
+        displayName: 'GPT Test',
+        reasoningEfforts: [
+          { id: 'low', displayName: 'low' },
+          { id: 'high', displayName: 'high' },
+        ],
+      }],
     })
-
-    const sessionId = asSessionId('resumed-session')
-    await adapter.resumeSession({
-      sessionId,
-      projectPath: directory,
-      runtimeSessionId: 'native-session',
-      connection,
-      model: { model: 'openai/gpt-test', reasoningEffort: 'high' },
-    })
-    await adapter.send(
-      sessionId,
-      { clientMessageId: 'message-1', text: 'hello' },
-      { turnId: asTurnId('turn-1'), kind: 'start-turn' },
+    const request = await waitForRequest(
+      harness,
+      (entry) => entry.method === 'GET' && entry.path === '/api/model',
+    )
+    assert.equal(
+      request.search,
+      `?location%5Bdirectory%5D=${encodeURIComponent(harness.directory)}`,
     )
   } finally {
-    await adapter.dispose()
-    await rm(directory, { recursive: true, force: true })
+    await harness.close()
   }
 })
 
-const fakeOpenCodeServer = `#!/usr/bin/env node
-const http = require('node:http')
-const args = process.argv.slice(2)
-const port = Number(args[args.indexOf('--port') + 1])
-const server = http.createServer((request, response) => {
-  const url = new URL(request.url, 'http://127.0.0.1')
-  if (request.method === 'GET' && url.pathname === '/provider') {
-    response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify({
-      all: [{
-        id: 'openai',
-        models: {
-          'gpt-test': {
-            id: 'gpt-test',
-            name: 'GPT Test',
-            variants: { low: { reasoningEffort: 'low' }, high: { reasoningEffort: 'high' } }
-          }
-        }
-      }],
-      connected: ['openai'],
-      default: { openai: 'gpt-test' }
-    }))
-    return
-  }
-  if (request.method === 'GET' && url.pathname === '/session/native-session') {
-    response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify({ id: 'native-session' }))
-    return
-  }
-  if (request.method === 'GET' && url.pathname === '/session/native-session/children') {
-    response.setHeader('content-type', 'application/json')
-    response.end('[]')
-    return
-  }
-  if (request.method === 'GET' && url.pathname === '/event') {
-    response.writeHead(200, {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-cache',
-      connection: 'keep-alive'
+test('maps file attachments to legal PromptInput file URIs', async () => {
+  const harness = await createV2Harness()
+  const sessionId = asSessionId('gateway-v2-attachment')
+  try {
+    await harness.adapter.createSession({
+      sessionId,
+      projectPath: harness.directory,
+      connection: harness.connection,
     })
-    response.write(': connected\\n\\n')
-    return
-  }
-  if (request.method === 'POST' && url.pathname === '/session/native-session/prompt_async') {
-    let body = ''
-    request.on('data', (chunk) => { body += chunk })
-    request.on('end', () => {
-      const parsed = JSON.parse(body)
-      const valid = parsed.model?.providerID === 'openai' &&
-        parsed.model?.modelID === 'gpt-test' &&
-        parsed.variant === 'high'
-      response.statusCode = valid ? 204 : 400
-      response.end(valid ? undefined : 'invalid model selection')
+    await harness.adapter.send(
+      sessionId,
+      {
+        clientMessageId: 'msg_attachment_contract',
+        text: 'inspect',
+        attachments: [{ kind: 'file', path: 'README.md' }],
+        admitOnly: true,
+      },
+      { turnId: asTurnId('turn-attachment'), kind: 'start-turn' },
+    )
+    const request = await waitForRequest(
+      harness,
+      (entry) => entry.path === `/api/session/${nativeSessionId}/prompt`,
+    )
+    assert.deepEqual(request.body, {
+      id: 'msg_attachment_contract',
+      prompt: {
+        text: 'inspect',
+        files: [{
+          uri: new URL('README.md', `file://${harness.directory}/`).href,
+          name: 'README.md',
+        }],
+      },
+      delivery: 'queue',
+      resume: false,
     })
-    return
+  } finally {
+    await harness.close()
   }
-  response.statusCode = 404
-  response.end('not found')
 })
-server.listen(port, '127.0.0.1', () => {
-  process.stdout.write('opencode server listening on http://127.0.0.1:' + port + '\\n')
+
+test('rejects unproven inline attachment data', async () => {
+  const harness = await createV2Harness()
+  const sessionId = asSessionId('gateway-v2-inline')
+  try {
+    await harness.adapter.createSession({
+      sessionId,
+      projectPath: harness.directory,
+      connection: harness.connection,
+    })
+    await assert.rejects(
+      harness.adapter.send(
+        sessionId,
+        {
+          clientMessageId: 'msg_inline_contract',
+          text: 'inspect',
+          attachments: [{ kind: 'image', data: 'ZmFrZQ==' }],
+          admitOnly: true,
+        },
+        { turnId: asTurnId('turn-inline'), kind: 'start-turn' },
+      ),
+      /does not prove inline attachment data is supported/,
+    )
+  } finally {
+    await harness.close()
+  }
 })
-process.on('SIGTERM', () => server.close(() => process.exit(0)))
-`
