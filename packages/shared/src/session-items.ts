@@ -191,12 +191,14 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 		case 'tool.started': {
 			const toolCall = toolCallPayload(event.payload);
 			if (!toolCall) return [];
+			const subagentRunId = eventAttribution(event).subagentRunId;
 			const item: SessionItemTool = {
 				itemKind: 'tool',
 				id: `tool-${toolCall.id}`,
 				toolCall,
 				sequence: event.sequence,
 				...(event.turnId ? { turnId: event.turnId } : {}),
+				...(subagentRunId ? { subagentRunId } : {}),
 				startedAt: event.timestamp
 			};
 			upsertLiveTool(state, item, toolCall.id);
@@ -210,13 +212,17 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 					item.itemKind === 'tool' && item.toolCall.id === toolCall.id
 			);
 			const existing = index >= 0 ? (state.live[index] as SessionItemTool) : undefined;
+			// 先取完成事件自己的 attribution,再退回 started 时的(事件可能缺 attribution)。
+			const subagentRunId =
+				eventAttribution(event).subagentRunId ??
+				existing?.subagentRunId;
 			const item: SessionItemTool = {
 				itemKind: 'tool',
 				id: `tool-${toolCall.id}`,
 				toolCall,
 				sequence: existing?.sequence ?? event.sequence,
 				...(event.turnId ? { turnId: event.turnId } : existing?.turnId ? { turnId: existing.turnId } : {}),
-				...(existing?.subagentRunId ? { subagentRunId: existing.subagentRunId } : {}),
+				...(subagentRunId ? { subagentRunId } : {}),
 				startedAt: existing?.startedAt ?? event.timestamp,
 				durationMs: Math.max(0, event.timestamp - (existing?.startedAt ?? event.timestamp)),
 				...(state.toolInputDeltas[toolCall.id]
@@ -265,7 +271,10 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 				id: `changes-${changeSet.id}`,
 				changeSet,
 				sequence: event.sequence,
-				...(event.turnId ? { turnId: event.turnId } : {})
+				...(event.turnId ? { turnId: event.turnId } : {}),
+				...(eventAttribution(event).subagentRunId
+					? { subagentRunId: eventAttribution(event).subagentRunId }
+					: {})
 			};
 			state.items.push(item);
 			return [item];

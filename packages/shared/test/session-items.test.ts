@@ -110,8 +110,7 @@ describe('session itemizer', () => {
     assert.equal(tool.changeSet?.id, 'c1')
   })
 
-  it('attaches a change set that arrives after tool.completed', () => {
-    const state = feed(
+  it('attaches a change set that arrives after tool.completed', () => {    const state = feed(
       createSessionItemState(),
       event('tool.started', { toolCall: { id: 't1', name: 'Edit', kind: 'file-edit', status: 'running' } }),
       event('tool.completed', {
@@ -134,8 +133,7 @@ describe('session itemizer', () => {
     assert.equal(tool.changeSet?.files.length, 1)
   })
 
-  it('ignores out-of-order / duplicate events', () => {
-    const state = createSessionItemState()
+  it('ignores out-of-order / duplicate events', () => {    const state = createSessionItemState()
     const first: RuntimeEventWire = {
       id: 1,
       sequence: 1,
@@ -152,5 +150,25 @@ describe('session itemizer', () => {
     applySessionItemEvent(state, stale) // 乱序 → 忽略
     assert.equal(state.lastSequence, 1)
     assert.equal(state.items.length, 1)
+  })
+
+  it('keeps a subagent-attributed tool call out of the main timeline', () => {
+    const subagentRunId = 'run-1'
+    const state = feed(
+      createSessionItemState(),
+      event(
+        'tool.started',
+        { toolCall: { id: 't1', name: 'Read', kind: 'file-read', status: 'running' } },
+        { attribution: { subagentRunId, sourceKind: 'subagent', depth: 1 } }
+      ),
+      event(
+        'tool.completed',
+        { toolCall: { id: 't1', name: 'Read', kind: 'file-read', status: 'completed' } },
+        { attribution: { subagentRunId, sourceKind: 'subagent', depth: 1 } }
+      )
+    )
+    const tool = state.items[0] as { itemKind: string; subagentRunId?: string }
+    assert.equal(tool.itemKind, 'tool')
+    assert.equal(tool.subagentRunId, subagentRunId)
   })
 })
