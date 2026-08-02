@@ -32,6 +32,21 @@ export interface SendOptions {
   context?: TurnContext
 }
 
+/** Provider acknowledgement for an input accepted across the adapter boundary. */
+export interface ProviderInputReceipt {
+  /** Provider-native identifier for the accepted input, when one exists. */
+  providerInputId?: string
+  /** Provider-native sequence/cursor; never a Gateway event or admission sequence. */
+  providerSequence?: number
+  /** Opaque provider acknowledgement retained for adapter-specific diagnostics or resume. */
+  raw?: unknown
+}
+
+/** Optional result returned after an adapter has accepted an input. */
+export interface AdapterSendResult {
+  providerReceipt?: ProviderInputReceipt
+}
+
 export interface InputAttachment {
   kind: 'file' | 'image'
   path?: string

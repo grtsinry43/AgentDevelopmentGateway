@@ -1,4 +1,4 @@
-import type { InputDelivery, UserInput } from '../adapter/io.js'
+import type { InputDelivery, ProviderInputReceipt, UserInput } from '../adapter/io.js'
 import type { TurnId } from '../ids.js'
 import type { RuntimeError } from '../model/runtime-error.js'
 
@@ -18,6 +18,8 @@ export interface InputQueueEntry {
   position?: number
   /** Turn opened or steered after provider acceptance. */
   turnId?: TurnId
+  /** Provider-scoped acknowledgement captured after adapter acceptance. */
+  providerReceipt?: ProviderInputReceipt
   error?: RuntimeError
   createdAt: number
   updatedAt: number

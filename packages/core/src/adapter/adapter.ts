@@ -14,6 +14,7 @@ import type {
   ModelCatalog,
   ModelSelection,
   ResumeSessionInput,
+  AdapterSendResult,
   SendOptions,
   UserInput,
 } from './io.js'
@@ -75,8 +76,12 @@ export interface RuntimeAdapter {
   resumeSession(input: ResumeSessionInput): Promise<RuntimeSessionHandle>
   forkSession?(input: ForkSessionInput): Promise<RuntimeSessionHandle>
 
-  /** Deliver input that the runtime has already admitted and associated with a turn. */
-  send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void>
+  /** Deliver input already admitted by Gateway; any returned sequence remains provider-scoped. */
+  send(
+    sessionId: SessionId,
+    input: UserInput,
+    options: SendOptions,
+  ): Promise<void | AdapterSendResult>
   interrupt(sessionId: SessionId, options?: InterruptOptions): Promise<void>
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
   listModels?(input: ListModelsInput): Promise<ModelCatalog>
