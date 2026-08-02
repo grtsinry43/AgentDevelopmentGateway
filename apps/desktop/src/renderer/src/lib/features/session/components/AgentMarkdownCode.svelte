@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { highlightCode, normalizeCodeLanguage } from '../markdown/highlight';
+	import '../markdown/hljs-theme.css';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 
 	interface Props {
@@ -79,82 +80,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.agent-code :global(.hljs) {
-		color: var(--text-normal);
-	}
-
-	.agent-code :global(.hljs-comment),
-	.agent-code :global(.hljs-quote) {
-		color: var(--text-faint);
-	}
-
-	.agent-code :global(.hljs-keyword),
-	.agent-code :global(.hljs-selector-tag),
-	.agent-code :global(.hljs-literal),
-	.agent-code :global(.hljs-deletion) {
-		color: #d04a5d;
-	}
-
-	.agent-code :global(.hljs-string),
-	.agent-code :global(.hljs-title),
-	.agent-code :global(.hljs-section),
-	.agent-code :global(.hljs-built_in),
-	.agent-code :global(.hljs-addition) {
-		color: #25845f;
-	}
-
-	.agent-code :global(.hljs-number),
-	.agent-code :global(.hljs-symbol),
-	.agent-code :global(.hljs-bullet) {
-		color: #b76b35;
-	}
-
-	.agent-code :global(.hljs-attribute),
-	.agent-code :global(.hljs-name),
-	.agent-code :global(.hljs-selector-class) {
-		color: #8663c6;
-	}
-
-	.agent-code :global(.hljs-type),
-	.agent-code :global(.hljs-function),
-	.agent-code :global(.hljs-title.class_),
-	.agent-code :global(.hljs-title.function_) {
-		color: #3979bd;
-	}
-
-	:global(.dark) .agent-code :global(.hljs-keyword),
-	:global(.dark) .agent-code :global(.hljs-selector-tag),
-	:global(.dark) .agent-code :global(.hljs-literal),
-	:global(.dark) .agent-code :global(.hljs-deletion) {
-		color: #ff7b8b;
-	}
-
-	:global(.dark) .agent-code :global(.hljs-string),
-	:global(.dark) .agent-code :global(.hljs-title),
-	:global(.dark) .agent-code :global(.hljs-section),
-	:global(.dark) .agent-code :global(.hljs-built_in),
-	:global(.dark) .agent-code :global(.hljs-addition) {
-		color: #7ee2ad;
-	}
-
-	:global(.dark) .agent-code :global(.hljs-number),
-	:global(.dark) .agent-code :global(.hljs-symbol),
-	:global(.dark) .agent-code :global(.hljs-bullet) {
-		color: #e7a66d;
-	}
-
-	:global(.dark) .agent-code :global(.hljs-attribute),
-	:global(.dark) .agent-code :global(.hljs-name),
-	:global(.dark) .agent-code :global(.hljs-selector-class) {
-		color: #c6a6ff;
-	}
-
-	:global(.dark) .agent-code :global(.hljs-type),
-	:global(.dark) .agent-code :global(.hljs-function),
-	:global(.dark) .agent-code :global(.hljs-title.class_),
-	:global(.dark) .agent-code :global(.hljs-title.function_) {
-		color: #79b8ff;
-	}
-</style>

@@ -32,6 +32,10 @@
 			if (!terminals.some((terminal) => terminal.id === selectedId)) {
 				selectedId = terminals[0]?.id;
 			}
+			// 展开面板时若还没有会话,直接建一个,免得点一次 +
+			if (terminals.length === 0 && available) {
+				await createTerminal();
+			}
 		} catch (cause) {
 			error = errorMessage(cause);
 		} finally {
@@ -124,7 +128,9 @@
 	{:else if terminals.length === 0}
 		<EmptyState
 			title="没有终端"
-			description={available ? '点击右上角 + 创建当前工程的终端。' : '当前 Server 未开放终端能力。'}
+			description={available
+				? '未能自动创建终端，可点击右上角 + 重试。'
+				: '当前 Server 未开放终端能力。'}
 			compact
 		>
 			{#snippet icon()}<Icon name="terminal" size={16} />{/snippet}

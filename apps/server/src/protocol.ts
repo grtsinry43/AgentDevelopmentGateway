@@ -1,5 +1,5 @@
 export const SERVER_VERSION = '0.0.0'
-export const SERVER_PROTOCOL_VERSION = 5
+export const SERVER_PROTOCOL_VERSION = 6
 
 export const SERVER_CAPABILITIES = [
   'projects',
@@ -8,6 +8,7 @@ export const SERVER_CAPABILITIES = [
   'session-execution-policy',
   'adapter-inspection',
   'workspace.files.list',
+  'workspace.files.read',
   'workspace.files.watch',
   'workspace.git.status',
   'workspace.git.diff',

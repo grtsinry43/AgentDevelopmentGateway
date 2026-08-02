@@ -145,6 +145,8 @@ const bridge: DesktopBridge = {
     capabilities: (projectKey: string) => ipcRenderer.invoke(IPC.filesCapabilities, projectKey),
     list: (projectKey: string, path: string) =>
       ipcRenderer.invoke(IPC.filesList, projectKey, path),
+    read: (projectKey: string, path: string) =>
+      ipcRenderer.invoke(IPC.filesRead, projectKey, path),
     watch: (projectKey: string, directories: string[]) =>
       ipcRenderer.invoke(IPC.filesWatch, projectKey, directories),
     updateWatch: (projectKey: string, directories: string[]) =>

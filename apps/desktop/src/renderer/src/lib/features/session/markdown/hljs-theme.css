@@ -1,0 +1,78 @@
+/* Shared highlight.js token colors for agent markdown + file preview. */
+
+.agent-code .hljs {
+	color: var(--text-normal);
+}
+
+.agent-code .hljs-comment,
+.agent-code .hljs-quote {
+	color: var(--text-faint);
+}
+
+.agent-code .hljs-keyword,
+.agent-code .hljs-selector-tag,
+.agent-code .hljs-literal,
+.agent-code .hljs-deletion {
+	color: #d04a5d;
+}
+
+.agent-code .hljs-string,
+.agent-code .hljs-title,
+.agent-code .hljs-section,
+.agent-code .hljs-built_in,
+.agent-code .hljs-addition {
+	color: #25845f;
+}
+
+.agent-code .hljs-number,
+.agent-code .hljs-symbol,
+.agent-code .hljs-bullet {
+	color: #b76b35;
+}
+
+.agent-code .hljs-attribute,
+.agent-code .hljs-name,
+.agent-code .hljs-selector-class {
+	color: #8663c6;
+}
+
+.agent-code .hljs-type,
+.agent-code .hljs-function,
+.agent-code .hljs-title.class_,
+.agent-code .hljs-title.function_ {
+	color: #3979bd;
+}
+
+.dark .agent-code .hljs-keyword,
+.dark .agent-code .hljs-selector-tag,
+.dark .agent-code .hljs-literal,
+.dark .agent-code .hljs-deletion {
+	color: #ff7b8b;
+}
+
+.dark .agent-code .hljs-string,
+.dark .agent-code .hljs-title,
+.dark .agent-code .hljs-section,
+.dark .agent-code .hljs-built_in,
+.dark .agent-code .hljs-addition {
+	color: #7ee2ad;
+}
+
+.dark .agent-code .hljs-number,
+.dark .agent-code .hljs-symbol,
+.dark .agent-code .hljs-bullet {
+	color: #e7a66d;
+}
+
+.dark .agent-code .hljs-attribute,
+.dark .agent-code .hljs-name,
+.dark .agent-code .hljs-selector-class {
+	color: #c6a6ff;
+}
+
+.dark .agent-code .hljs-type,
+.dark .agent-code .hljs-function,
+.dark .agent-code .hljs-title.class_,
+.dark .agent-code .hljs-title.function_ {
+	color: #79b8ff;
+}

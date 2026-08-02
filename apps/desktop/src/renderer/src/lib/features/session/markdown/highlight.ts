@@ -59,6 +59,14 @@ export function normalizeCodeLanguage(value?: string): string {
 	return resolved && hljs.getLanguage(resolved) ? resolved : 'plaintext';
 }
 
+/** Best-effort language from a workspace-relative path (extension only). */
+export function languageFromPath(path: string): string {
+	const base = path.split('/').pop() ?? path;
+	const dot = base.lastIndexOf('.');
+	if (dot <= 0 || dot === base.length - 1) return 'plaintext';
+	return normalizeCodeLanguage(base.slice(dot + 1));
+}
+
 export function highlightCode(code: string, language?: string): string {
 	return hljs.highlight(code, {
 		language: normalizeCodeLanguage(language),

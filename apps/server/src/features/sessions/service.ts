@@ -198,6 +198,15 @@ export class SessionService {
     const project = this.projects.findById(stored.session.projectId)
     if (!project) throw new GatewayHttpError(404, 'PROJECT_NOT_FOUND', 'Project was not found')
     const durable = projectDurableRuntimeState(this.eventsRepository.listAfter(id))
+    // Repair crash windows where session_events advanced but sessions.last_event_sequence did not.
+    const lastEventSequence = this.eventsRepository.durableCursor(
+      id,
+      stored.session.lastEventSequence
+    )
+    const previousSession = {
+      ...stored.session,
+      lastEventSequence
+    }
     const snapshot = await this.runtime.resumeSession({
       sessionId: stored.session.id,
       projectId: stored.session.projectId,
@@ -209,7 +218,7 @@ export class SessionService {
       model: stored.session.model,
       execution: stored.session.execution.configured,
       runtimeSessionId: stored.session.runtimeSessionId,
-      previousSession: stored.session,
+      previousSession,
       providerStateSnapshot: stored.session.providerStateSnapshot,
       taskState: stored.taskState,
       subagentRuns: durable.subagentRuns,
@@ -305,7 +314,8 @@ export class SessionService {
     const previousEvents = this.eventsRepository.listAfter(id)
     const now = Date.now()
     const controlRevision = stored.session.controlRevision + 1
-    const sequence = stored.session.lastEventSequence + 1
+    const sequence =
+      this.eventsRepository.durableCursor(id, stored.session.lastEventSequence) + 1
     const selection = {
       model: body.model,
       ...(body.reasoningEffort ? { reasoningEffort: body.reasoningEffort } : {})

@@ -13,6 +13,13 @@ import type { Component } from 'svelte';
 import type { IconName } from '$lib/ui/icons/Icon.svelte';
 import type { RuntimeFeature } from '@agent-gateway/core';
 
+/**
+ * 右侧工具条上的出现方式:
+ * - `persistent`: 用户可随时点开(终端、变更等),rail 上始终显示图标
+ * - `contextual`: 仅在有内容/被打开时出现(任务、文件预览),默认不占 rail
+ */
+export type PanelPresence = 'persistent' | 'contextual';
+
 export interface PanelDefinition {
 	/** 持久化用的稳定 key。改名会导致已存布局失效,所以别改。 */
 	type: string;
@@ -25,6 +32,11 @@ export interface PanelDefinition {
 	 * (AGENTS.md 硬规则)。省略表示与 runtime 能力无关(终端、文件树)。
 	 */
 	requiresFeature?: RuntimeFeature;
+	/**
+	 * Rail 图标出现策略。省略视为 `persistent`。
+	 * `contextual` 面板由 `railPanels` 结合「已占槽 / 内容就绪」决定是否显示图标。
+	 */
+	presence?: PanelPresence;
 	/** 默认高度权重。 */
 	defaultWeight?: number;
 	/** 面板内容的滚动策略。终端等自管理 viewport 的面板必须使用 hidden。 */
@@ -55,5 +67,28 @@ export function availablePanels(
 	return listPanels().filter((panel) => {
 		if (!panel.requiresFeature) return true;
 		return features?.[panel.requiresFeature] === true;
+	});
+}
+
+/**
+ * 右侧工具条应显示的面板:
+ * - persistent: capability 通过即显示
+ * - contextual: 已在 dock 槽位中,或调用方判定「内容就绪」(有任务 / 有预览路径等)
+ */
+export function railPanels(
+	features: Partial<Record<RuntimeFeature, boolean>> | undefined,
+	options: {
+		openTypes: ReadonlySet<string> | readonly string[];
+		contextualReady?: (type: string) => boolean;
+	}
+): PanelDefinition[] {
+	const open =
+		options.openTypes instanceof Set ? options.openTypes : new Set(options.openTypes);
+	const ready = options.contextualReady ?? (() => false);
+
+	return availablePanels(features).filter((panel) => {
+		const presence = panel.presence ?? 'persistent';
+		if (presence === 'persistent') return true;
+		return open.has(panel.type) || ready(panel.type);
 	});
 }

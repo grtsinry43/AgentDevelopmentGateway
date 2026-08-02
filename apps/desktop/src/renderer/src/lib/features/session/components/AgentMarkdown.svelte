@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Markdown } from 'svmarkdown';
 	import type { SvmdComponentMap, SvmdParseOptions, SvmdRenderOptions } from 'svmarkdown';
+	import { agentGatewayLinkifyPlugin } from '../markdown/agent-gateway-linkify-plugin';
 	import { taskListPlugin } from '../markdown/task-list-plugin';
 	import AgentMarkdownCode from './AgentMarkdownCode.svelte';
 	import AgentMarkdownLink from './AgentMarkdownLink.svelte';
@@ -18,7 +19,7 @@
 		li: AgentMarkdownListItem
 	} satisfies SvmdComponentMap;
 	const parseOptions = {
-		markdownItPlugins: [taskListPlugin],
+		markdownItPlugins: [agentGatewayLinkifyPlugin, taskListPlugin],
 		markdownItOptions: {
 			html: false,
 			linkify: true,

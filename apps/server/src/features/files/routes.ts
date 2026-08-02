@@ -5,6 +5,8 @@ import type { WorkspaceFileService } from './service.js'
 import {
   workspaceDirectoryQuerySchema,
   workspaceDirectoryResponseSchema,
+  workspaceFileContentQuerySchema,
+  workspaceFileContentResponseSchema,
   workspaceFileErrorResponses,
   workspaceFilesParamsSchema,
   workspaceFileSubscriptionParamsSchema,
@@ -33,6 +35,18 @@ export const workspaceFileRoutes: FastifyPluginAsyncZod<WorkspaceFileRoutesOptio
       }
     },
     async (request) => options.files.list(request.params.projectId, request.query.path)
+  )
+
+  server.get(
+    '/projects/:projectId/files/content',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        querystring: workspaceFileContentQuerySchema,
+        response: { 200: workspaceFileContentResponseSchema, ...workspaceFileErrorResponses }
+      }
+    },
+    async (request) => options.files.read(request.params.projectId, request.query.path)
   )
 
   server.put(

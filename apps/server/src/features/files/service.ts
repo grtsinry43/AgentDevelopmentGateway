@@ -1,7 +1,11 @@
 import type { Dirent } from 'node:fs'
-import { lstat, readdir, realpath } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, posix, relative, sep, win32 } from 'node:path'
-import type { WorkspaceDirectoryResponse, WorkspaceFileKind } from '@agent-gateway/shared'
+import type {
+  WorkspaceDirectoryResponse,
+  WorkspaceFileContentResponse,
+  WorkspaceFileKind,
+} from '@agent-gateway/shared'
 import { GatewayHttpError } from '../../http/errors.js'
 import type { ProjectService } from '../projects/service.js'
 import { WorkspaceFilePolicy } from './policy.js'
@@ -10,6 +14,9 @@ export interface WorkspaceDirectoryLocation {
   absolutePath: string
   relativePath: string
 }
+
+/** Soft limit for text preview; larger files are rejected rather than streamed. */
+const MAX_PREVIEW_BYTES = 512 * 1024
 
 export class WorkspaceFileService {
   constructor(
@@ -47,7 +54,81 @@ export class WorkspaceFileService {
     return { path: location.relativePath, entries: nodes }
   }
 
+  async read(projectId: string, inputPath: string): Promise<WorkspaceFileContentResponse> {
+    const location = await this.fileLocation(projectId, inputPath)
+    let stats
+    try {
+      stats = await lstat(location.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (stats.size > MAX_PREVIEW_BYTES) {
+      throw new GatewayHttpError(
+        422,
+        'FILE_TOO_LARGE',
+        `File exceeds the ${MAX_PREVIEW_BYTES} byte preview limit`
+      )
+    }
+
+    let buffer: Buffer
+    try {
+      buffer = await readFile(location.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (buffer.includes(0)) {
+      throw new GatewayHttpError(422, 'BINARY_FILE', 'Binary files cannot be previewed as text')
+    }
+
+    return {
+      path: location.relativePath,
+      content: buffer.toString('utf8'),
+      size: buffer.byteLength,
+    }
+  }
+
   async directoryLocation(
+    projectId: string,
+    inputPath: string
+  ): Promise<WorkspaceDirectoryLocation> {
+    const location = await this.resolveLocation(projectId, inputPath)
+    let stats
+    try {
+      stats = await lstat(location.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (!stats.isDirectory()) {
+      throw new GatewayHttpError(422, 'NOT_A_DIRECTORY', 'Workspace path is not a directory')
+    }
+    return location
+  }
+
+  async fileLocation(projectId: string, inputPath: string): Promise<WorkspaceDirectoryLocation> {
+    if (inputPath === '') {
+      throw new GatewayHttpError(
+        400,
+        'INVALID_WORKSPACE_PATH',
+        'Workspace file path cannot be empty'
+      )
+    }
+    const location = await this.resolveLocation(projectId, inputPath)
+    let stats
+    try {
+      stats = await lstat(location.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (stats.isDirectory()) {
+      throw new GatewayHttpError(422, 'NOT_A_FILE', 'Workspace path is a directory')
+    }
+    if (!stats.isFile()) {
+      throw new GatewayHttpError(422, 'NOT_A_FILE', 'Workspace path is not a regular file')
+    }
+    return location
+  }
+
+  private async resolveLocation(
     projectId: string,
     inputPath: string
   ): Promise<WorkspaceDirectoryLocation> {
@@ -94,15 +175,6 @@ export class WorkspaceFileService {
       )
     }
 
-    let stats
-    try {
-      stats = await lstat(current)
-    } catch (error) {
-      throw mapFileError(error, true)
-    }
-    if (!stats.isDirectory()) {
-      throw new GatewayHttpError(422, 'NOT_A_DIRECTORY', 'Workspace path is not a directory')
-    }
     return { absolutePath: current, relativePath }
   }
 }

@@ -35,7 +35,8 @@ import type {
 	SetWorkModeRequest,
 	TerminalDescriptor,
 	TerminalServerMessage,
-	WorkspaceDirectoryResponse
+	WorkspaceDirectoryResponse,
+	WorkspaceFileContentResponse
 } from '@agent-gateway/shared';
 
 /**
@@ -89,6 +90,7 @@ export const IPC = {
 	sessionsUnwatch: 'sessions:unwatch',
 	filesCapabilities: 'files:capabilities',
 	filesList: 'files:list',
+	filesRead: 'files:read',
 	filesWatch: 'files:watch',
 	filesUpdateWatch: 'files:updateWatch',
 	filesUnwatch: 'files:unwatch',
@@ -222,9 +224,21 @@ export interface WorkspaceLayoutState {
 	leftWidth: number;
 	rightWidth: number;
 	leftCollapsed: boolean;
-	rightCollapsed: boolean;
+	/**
+	 * @deprecated Prefer `rightContentCollapsed`. Kept for reading older saved layouts.
+	 * When true in legacy data, content starts collapsed while the tool rail stays visible.
+	 */
+	rightCollapsed?: boolean;
+	/** When true, the right tool content is hidden; the vertical icon rail remains. */
+	rightContentCollapsed: boolean;
+	/** Last focused panel type in the right dock (for toggle / highlight). */
+	activePanelType?: string;
 	/** 左侧当前选中的 tab(SESSIONS/CONTEXT/GIT/FILES 之一) */
 	leftTab: string;
+	/**
+	 * Open right-dock slots (1 = tab mode, 2 = vertical split). Types must be unique.
+	 * Empty + content collapsed means only the icon rail is visible.
+	 */
 	rightPanels: DockPanelState[];
 }
 
@@ -319,6 +333,7 @@ export interface DesktopBridge {
 	files: {
 		capabilities(projectKey: string): Promise<string[]>;
 		list(projectKey: string, path: string): Promise<WorkspaceDirectoryResponse>;
+		read(projectKey: string, path: string): Promise<WorkspaceFileContentResponse>;
 		watch(projectKey: string, directories: string[]): Promise<void>;
 		updateWatch(projectKey: string, directories: string[]): Promise<void>;
 		unwatch(projectKey: string): Promise<void>;

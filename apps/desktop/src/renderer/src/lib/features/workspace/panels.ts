@@ -8,6 +8,7 @@
 
 import { registerPanel } from '$lib/shared/registry/panels';
 import ChangesPanel from './panels/ChangesPanel.svelte';
+import FilePreviewPanel from './panels/FilePreviewPanel.svelte';
 import PortsPanel from './panels/PortsPanel.svelte';
 import TasksPanel from './panels/TasksPanel.svelte';
 import TerminalPanel from './panels/TerminalPanel.svelte';
@@ -24,14 +25,27 @@ export function registerWorkspacePanels(): void {
 		icon: 'list',
 		component: TasksPanel,
 		// 只有声明支持 todo 的 runtime 才显示这个面板
-		requiresFeature: 'task.todo'
+		requiresFeature: 'task.todo',
+		// Agent 产出任务后才出现在 rail
+		presence: 'contextual'
+	});
+
+	registerPanel({
+		type: 'preview',
+		title: '预览',
+		icon: 'file-text',
+		component: FilePreviewPanel,
+		contentOverflow: 'hidden',
+		// 打开文件预览后才出现在 rail
+		presence: 'contextual'
 	});
 
 	registerPanel({
 		type: 'changes',
 		title: '变更',
 		icon: 'file-text',
-		component: ChangesPanel
+		component: ChangesPanel,
+		presence: 'persistent'
 	});
 
 	registerPanel({
@@ -39,7 +53,8 @@ export function registerWorkspacePanels(): void {
 		title: '终端',
 		icon: 'terminal',
 		component: TerminalPanel,
-		contentOverflow: 'hidden'
+		contentOverflow: 'hidden',
+		presence: 'persistent'
 		// 终端是 host 能力,与 runtime capability 无关
 	});
 
@@ -47,6 +62,7 @@ export function registerWorkspacePanels(): void {
 		type: 'ports',
 		title: '端口',
 		icon: 'server',
-		component: PortsPanel
+		component: PortsPanel,
+		presence: 'persistent'
 	});
 }

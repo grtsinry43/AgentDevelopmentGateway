@@ -56,6 +56,16 @@ export const workspaceDirectoryResponseSchema = z.strictObject({
   path: workspaceRelativePathSchema,
   entries: z.array(workspaceFileNodeSchema),
 })
+export const workspaceFileContentQuerySchema = z.strictObject({
+  path: workspaceRelativePathSchema.refine((path) => path.length > 0, {
+    message: 'Workspace file path cannot be empty',
+  }),
+})
+export const workspaceFileContentResponseSchema = z.strictObject({
+  path: workspaceRelativePathSchema,
+  content: z.string(),
+  size: z.number().int().nonnegative(),
+})
 export const workspaceFileSubscriptionParamsSchema = z.strictObject({
   projectId: gatewayIdSchema,
   subscriptionId: gatewayIdSchema,
@@ -753,6 +763,7 @@ export type GatewayProject = z.infer<typeof projectSchema>
 export type WorkspaceFileKind = z.infer<typeof workspaceFileKindSchema>
 export type WorkspaceFileNode = z.infer<typeof workspaceFileNodeSchema>
 export type WorkspaceDirectoryResponse = z.infer<typeof workspaceDirectoryResponseSchema>
+export type WorkspaceFileContentResponse = z.infer<typeof workspaceFileContentResponseSchema>
 export type WorkspaceFileSubscription = z.infer<typeof workspaceFileSubscriptionSchema>
 export type WorkspaceFileEvent = z.infer<typeof workspaceFileEventSchema>
 export type GitChangeArea = z.infer<typeof gitChangeAreaSchema>

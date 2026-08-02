@@ -27,12 +27,12 @@ test('lists project files through a canonical workspace-relative contract', asyn
 
   const serverInfo = await server.inject({ method: 'GET', url: '/api/v1/server' })
   assert.equal(serverInfo.statusCode, 200)
-  assert.equal(serverInfo.json<{ protocolVersion: number }>().protocolVersion, 5)
+  assert.equal(serverInfo.json<{ protocolVersion: number }>().protocolVersion, 6)
   assert.deepEqual(
     serverInfo
       .json<{ capabilities: string[] }>()
       .capabilities.filter((capability) => capability.startsWith('workspace.files.')),
-    ['workspace.files.list', 'workspace.files.watch']
+    ['workspace.files.list', 'workspace.files.read', 'workspace.files.watch']
   )
 
   const created = await server.inject({
@@ -84,4 +84,34 @@ test('lists project files through a canonical workspace-relative contract', asyn
     assert.equal(response.statusCode, statusCode, path)
     assert.equal(response.json<{ error: { code: string } }>().error.code, code, path)
   }
+
+  const content = await server.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/files/content`,
+    query: { path: 'README.md' }
+  })
+  assert.equal(content.statusCode, 200)
+  assert.deepEqual(content.json(), {
+    path: 'README.md',
+    content: '# project',
+    size: Buffer.byteLength('# project', 'utf8')
+  })
+
+  const binaryPath = join(projectPath, 'blob.bin')
+  await writeFile(binaryPath, Buffer.from([0x00, 0x01, 0x02]))
+  const binary = await server.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/files/content`,
+    query: { path: 'blob.bin' }
+  })
+  assert.equal(binary.statusCode, 422)
+  assert.equal(binary.json<{ error: { code: string } }>().error.code, 'BINARY_FILE')
+
+  const asDirectory = await server.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/files/content`,
+    query: { path: 'src' }
+  })
+  assert.equal(asDirectory.statusCode, 422)
+  assert.equal(asDirectory.json<{ error: { code: string } }>().error.code, 'NOT_A_FILE')
 })

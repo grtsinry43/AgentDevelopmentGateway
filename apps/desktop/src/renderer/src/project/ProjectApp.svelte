@@ -8,15 +8,18 @@
 	import { startThemeSync, theme } from '$lib/shared/theme/theme.svelte';
 	import { keymap } from '$lib/shared/keymap/keymap.svelte';
 	import { requireProjectIdentity, systemInfo } from '$lib/shared/bridge/desktop';
-	import { availablePanels } from '$lib/shared/registry/panels';
+	import { railPanels as resolveRailPanels } from '$lib/shared/registry/panels';
 	import { tildify } from '$lib/shared/utils/path';
 	import { notifications } from '$lib/shared/notifications/notifications.svelte';
 	import { LEFT_TABS, layout } from '$lib/features/workspace/layout.svelte';
 	import { registerWorkspacePanels } from '$lib/features/workspace/panels';
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
+	import RightToolRail from '$lib/features/workspace/components/RightToolRail.svelte';
+	import DockDropOverlay from '$lib/features/workspace/components/DockDropOverlay.svelte';
 	import ConversationPane from '$lib/features/session/components/ConversationPane.svelte';
 	import SessionSidebar from '$lib/features/session/components/SessionSidebar.svelte';
 	import FileTree from '$lib/features/files/components/FileTree.svelte';
+	import { filePreview } from '$lib/features/files/file-preview.svelte';
 	import GitPanel from '$lib/features/git/components/GitPanel.svelte';
 	import { GitWorkspace } from '$lib/features/git/git-workspace.svelte';
 	import { sessionWorkspace } from '$lib/features/session/session-workspace.svelte';
@@ -109,7 +112,18 @@
 
 	/** 当前会话声明的 runtime capabilities；面板只按能力门控。 */
 	const capabilities = $derived(sessionWorkspace.features);
-	const addablePanels = $derived(availablePanels(capabilities));
+	/** 常驻面板始终上 rail；contextual 仅在有内容或已占槽时显示。 */
+	const railPanels = $derived(
+		resolveRailPanels(capabilities, {
+			openTypes: layout.panels.map((panel) => panel.type),
+			contextualReady: (type) => {
+				if (type === 'preview') return filePreview.path !== null;
+				if (type === 'tasks') return sessionWorkspace.tasks.length > 0;
+				return false;
+			}
+		})
+	);
+	const showRightContent = $derived(layout.rightContentOpen || layout.panelDragActive);
 	const activeAdapter = $derived(
 		sessionWorkspace.adapters.find(
 			(adapter) => adapter.adapterId === sessionWorkspace.selectedSession?.adapterId
@@ -132,7 +146,7 @@
 				label: '',
 				run: () => layout.setLeftTab(tab)
 			})),
-			// ⌘1..9 聚焦第 N 个 dock 面板
+			// ⌘1..9 聚焦第 N 个 dock 槽
 			...Array.from({ length: 9 }, (_, index) => ({
 				keys: `mod+${index + 1}`,
 				label: '',
@@ -140,7 +154,7 @@
 					const panel = layout.panelAt(index);
 					if (!panel) return;
 					focusedPanelId = panel.id;
-					layout.rightCollapsed = false;
+					layout.ensurePanel(panel.type);
 				}
 			}))
 		])
@@ -202,37 +216,23 @@
 			<ConversationPane workspace={sessionWorkspace} />
 		</main>
 
-		<!-- 右侧 dock -->
-		{#if !layout.rightCollapsed}
+		<!-- 右侧工具内容（可折叠）；图标条始终在最右 -->
+		{#if showRightContent}
 			<ResizeHandle
 				label="调整右侧面板宽度"
 				onDrag={(delta) =>
 					layout.setRightWidth(Math.min(640, Math.max(220, layout.rightWidth - delta)))}
 			/>
 			<aside
-				class="flex min-h-0 shrink-0 flex-col bg-surface-panel"
+				class="relative flex min-h-0 shrink-0 flex-col bg-surface-panel"
 				style:width="{layout.rightWidth}px"
 			>
-				<!-- dock 工具条:添加面板 -->
-				<div class="flex h-6 shrink-0 items-center gap-1 border-b border-subtle px-2">
-					<span class="mr-auto text-2xs tracking-wide text-faint uppercase">面板</span>
-					{#each addablePanels as panel (panel.type)}
-						<Button
-							variant="icon"
-							size="sm"
-							title="添加{panel.title}"
-							onclick={() => layout.addPanel(panel.type)}
-						>
-							{#snippet icon()}
-								<Icon name={panel.icon} size={11} />
-							{/snippet}
-						</Button>
-					{/each}
-				</div>
-
 				<DockStack focusedId={focusedPanelId} />
+				<DockDropOverlay />
 			</aside>
 		{/if}
+
+		<RightToolRail panels={railPanels} />
 	</div>
 
 	<StatusBar

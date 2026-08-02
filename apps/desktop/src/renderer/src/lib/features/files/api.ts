@@ -1,4 +1,7 @@
-import type { WorkspaceDirectoryResponse } from '@agent-gateway/shared';
+import type {
+	WorkspaceDirectoryResponse,
+	WorkspaceFileContentResponse
+} from '@agent-gateway/shared';
 import type { PushEvent } from '$contract/bridge';
 import { desktop } from '$lib/shared/bridge/desktop';
 import { pushBus } from '$lib/shared/bridge/events';
@@ -7,6 +10,8 @@ export const fileApi = {
 	capabilities: (projectKey: string): Promise<string[]> => desktop.files.capabilities(projectKey),
 	list: (projectKey: string, path: string): Promise<WorkspaceDirectoryResponse> =>
 		desktop.files.list(projectKey, path),
+	read: (projectKey: string, path: string): Promise<WorkspaceFileContentResponse> =>
+		desktop.files.read(projectKey, path),
 	watch: (projectKey: string, directories: string[]): Promise<void> =>
 		desktop.files.watch(projectKey, directories),
 	updateWatch: (projectKey: string, directories: string[]): Promise<void> =>

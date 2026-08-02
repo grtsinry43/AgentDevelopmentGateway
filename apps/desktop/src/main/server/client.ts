@@ -35,6 +35,7 @@ import {
   sessionListResponseSchema,
   sessionSchema,
   workspaceDirectoryResponseSchema,
+  workspaceFileContentResponseSchema,
   workspaceFileEventSchema,
   workspaceFileSubscriptionSchema,
   createTerminalRequestSchema,
@@ -70,6 +71,7 @@ import {
   type SetSessionTitleRequest,
   type SetWorkModeRequest,
   type WorkspaceDirectoryResponse,
+  type WorkspaceFileContentResponse,
   type WorkspaceFileEvent
   ,type CreateTerminalRequest
   ,type TerminalDescriptor
@@ -156,6 +158,13 @@ export class GatewayServerClient {
     return this.request(
       `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
       workspaceDirectoryResponseSchema
+    )
+  }
+
+  workspaceFileContent(projectId: string, path: string): Promise<WorkspaceFileContentResponse> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(path)}`,
+      workspaceFileContentResponseSchema
     )
   }
 

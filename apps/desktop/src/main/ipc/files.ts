@@ -24,6 +24,17 @@ export function registerFileHandlers(): void {
   )
 
   ipcMain.handle(
+    IPC.filesRead,
+    async (_event, rawProjectKey: unknown, rawPath: unknown) => {
+      const projectKey = parseProjectKey(rawProjectKey)
+      const path = workspaceRelativePathSchema.parse(rawPath)
+      if (path.length === 0) throw new Error('无效的文件路径')
+      const resolved = await resolveServerProject(projectKey)
+      return gatewayServer.workspaceFileContent(resolved.serverProjectId, path)
+    }
+  )
+
+  ipcMain.handle(
     IPC.filesWatch,
     async (event, rawProjectKey: unknown, rawDirectories: unknown) => {
       const projectKey = parseProjectKey(rawProjectKey)

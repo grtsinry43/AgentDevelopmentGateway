@@ -1,6 +1,8 @@
 import {
   workspaceDirectoryQuerySchema,
   workspaceDirectoryResponseSchema,
+  workspaceFileContentQuerySchema,
+  workspaceFileContentResponseSchema,
   workspaceFileSubscriptionParamsSchema,
   workspaceFileSubscriptionSchema
 } from '@agent-gateway/shared'
@@ -10,6 +12,8 @@ import { errorResponseSchema, idParamsSchema } from '../../http/schemas.js'
 export {
   workspaceDirectoryQuerySchema,
   workspaceDirectoryResponseSchema,
+  workspaceFileContentQuerySchema,
+  workspaceFileContentResponseSchema,
   workspaceFileSubscriptionParamsSchema,
   workspaceFileSubscriptionSchema
 }

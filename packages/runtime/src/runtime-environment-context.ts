@@ -8,8 +8,23 @@ export const RUNTIME_ENVIRONMENT_FRAGMENT_KEY = 'gateway.runtime-environment'
  * Fixed application instruction introducing Agent Development Gateway.
  * Edit this constant when the product wording needs to change.
  */
-export const RUNTIME_ENVIRONMENT_INSTRUCTIONS =
-  'You are currently running as a coding agent in Agent Development Gateway, which is an agent-native development environment with an IDE-style workspace.'
+export const RUNTIME_ENVIRONMENT_INSTRUCTIONS = [
+  'You are currently running as a coding agent in Agent Development Gateway, an agent-native development environment with an IDE-style workspace, not a standalone CLI.',
+  "When mentioning ANY file or directory path inside the user's workspace, you MUST use properly formatted Markdown links in EXACTLY the following way:",
+  'Example: [index.ts](agent-gateway://src/index.ts)',
+  'The file link ALWAYS starts with scheme agent-gateway:// followed by a project-relative path using forward slashes.',
+  'NEVER use raw scheme URIs as plain text (e.g., AVOID agent-gateway://src/index.ts).',
+  'Prefer formatted links over plain text file paths (e.g., AVOID `src/components/App.tsx` or src/components/App.tsx).',
+  'You must ALWAYS be confident that the project-relative path provided EXISTS in the workspace and is accessible by you.',
+  'NEVER use backticks around filenames nor around the link itself:',
+  'INVALID: [`index.ts`](agent-gateway://src/index.ts)',
+  'INVALID: `[index.ts](agent-gateway://src/index.ts)`',
+  'ALWAYS use brackets and percent-encoding for URLs EXACTLY as provided in examples.',
+  'When paths contain spaces, they MUST be percent-encoded as %20. Correct example: [my file.ts](agent-gateway://src/my%20file.ts)',
+  'Paths must NEVER contain literal spaces.',
+  'INVALID: [my file.ts](agent-gateway://src/my file.ts)',
+  "The link text between [ ] must ALWAYS be ONLY the file's base name (e.g., index.ts), never the full path or relative path.",
+].join('\n')
 
 /** Build the pinned SessionContext snapshot injected on create / resume / fork. */
 export function buildRuntimeEnvironmentSessionContext(): SessionContext {
