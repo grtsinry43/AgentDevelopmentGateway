@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  AdapterError,
   asInteractionId,
   asSessionId,
   asSubagentRunId,
@@ -9,6 +10,10 @@ import {
   type RuntimeEvent,
 } from '@agent-gateway/core'
 import { AdapterRegistry } from '../src/adapter-registry.js'
+import {
+  RUNTIME_ENVIRONMENT_FRAGMENT_KEY,
+  RUNTIME_ENVIRONMENT_INSTRUCTIONS,
+} from '../src/runtime-environment-context.js'
 import { RuntimeSessionManager } from '../src/session-manager.js'
 import { FakeRuntimeAdapter } from './fakes/fake-adapter.js'
 
@@ -267,6 +272,13 @@ test('reduces provider-neutral task snapshots, patches and dependency relations'
 
 test('durably admits input before delivering it to the bound adapter', async () => {
   const claude = new FakeRuntimeAdapter('claude-code')
+  claude.sendResult = {
+    providerReceipt: {
+      providerInputId: 'provider-message-17',
+      providerSequence: 9_001,
+      raw: { accepted: true },
+    },
+  }
   const persisted: RuntimeEvent[] = []
   const manager = new RuntimeSessionManager(new AdapterRegistry([claude]), {
     append: (event) => persisted.push(event),
@@ -302,10 +314,36 @@ test('durably admits input before delivering it to the bound adapter', async () 
   assert.equal(dispatched?.type, 'input.dispatched')
   if (dispatched?.type !== 'input.dispatched') throw new Error('Missing dispatched input')
   assert.equal(dispatched.payload.entry.turnId, claude.sendInputs[0]?.options.turnId)
+  assert.equal(dispatched.payload.entry.admittedSequence, receipt.admittedSequence)
+  assert.notEqual(dispatched.payload.entry.admittedSequence, 9_001)
+  assert.deepEqual(dispatched.payload.entry.providerReceipt, claude.sendResult.providerReceipt)
   assert.equal(claude.sendInputs[0]?.options.kind, 'start-turn')
 
   manager.setSessionTitle(created.session.id, 'Inspect the workspace')
   assert.equal(manager.getSession(created.session.id).session.title, 'Inspect the workspace')
+})
+
+test('keeps admitOnly input in Gateway without calling the adapter', async () => {
+  const opencode = new FakeRuntimeAdapter('opencode')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([opencode]))
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'opencode',
+  })
+  await waitForEvents(manager, created.session.id, 2)
+
+  await manager.send(created.session.id, {
+    clientMessageId: 'admit-only',
+    text: 'Store without provider delivery',
+    admitOnly: true,
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(opencode.sendInputs.length, 0)
+  assert.equal(manager.getSession(created.session.id).inputQueue[0]?.status, 'pending')
+  assert.equal(manager.getSession(created.session.id).inputQueue[0]?.input.admitOnly, true)
 })
 
 test('records failed input delivery after durable admission', async () => {
@@ -471,6 +509,77 @@ test('disposes only the adapter bound to the session and closes its event stream
   assert.equal(lastEvent.payload.status, 'closed')
 })
 
+test('registers and forwards server requests independently for multiple adapters', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  const codex = new FakeRuntimeAdapter('codex')
+  const requests: string[] = []
+  const manager = new RuntimeSessionManager(
+    new AdapterRegistry([claude, codex]),
+    undefined,
+    async (request) => {
+      requests.push(`${request.method}:${request.id}`)
+      if (request.method === 'codex.fail') throw new Error('host handler failed')
+      return { id: request.id, result: { handled: request.method } }
+    },
+  )
+  const claudeRequest = {
+    id: 'request-claude',
+    sessionId: asSessionId('session-claude'),
+    method: 'claude.time',
+    params: {},
+  }
+  const codexRequest = {
+    id: 'request-codex',
+    sessionId: asSessionId('session-codex'),
+    method: 'codex.dynamicTool.call',
+    params: { tool: 'lookup' },
+  }
+
+  assert.deepEqual(await claude.emitServerRequest(claudeRequest), {
+    id: claudeRequest.id,
+    result: { handled: claudeRequest.method },
+  })
+  assert.deepEqual(await codex.emitServerRequest(codexRequest), {
+    id: codexRequest.id,
+    result: { handled: codexRequest.method },
+  })
+  await assert.rejects(
+    codex.emitServerRequest({ ...codexRequest, id: 'request-fail', method: 'codex.fail' }),
+    /host handler failed/,
+  )
+  assert.deepEqual(requests, [
+    'claude.time:request-claude',
+    'codex.dynamicTool.call:request-codex',
+    'codex.fail:request-fail',
+  ])
+
+  await manager.disposeAllSessions()
+  assert.equal(claude.serverRequestRegistrationCount, 0)
+  assert.equal(codex.serverRequestRegistrationCount, 0)
+  assert.equal(claude.serverRequestRegistrationDisposals, 1)
+  assert.equal(codex.serverRequestRegistrationDisposals, 1)
+})
+
+test('rejects server requests explicitly when no host handler is configured', async () => {
+  const codex = new FakeRuntimeAdapter('codex')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([codex]))
+
+  await assert.rejects(
+    codex.emitServerRequest({
+      id: 'request-unconfigured',
+      sessionId: asSessionId('session-codex'),
+      method: 'codex.attestation',
+      params: {},
+    }),
+    (error: unknown) =>
+      error instanceof AdapterError &&
+      error.runtimeError.code === 'not_implemented' &&
+      error.runtimeError.nativeCode === 'gateway.server_request.handler_not_configured',
+  )
+
+  await manager.disposeAllSessions()
+})
+
 test('attempts to dispose every session when one adapter disposal fails', async () => {
   const claude = new FakeRuntimeAdapter('claude-code')
   const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
@@ -602,6 +711,80 @@ test('projects pending interactions and resumes event sequences without collisio
   assert.equal(forked.session.forkedFromSessionId, resumed.session.id)
   assert.deepEqual(claude.resumeInputs.at(-1)?.model, closed.model)
   assert.deepEqual(claude.forkInputs.at(-1)?.model, closed.model)
+})
+
+test('injects runtime environment SessionContext when session_injection is supported', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  claude.descriptor.capabilities.features['context.session_injection'] = true
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+  const createContext = claude.createInputs[0]?.context
+  assert.ok(createContext)
+  assert.equal(createContext.fragments[0]?.key, RUNTIME_ENVIRONMENT_FRAGMENT_KEY)
+  assert.equal(createContext.fragments[0]?.content, RUNTIME_ENVIRONMENT_INSTRUCTIONS)
+  assert.equal(createContext.fragments[0]?.role, 'instruction')
+  assert.equal(createContext.fragments[0]?.trust, 'application')
+  assert.equal(
+    created.capabilities.degradations?.some((entry) => entry.capability === 'context.session_injection') ?? false,
+    false,
+  )
+
+  await manager.disposeSession(created.session.id)
+  const closed = manager.getSession(created.session.id).session
+  const resumed = await manager.resumeSession({
+    sessionId: closed.id,
+    previousSession: closed,
+    projectId: closed.projectId,
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: closed.adapterId,
+    runtimeSessionId: closed.runtimeSessionId!,
+    execution: closed.execution.configured,
+    taskState: manager.getSession(created.session.id).taskState,
+    subagentRuns: [],
+    inputQueue: [],
+    inputAdmissions: [],
+  })
+  assert.equal(
+    claude.resumeInputs.at(-1)?.context?.fragments[0]?.key,
+    RUNTIME_ENVIRONMENT_FRAGMENT_KEY,
+  )
+
+  const forked = await manager.forkSession({ sourceSessionId: resumed.session.id })
+  assert.equal(
+    claude.forkInputs.at(-1)?.context?.fragments[0]?.content,
+    RUNTIME_ENVIRONMENT_INSTRUCTIONS,
+  )
+  assert.equal(forked.session.forkedFromSessionId, resumed.session.id)
+})
+
+test('skips runtime environment SessionContext and records degradation when unsupported', async () => {
+  const opencode = new FakeRuntimeAdapter('opencode')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([opencode]))
+
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'opencode',
+  })
+
+  assert.equal(opencode.createInputs[0]?.context, undefined)
+  assert.deepEqual(created.capabilities.degradations, [
+    {
+      capability: 'context.session_injection',
+      status: 'unsupported',
+      reason:
+        'Runtime environment instructions were skipped because this adapter does not support context.session_injection',
+    },
+  ])
+  assert.deepEqual(created.connection.capabilities.degradations, created.capabilities.degradations)
 })
 
 async function waitForEvents(

@@ -1,5 +1,6 @@
 export * from './adapter-registry.js'
 export * from './connection-manager.js'
+export * from './runtime-environment-context.js'
 export * from './session-event-stream.js'
 export * from './session-manager.js'
 export * from './runtime-projection.js'

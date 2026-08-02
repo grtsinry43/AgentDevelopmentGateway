@@ -12,6 +12,7 @@ import {
   toRuntimeError,
   type AdapterEvent,
   type AgentSession,
+  type Disposable,
   type InputAdmissionReceipt,
   type InputDelivery,
   type InputQueueEntry,
@@ -24,6 +25,8 @@ import {
   type RuntimeAdapter,
   type RuntimeConnection,
   type RuntimeEvent,
+  type ServerRequestHandler,
+  type SessionContext,
   type SessionId,
   type SessionExecutionSettings,
   type TurnId,
@@ -33,6 +36,7 @@ import {
 } from '@agent-gateway/core'
 import { AdapterRegistry } from './adapter-registry.js'
 import { RuntimeConnectionManager } from './connection-manager.js'
+import { buildRuntimeEnvironmentSessionContext } from './runtime-environment-context.js'
 import { RuntimeSessionEventStream } from './session-event-stream.js'
 import type {
   CreateRuntimeSessionInput,
@@ -63,6 +67,8 @@ interface ManagedSession {
   inputDispatching: boolean
   commandTail: Promise<void>
   taskState: TaskState
+  /** Runtime skipped host-environment SessionContext because the adapter lacks the feature. */
+  skippedSessionInjection: boolean
 }
 
 interface ModelCatalogCacheEntry {
@@ -77,13 +83,26 @@ export class RuntimeSessionManager {
   private readonly connections: RuntimeConnectionManager
   private readonly sessions = new Map<SessionId, ManagedSession>()
   private readonly modelCatalogs = new Map<string, ModelCatalogCacheEntry>()
+  private readonly serverRequestRegistrations: Disposable[] = []
   private nextEventId = 1
 
   constructor(
     private readonly registry: AdapterRegistry,
     private readonly eventSink?: RuntimeEventSink,
+    serverRequestHandler?: ServerRequestHandler,
   ) {
     this.connections = new RuntimeConnectionManager(registry)
+    for (const adapter of registry.list()) {
+      if (!adapter.onServerRequest) continue
+      this.serverRequestRegistrations.push(
+        adapter.onServerRequest((request) => {
+          if (!serverRequestHandler) {
+            return Promise.reject(serverRequestHandlerNotConfigured(adapter.descriptor.id))
+          }
+          return serverRequestHandler(request)
+        }),
+      )
+    }
   }
 
   inspectAdapters(input: CreateRuntimeSessionInput['host']): Promise<RuntimeAdapterAvailability[]> {
@@ -176,6 +195,7 @@ export class RuntimeSessionManager {
       lastEventSequence: 0,
     }
     const events = new RuntimeSessionEventStream(sessionId, input.adapterId, () => this.nextEventId++)
+    const sessionContext = resolveRuntimeSessionContext(connection)
     const managed: ManagedSession = {
       session,
       adapter,
@@ -192,6 +212,7 @@ export class RuntimeSessionManager {
       inputDispatching: false,
       commandTail: Promise.resolve(),
       taskState: createEmptyTaskState(),
+      skippedSessionInjection: sessionContext.skipped,
     }
     this.sessions.set(sessionId, managed)
 
@@ -203,6 +224,7 @@ export class RuntimeSessionManager {
         providerProfileId: input.providerProfileId,
         model: input.model,
         execution: configuredExecution,
+        ...(sessionContext.context ? { context: sessionContext.context } : {}),
       })
       if (handle.sessionId !== sessionId) {
         throw new Error(`Adapter returned Gateway session ${handle.sessionId}, expected ${sessionId}`)
@@ -268,6 +290,7 @@ export class RuntimeSessionManager {
     ) {
       throw new Error(`Resume target does not match the stored Runtime session ${input.sessionId}`)
     }
+    const sessionContext = resolveRuntimeSessionContext(connection)
     const managed: ManagedSession = {
       session: {
         ...input.previousSession,
@@ -310,6 +333,7 @@ export class RuntimeSessionManager {
       inputDispatching: false,
       commandTail: Promise.resolve(),
       taskState: cloneTaskState(input.taskState),
+      skippedSessionInjection: sessionContext.skipped,
     }
     this.sessions.set(input.sessionId, managed)
     try {
@@ -322,6 +346,7 @@ export class RuntimeSessionManager {
         cursor: input.cursor,
         providerStateSnapshot: input.providerStateSnapshot,
         execution: configured,
+        ...(sessionContext.context ? { context: sessionContext.context } : {}),
       })
       managed.session = {
         ...managed.session,
@@ -359,6 +384,7 @@ export class RuntimeSessionManager {
       input.execution ?? source.session.execution.configured,
     )
     const now = Date.now()
+    const sessionContext = resolveRuntimeSessionContext(source.connection)
     const managed: ManagedSession = {
       session: {
         id: sessionId,
@@ -394,6 +420,7 @@ export class RuntimeSessionManager {
       inputDispatching: false,
       commandTail: Promise.resolve(),
       taskState: cloneTaskState(source.taskState),
+      skippedSessionInjection: sessionContext.skipped,
     }
     this.sessions.set(sessionId, managed)
     try {
@@ -405,6 +432,7 @@ export class RuntimeSessionManager {
         model: source.session.model,
         forkPoint: input.forkPoint,
         execution: configured,
+        ...(sessionContext.context ? { context: sessionContext.context } : {}),
       })
       managed.session = {
         ...managed.session,
@@ -563,6 +591,8 @@ export class RuntimeSessionManager {
       this.publishInputQueue(managed)
       const receipt = { admittedSequence }
       managed.admittedInputs.set(input.clientMessageId, receipt)
+      // `admitOnly` is Gateway admission only. Provider-specific promotion is adapter work
+      // and must not be inferred by the shared runtime.
       if (!admittedInput.admitOnly) this.scheduleInputDrain(managed)
       return receipt
     })
@@ -670,17 +700,25 @@ export class RuntimeSessionManager {
     const failures = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason)
+    const registrationResults = await Promise.allSettled(
+      this.serverRequestRegistrations.splice(0).map((registration) =>
+        Promise.resolve().then(() => registration.dispose()),
+      ),
+    )
+    const registrationFailures = registrationResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
     const adapterResults = await Promise.allSettled(
       this.registry.list().map((adapter) => adapter.dispose?.() ?? Promise.resolve()),
     )
     const adapterFailures = adapterResults
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason)
-    const allFailures = [...failures, ...adapterFailures]
+    const allFailures = [...failures, ...adapterFailures, ...registrationFailures]
     if (allFailures.length > 0) {
       throw new AggregateError(
         allFailures,
-        `Failed to dispose ${failures.length} Runtime session(s) and ${adapterFailures.length} adapter(s)`,
+        `Failed to dispose ${failures.length} Runtime session(s), ${adapterFailures.length} adapter(s), and ${registrationFailures.length} server-request registration(s)`,
       )
     }
   }
@@ -756,7 +794,7 @@ export class RuntimeSessionManager {
     const effectiveDelivery: InputDelivery = hasActiveTurn ? 'steer' : 'queue'
     managed.inputDispatching = true
     try {
-      await managed.adapter.send(managed.session.id, cloneUserInput(entry.input), {
+      const sendResult = await managed.adapter.send(managed.session.id, cloneUserInput(entry.input), {
         turnId,
         kind,
       })
@@ -766,6 +804,9 @@ export class RuntimeSessionManager {
         effectiveDelivery,
         status: 'delivered',
         turnId,
+        ...(sendResult?.providerReceipt
+          ? { providerReceipt: structuredClone(sendResult.providerReceipt) }
+          : {}),
         updatedAt: Date.now(),
       }
       this.append(managed, {
@@ -953,6 +994,10 @@ function applyEvent(session: AgentSession, event: RuntimeEvent): AgentSession {
 }
 
 function snapshot(managed: ManagedSession): RuntimeSessionSnapshot {
+  const capabilities = withSessionInjectionDegradation(
+    cloneCapabilities(managed.connection.capabilities),
+    managed.skippedSessionInjection,
+  )
   return {
     session: {
       ...managed.session,
@@ -961,17 +1006,59 @@ function snapshot(managed: ManagedSession): RuntimeSessionSnapshot {
     },
     connection: {
       ...managed.connection,
-      capabilities: {
-        ...managed.connection.capabilities,
-        features: { ...managed.connection.capabilities.features },
-        raw: [...managed.connection.capabilities.raw],
-      },
+      capabilities: cloneCapabilities(capabilities),
     },
-    capabilities: cloneCapabilities(managed.connection.capabilities),
+    capabilities,
     pendingInteractions: [...managed.pendingInteractions.values()].map((request) => structuredClone(request)),
     taskState: cloneTaskState(managed.taskState),
     subagentRuns: [...managed.subagentRuns.values()].map(cloneSubagentRun),
     inputQueue: managed.inputQueue.map(cloneInputQueueEntry),
+  }
+}
+
+/**
+ * Inject Gateway runtime-environment instructions when the adapter supports session
+ * context; otherwise skip and surface a capability degradation on the session snapshot.
+ */
+function resolveRuntimeSessionContext(connection: RuntimeConnection): {
+  context?: SessionContext
+  skipped: boolean
+} {
+  if (connection.capabilities.features['context.session_injection'] === true) {
+    return {
+      context: buildRuntimeEnvironmentSessionContext(),
+      skipped: false,
+    }
+  }
+  return { skipped: true }
+}
+
+const SESSION_INJECTION_SKIP_DEGRADATION = {
+  capability: 'context.session_injection',
+  status: 'unsupported' as const,
+  reason:
+    'Runtime environment instructions were skipped because this adapter does not support context.session_injection',
+}
+
+function withSessionInjectionDegradation(
+  capabilities: RuntimeConnection['capabilities'],
+  skipped: boolean,
+): RuntimeConnection['capabilities'] {
+  if (!skipped) return capabilities
+  const degradations = [...(capabilities.degradations ?? [])]
+  if (
+    !degradations.some(
+      (entry) =>
+        entry.capability === SESSION_INJECTION_SKIP_DEGRADATION.capability &&
+        entry.status === SESSION_INJECTION_SKIP_DEGRADATION.status &&
+        entry.reason === SESSION_INJECTION_SKIP_DEGRADATION.reason,
+    )
+  ) {
+    degradations.push({ ...SESSION_INJECTION_SKIP_DEGRADATION })
+  }
+  return {
+    ...capabilities,
+    degradations,
   }
 }
 
@@ -995,6 +1082,9 @@ function cloneInputQueueEntry(entry: InputQueueEntry): InputQueueEntry {
   return {
     ...entry,
     input: cloneUserInput(entry.input),
+    ...(entry.providerReceipt
+      ? { providerReceipt: structuredClone(entry.providerReceipt) }
+      : {}),
     ...(entry.error ? { error: structuredClone(entry.error) } : {}),
   }
 }
@@ -1031,5 +1121,14 @@ function unsupported(capability: string): AdapterError {
     code: 'not_implemented',
     nativeCode: 'gateway.capability.unsupported',
     message: `Runtime does not support ${capability}`,
+  })
+}
+
+function serverRequestHandlerNotConfigured(adapterId: string): AdapterError {
+  return new AdapterError({
+    code: 'not_implemented',
+    layer: 'transport',
+    nativeCode: 'gateway.server_request.handler_not_configured',
+    message: `No server-request handler is configured for Runtime adapter: ${adapterId}`,
   })
 }

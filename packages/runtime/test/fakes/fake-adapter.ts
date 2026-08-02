@@ -1,7 +1,9 @@
 import {
   type AdapterEvent,
   type AdapterId,
+  type AdapterSendResult,
   type CreateSessionInput,
+  type Disposable,
   type RuntimeAdapter,
   type RuntimeAdapterDescriptor,
   type RuntimeConnection,
@@ -16,6 +18,9 @@ import {
   type ModelCatalog,
   type ModelSelection,
   type SendOptions,
+  type ServerRequest,
+  type ServerRequestHandler,
+  type ServerResponse,
   type SessionId,
   type UserInput,
 } from '@agent-gateway/core'
@@ -37,11 +42,14 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   detectError?: unknown
   createError?: unknown
   sendError?: unknown
+  sendResult?: AdapterSendResult
   listModelsError?: unknown
   beforeSend?: () => void
   beforeListModels?: () => Promise<void>
 
   private readonly streams = new Map<SessionId, TestEventStream>()
+  private readonly serverRequestHandlers = new Set<ServerRequestHandler>()
+  serverRequestRegistrationDisposals = 0
 
   constructor(
     adapterId: AdapterId,
@@ -119,11 +127,40 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
     })
   }
 
-  send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void> {
+  send(
+    sessionId: SessionId,
+    input: UserInput,
+    options: SendOptions,
+  ): Promise<void | AdapterSendResult> {
     if (this.sendError) return Promise.reject(this.sendError)
     this.beforeSend?.()
     this.sendInputs.push({ sessionId, input, options })
-    return Promise.resolve()
+    return Promise.resolve(this.sendResult)
+  }
+
+  onServerRequest(handler: ServerRequestHandler): Disposable {
+    this.serverRequestHandlers.add(handler)
+    let disposed = false
+    return {
+      dispose: () => {
+        if (disposed) return
+        disposed = true
+        this.serverRequestHandlers.delete(handler)
+        this.serverRequestRegistrationDisposals += 1
+      },
+    }
+  }
+
+  emitServerRequest(request: ServerRequest): Promise<ServerResponse> {
+    const handlers = [...this.serverRequestHandlers]
+    if (handlers.length !== 1) {
+      return Promise.reject(new Error(`Expected one server-request handler, found ${handlers.length}`))
+    }
+    return handlers[0]!(request)
+  }
+
+  get serverRequestRegistrationCount(): number {
+    return this.serverRequestHandlers.size
   }
 
   interrupt(): Promise<void> {
