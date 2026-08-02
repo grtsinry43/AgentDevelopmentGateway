@@ -21,6 +21,7 @@ import type { TerminalPtyFactory } from '../features/terminals/pty.js'
 import { terminalRoutes } from '../features/terminals/routes.js'
 import { TerminalService } from '../features/terminals/service.js'
 import { openGatewayDatabase } from '../infrastructure/database.js'
+import { handleHostServerRequest } from '../runtime/host-server-request.js'
 
 export interface ApplicationPluginOptions {
   adapters: RuntimeAdapter[]
@@ -43,7 +44,8 @@ export const applicationPlugin: FastifyPluginAsync<ApplicationPluginOptions> = a
   sessionEventsRepository.discardOrphans()
   const runtime = new RuntimeSessionManager(
     new AdapterRegistry(options.adapters),
-    sessionEventsRepository
+    sessionEventsRepository,
+    handleHostServerRequest
   )
   const sessions = new SessionService(
     sessionsRepository,
