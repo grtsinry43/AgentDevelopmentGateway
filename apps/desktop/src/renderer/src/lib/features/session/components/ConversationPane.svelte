@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import type { SessionItem } from '@agent-gateway/shared';
 	import type { ExportRawItem } from '$contract/bridge';
 	import { appError } from '$lib/features/project/app-error.svelte';
 	import { providers } from '$lib/shared/settings/providers.svelte';
 	import { desktop } from '$lib/shared/bridge/desktop';
 	import { cx } from '$lib/shared/utils/cx';
 	import { SESSION_STATUS, isLiveStatus } from '$lib/shared/utils/status';
+	import { sessionItems } from '../api';
 	import EmptyState from '$lib/ui/common/EmptyState.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import ResizeHandle from '$lib/ui/layout/ResizeHandle.svelte';
@@ -84,7 +86,7 @@
 				projectName,
 				sessionTitle: workspace.selectedSession?.title,
 				adapterId: workspace.selectedSession?.adapterId,
-				items: buildExportItems()
+				items: await buildExportItems()
 			});
 		} catch (cause) {
 			appError.show(cause);
@@ -93,10 +95,25 @@
 		}
 	}
 
-	function buildExportItems(): ExportRawItem[] {
-		// 直接带完整 timeline,不裁剪 —— 推理时长、工具入参/出参、changeSet 全保留,
-		// 导出页用真实组件渲染,状态与界面一致。
-		return workspace.timeline as unknown as ExportRawItem[];
+	/**
+	 * 导出全量会话:按 sessionItems 从新到旧分页拉取全部物化块,再逆序拼回升序
+	 * timeline。界面只加载尾部窗口,导出不受它限制。
+	 */
+	const EXPORT_PAGE_SIZE = 500;
+
+	async function buildExportItems(): Promise<ExportRawItem[]> {
+		const sessionId = workspace.selectedSessionId;
+		if (!sessionId) return [];
+		const all: SessionItem[] = [];
+		let before: number | undefined;
+		let hasMore = true;
+		while (hasMore) {
+			const page = await sessionItems(sessionId, before, EXPORT_PAGE_SIZE);
+			all.unshift(...page.items);
+			before = page.oldestSequence;
+			hasMore = page.hasMore;
+		}
+		return all as unknown as ExportRawItem[];
 	}
 
 	const sessionVisual = $derived(
@@ -155,6 +172,18 @@
 		composerHeight = Math.min(maxHeight, Math.max(112, composerHeight - delta));
 	}
 
+	async function scrollToBottomWhenStable(): Promise<void> {
+		if (!transcript) return;
+		// 虚拟列表分批测量:内容高度会在几帧内逐次增长。循环滚到底直到高度稳定,
+		// 配合虚拟器的 anchorTo:'end' 保证落点就是最新一条(而非估计高度的中间)。
+		for (let attempt = 0; attempt < 10; attempt += 1) {
+			const target = transcript.scrollHeight;
+			transcript.scrollTop = target;
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			if (Math.abs(transcript.scrollHeight - target) < 2) return;
+		}
+	}
+
 	$effect(() => {
 		workspace.timeline.map((item) => {
 			if (item.itemKind === 'message') return `${item.id}:${item.text.length}:${item.streaming}`;
@@ -167,7 +196,7 @@
 			return `${item.id}:${item.changeSet.status}:${item.changeSet.files.length}`;
 		});
 		if (!pinnedToBottom || (!showWorkingIndicator && workspace.timeline.length === 0)) return;
-		void tick().then(() => transcript?.scrollTo({ top: transcript.scrollHeight }));
+		void tick().then(() => void scrollToBottomWhenStable());
 	});
 </script>
 
@@ -273,15 +302,23 @@
 			oncontextmenu={handleContextMenu}
 		>
 			{#if workspace.timeline.length === 0}
-				<EmptyState
-					title={workspace.streamState === 'connecting' ? '正在读取事件…' : '这个会话还没有内容'}
-					description="发送消息后，文本、思考与工具调用会按实际事件顺序显示在这里。"
-					class="h-full"
-				>
-					{#snippet icon()}
-						<Icon name="message" size={20} />
-					{/snippet}
-				</EmptyState>
+				{#if workspace.streamState === 'connecting'}
+					<div class="flex h-full items-center justify-center">
+						<p class="shimmer-text text-base font-bold tracking-wide">
+							Agent Development Gateway
+						</p>
+					</div>
+				{:else}
+					<EmptyState
+						title="这个会话还没有内容"
+						description="发送消息后，文本、思考与工具调用会按实际事件顺序显示在这里。"
+						class="h-full"
+					>
+						{#snippet icon()}
+							<Icon name="message" size={20} />
+						{/snippet}
+					</EmptyState>
+				{/if}
 			{:else}
 				<div class="mx-auto w-full max-w-3xl px-5 py-4">
 					<ConversationTranscript
@@ -289,6 +326,7 @@
 						{workspace}
 						onCopy={copyMessage}
 						{copiedId}
+						getScrollElement={() => transcript}
 					/>
 					{#if showWorkingIndicator}
 						<AgentWorkingIndicator />

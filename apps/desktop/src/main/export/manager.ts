@@ -10,10 +10,14 @@ import { BrowserWindow, dialog, ipcMain, screen } from 'electron'
 import type { ExportConversationPayload, ExportFormat } from '../../contract/bridge.js'
 import { IPC } from '../../contract/bridge.js'
 import { baseWindowOptions, entryUrl } from '../windows/chrome.js'
+import { PngEncoder } from './png-encode.js'
 
 const EXPORT_WIDTH = 880
-/** 捕获窗口高度封顶(超长对话导出前 MAX_CAPTURE_HEIGHT px,避免超高窗口)。 */
-const MAX_CAPTURE_HEIGHT = 6000
+/**
+ * 捕获窗口固定高度(不再随内容增高)。PNG 导出对超长内容做「滚动分块截 +
+ * 位图拼合」:窗口始终保持这个高度,不会盖住导出对话框。
+ */
+const CAPTURE_HEIGHT = 1200
 
 let pendingPayload: ExportConversationPayload | undefined
 let resolveRenderHeight: ((height: number) => void) | undefined
@@ -70,20 +74,75 @@ async function openExportDialog(): Promise<void> {
 }
 
 /**
- * PNG:普通窗口(非 offscreen),离屏位置短暂显示保证绘制。
+ * PNG:普通窗口(非 offscreen),离屏位置短暂显示保证绘制,高度固定。
  * 布局以 880 CSS 渲染;macOS 视网膜 DPR=2,capturePage 直接返回 2x 像素 ——
  * 文字放大、清晰,且不用 zoomFactor(那套在 offscreen 下只放大画布不放大文字)。
+ *
+ * capturePage 只能截窗口可见区,所以对超长内容按 CAPTURE_HEIGHT 逐段滚动捕获,
+ * 再把每段的 RGBA 位图流式喂进 PngEncoder 拼成一张完整长图 —— 窗口高度永远固定。
  */
 async function capturePng(): Promise<void> {
+	const win = createCaptureWindow()
+	const renderReady = new Promise<number>((resolve) => {
+		resolveRenderHeight = resolve
+	})
+	try {
+		const entry = entryUrl('capture')
+		await (entry.url ? win.loadURL(entry.url) : win.loadFile(entry.file!))
+		const contentHeight = await renderReady
+		if (!Number.isFinite(contentHeight) || contentHeight < 1) throw new Error('导出失败:内容为空')
+		win.show()
+		const steps = Math.max(1, Math.ceil(contentHeight / CAPTURE_HEIGHT))
+		// 每一段:滚动到期望位置,等两帧保证已绘制,截当前视口。
+		// 实际 scrollY(可能被钳制)+ 位图设备尺寸换算页面设备偏移,按 [covered, covered+rows)
+		// 取出尚未写入的内容行 —— 末尾不足一块时滚动会被钳到页底,块顶会重复,必须底部对齐。
+		let encoder: PngEncoder | undefined
+		for (let step = 0; step < steps; step++) {
+			const scrollY = await win.webContents.executeJavaScript(`
+				window.scrollTo(0, ${step * CAPTURE_HEIGHT});
+				new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(window.scrollY))))
+			`)
+			const image = await win.webContents.capturePage()
+			if (image.isEmpty()) throw new Error('导出失败(PNG):捕获内容为空')
+			const bitmap = image.toBitmap()
+			// capturePage 的 getSize() 是 DIP;toBitmap() 是设备像素。用两者反推设备尺寸,
+			// 避免依赖 scaleFactor API 的语义差异。
+			const dipSize = image.getSize()
+			const deviceScale = Math.sqrt(bitmap.length / 4 / (dipSize.width * dipSize.height))
+			const deviceWidth = Math.round(dipSize.width * deviceScale)
+			const deviceHeightPx = Math.round(dipSize.height * deviceScale)
+			if (bitmap.length !== deviceWidth * deviceHeightPx * 4) {
+				throw new Error('导出失败(PNG):位图尺寸异常')
+			}
+			if (!encoder) {
+				const deviceHeight = Math.round((contentHeight * deviceHeightPx) / CAPTURE_HEIGHT)
+				encoder = new PngEncoder(deviceWidth, deviceHeight)
+			}
+			const covered = step * deviceHeightPx
+			const remaining = encoder.height - covered
+			const rows = Math.min(deviceHeightPx, remaining)
+			const pageOffset = Math.round(scrollY * (deviceHeightPx / CAPTURE_HEIGHT))
+			const startRow = Math.max(0, covered - pageOffset)
+			if (rows > 0) encoder.writeRgbaRows(bitmap, startRow, rows)
+		}
+		const data = await encoder!.finish()
+		if (data.length === 0) throw new Error('导出失败(PNG)')
+		await saveBuffer('png', data)
+	} finally {
+		resolveRenderHeight = undefined
+		if (!win.isDestroyed()) win.destroy()
+	}
+}
+
+/** 捕获窗口:固定宽度/高度,定位到主屏左缘只露出 8px(保证绘制且用户看不见)。 */
+function createCaptureWindow(): BrowserWindow {
   const base = baseWindowOptions({ kind: 'capture' })
-  // 定位到主屏左缘只露出 8px:窗口在屏幕上,macOS 不会重新居中,但用户看不见;
-  // 高度封顶,避免超高窗口盖住导出对话框。
   const display = screen.getPrimaryDisplay().bounds
-  const win = new BrowserWindow({
+  return new BrowserWindow({
     ...base,
     show: false,
     width: EXPORT_WIDTH,
-    height: 800,
+    height: CAPTURE_HEIGHT,
     x: display.x - EXPORT_WIDTH + 8,
     y: display.y + 24,
     minimizable: false,
@@ -93,42 +152,11 @@ async function capturePng(): Promise<void> {
     backgroundColor: '#fafaf9',
     vibrancy: undefined
   })
-
-  const renderReady = new Promise<number>((resolve) => {
-    resolveRenderHeight = resolve
-  })
-  try {
-    const entry = entryUrl('capture')
-    await (entry.url ? win.loadURL(entry.url) : win.loadFile(entry.file!))
-    const contentHeight = await renderReady
-    win.setContentSize(EXPORT_WIDTH, Math.min(Math.max(contentHeight, 32), MAX_CAPTURE_HEIGHT))
-    win.show()
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    const image = await win.webContents.capturePage()
-    const data = image.isEmpty() ? Buffer.alloc(0) : image.toPNG()
-    if (data.length === 0) throw new Error('导出失败(PNG)')
-    await saveBuffer('png', data)
-  } finally {
-    resolveRenderHeight = undefined
-    if (!win.isDestroyed()) win.destroy()
-  }
 }
 
 /** PDF:普通隐藏窗口(非 offscreen),zoom 1,printToPDF 输出标准 A4,不受缩放影响。 */
 async function capturePdf(): Promise<void> {
-  const base = baseWindowOptions({ kind: 'capture' })
-  const win = new BrowserWindow({
-    ...base,
-    show: false,
-    width: EXPORT_WIDTH,
-    height: 800,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    resizable: false,
-    backgroundColor: '#fafaf9',
-    vibrancy: undefined
-  })
+  const win = createCaptureWindow()
 
   const renderReady = new Promise<number>((resolve) => {
     resolveRenderHeight = resolve

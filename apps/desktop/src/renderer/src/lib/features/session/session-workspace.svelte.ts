@@ -3,6 +3,12 @@ import { SvelteSet } from 'svelte/reactivity';
 import { desktop } from '$lib/shared/bridge/desktop';
 import { webPreview } from '$lib/shared/preview/web-preview.svelte';
 import {
+	applySessionItemEvent,
+	createSessionItemState,
+	type SessionItem,
+	type SessionItemState
+} from '@agent-gateway/shared';
+import {
 	createDefaultSessionExecutionSettings,
 	type Host,
 	type RuntimeFeature,
@@ -36,6 +42,7 @@ import {
 	setSessionModel,
 	setSessionTitle,
 	setSessionWorkMode,
+	sessionItems,
 	unwatchSession,
 	watchSession
 } from './api';
@@ -62,6 +69,24 @@ interface PendingModelSelection {
 const MAX_LOAD_ATTEMPTS = 5;
 /** 标题同步过渡时长(「生成标题…」→ 新标题)。 */
 const TITLE_SYNC_MS = 900;
+/** 实时尾巴投影的事件类型(其余进 projection 维护会话级状态)。 */
+const ITEM_EVENT_TYPES = new Set([
+	'input.admitted',
+	'content.text.started',
+	'content.text.delta',
+	'content.text.completed',
+	'content.reasoning.started',
+	'content.reasoning.delta',
+	'content.reasoning.completed',
+	'tool.started',
+	'tool.completed',
+	'tool.input_delta',
+	'tool.output_delta',
+	'changes.updated',
+	'subagent.started',
+	'subagent.updated',
+	'subagent.completed'
+]);
 
 class SessionWorkspace {
 	projectKey = '';
@@ -98,6 +123,18 @@ class SessionWorkspace {
 	streamRetryAttempt = $state(0);
 	projection = $state.raw<ConversationProjection>(emptyConversationProjection());
 
+	/** 已物化会话块(尾部先取、上滚前插)。 */
+	items = $state.raw<SessionItem[]>([]);
+	/** 实时尾巴:head 之后事件的共享 itemizer 状态。 */
+	liveState: SessionItemState = createSessionItemState();
+	/** 每次 live 事件触发一次,驱动 timeline 派生重算(物化 items + live 尾巴)。 */
+	liveRevision = $state(0);
+	hasMoreOlder = $state(false);
+	oldestSequence = $state(0);
+	loadingOlder = $state(false);
+	/** 已处理的最大事件 seq(实时游标;重连/恢复时从这里接流)。 */
+	liveCursor = $state(0);
+
 	/** 标题正在同步中的会话(短暂显示「生成标题…」后切到新标题)。 */
 	titleSyncing = new SvelteSet<string>();
 	#titleSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -125,12 +162,13 @@ class SessionWorkspace {
 	readonly selectedSubagent = $derived(
 		this.projection.subagents.find((item) => item.run.id === this.selectedSubagentRunId)?.run
 	);
-	readonly timeline = $derived<ConversationTimelineItem[]>(
-		[
-			...this.projection.messages,
-			...this.projection.tools,
-			...this.projection.changes,
-			...this.projection.subagents
+	readonly timeline = $derived.by<ConversationTimelineItem[]>(() => {
+		// liveRevision 是响应式 token:liveState 就地可变,读它让派生在每次 live 事件后重算。
+		void this.liveRevision;
+		return [
+			...this.items,
+			...(this.liveState.items as ConversationTimelineItem[]),
+			...(this.liveState.live as ConversationTimelineItem[])
 		]
 			.filter((item) => {
 				if (item.itemKind === 'subagent') {
@@ -139,8 +177,8 @@ class SessionWorkspace {
 				if (item.itemKind === 'tool' && item.toolCall.kind === 'subagent') return false;
 				return item.subagentRunId === this.selectedSubagentRunId;
 			})
-			.sort((left, right) => left.sequence - right.sequence)
-	);
+			.sort((left, right) => left.sequence - right.sequence);
+	});
 	readonly features = $derived<Partial<Record<RuntimeFeature, boolean>> | undefined>(
 		this.projection.features
 	);
@@ -303,6 +341,11 @@ class SessionWorkspace {
 		this.selectedSessionId = sessionId;
 		this.selectedSubagentRunId = undefined;
 		this.projection = emptyConversationProjection();
+		this.items = [];
+		this.liveState = createSessionItemState();
+		this.liveRevision += 1;
+		this.hasMoreOlder = false;
+		this.oldestSequence = 0;
 		// 预览属于具体会话:切换会话时清掉,避免旧会话的页面还挂在右侧面板。
 		webPreview.clear();
 		this.#clearReplay();
@@ -322,10 +365,14 @@ class SessionWorkspace {
 				session.subagentRuns,
 				session.inputQueue
 			);
-			this.#replaySessionId = sessionId;
-			this.#replayTargetSequence = session.lastEventSequence;
-			this.#replayProjection = emptyConversationProjection();
-			await watchSession(sessionId);
+			// 渐进加载:只取尾部物化块(历史由 read model 覆盖,不再从 seq 0 全量重放)。
+			const tail = await sessionItems(sessionId, undefined, 100);
+			if (generation !== this.#selectionGeneration) return;
+			this.items = tail.items;
+			this.hasMoreOlder = tail.hasMore;
+			this.oldestSequence = tail.oldestSequence;
+			this.liveCursor = session.lastEventSequence;
+			await watchSession(sessionId, session.lastEventSequence);
 			if (generation !== this.#selectionGeneration) await unwatchSession(sessionId);
 			else await this.#loadSelectedModels(sessionId, generation);
 		} catch (error) {
@@ -342,6 +389,11 @@ class SessionWorkspace {
 		this.selectedSessionId = undefined;
 		this.selectedSubagentRunId = undefined;
 		this.projection = emptyConversationProjection();
+		this.items = [];
+		this.liveState = createSessionItemState();
+		this.liveRevision += 1;
+		this.hasMoreOlder = false;
+		this.oldestSequence = 0;
 		this.#clearReplay();
 		this.streamState = 'idle';
 		this.streamMessage = undefined;
@@ -365,7 +417,7 @@ class SessionWorkspace {
 		try {
 			// IPC only acknowledges that Main accepted the watch request. The actual result
 			// arrives later through session.stream push events.
-			await watchSession(sessionId, this.projection.lastSequence);
+			await watchSession(sessionId, this.liveCursor);
 		} catch (error) {
 			this.streamState = 'error';
 			this.streamMessage = errorMessage(error);
@@ -508,7 +560,7 @@ class SessionWorkspace {
 				this.#upsertSession(resumed);
 			}
 			if (this.streamState !== 'connected') {
-				await watchSession(session.id, this.projection.lastSequence);
+				await watchSession(session.id, this.liveCursor);
 			}
 			await sendSessionInput(session.id, {
 				input: { clientMessageId: crypto.randomUUID(), text }
@@ -539,6 +591,23 @@ class SessionWorkspace {
 			void this.load();
 		} catch (error) {
 			this.error = errorMessage(error);
+		}
+	}
+
+	/** 上滚翻页:取更早的物化块前插。虚拟列表触顶时由界面调用。 */
+	async loadOlder(): Promise<void> {
+		const sessionId = this.selectedSessionId;
+		if (!sessionId || this.loadingOlder || !this.hasMoreOlder) return;
+		this.loadingOlder = true;
+		try {
+			const page = await sessionItems(sessionId, this.oldestSequence, 100);
+			this.items = [...page.items, ...this.items];
+			this.oldestSequence = page.oldestSequence;
+			this.hasMoreOlder = page.hasMore;
+		} catch (error) {
+			this.error = errorMessage(error);
+		} finally {
+			this.loadingOlder = false;
 		}
 	}
 
@@ -815,10 +884,16 @@ class SessionWorkspace {
 
 	#acceptEvent(event: RuntimeEventWire): void {
 		if (event.sessionId !== this.selectedSessionId) return;
+		if (event.sequence > this.liveCursor) this.liveCursor = event.sequence;
 		// 扩展事件不投影;在此分发(如 gateway.preview.open → 打开 Web 预览面板)。
 		if (event.type === 'runtime.extension') {
 			this.#handleExtensionEvent(event);
 			return;
+		}
+		// item 类事件进实时尾巴(共享 itemizer),非 item 事件进 projection 维护会话级状态。
+		if (ITEM_EVENT_TYPES.has(event.type)) {
+			applySessionItemEvent(this.liveState, event);
+			this.liveRevision += 1;
 		}
 		if (this.#replaySessionId === event.sessionId && this.#replayProjection) {
 			this.#replayProjection = projectRuntimeEvent(this.#replayProjection, event);

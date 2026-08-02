@@ -20,7 +20,9 @@
 
 	onMount(async () => {
 		payload = await desktop.export.getData();
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		// 全量渲染 + 字体加载完后再上报高度:主进程据此分块滚动截图,提前上报会截到未排版内容。
+		await document.fonts.ready;
+		await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		await desktop.export.rendered(document.documentElement.scrollHeight);
 	});
 </script>

@@ -21,6 +21,7 @@
 	let exporting = $state(false);
 	let error = $state<string | undefined>(undefined);
 	let done = $state(false);
+	let previewScroll: HTMLElement | undefined = $state();
 
 	const rawItems = $derived(
 		payload ? (payload.items as unknown as ConversationTimelineItem[]) : []
@@ -54,11 +55,14 @@
 	<TitleBar title="导出对话" />
 
 	<main class="flex min-h-0 flex-1">
-		<!-- 左:预览(真实渲染) -->
-		<section class="scroll-thin min-w-0 flex-1 overflow-y-auto border-r border-subtle">
+		<!-- 左:预览(真实渲染,虚拟列表 —— 超长会话只渲染可视区) -->
+		<section
+			bind:this={previewScroll}
+			class="scroll-thin min-w-0 flex-1 overflow-y-auto border-r border-subtle"
+		>
 			<div class="mx-auto w-full max-w-3xl px-5 py-4">
 				{#if payload}
-					<ConversationTranscript items={rawItems} />
+					<ConversationTranscript items={rawItems} getScrollElement={() => previewScroll} />
 				{:else}
 					<p class="py-4 text-center text-2xs text-faint">没有可导出的内容。</p>
 				{/if}
