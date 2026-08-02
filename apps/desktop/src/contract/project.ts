@@ -22,6 +22,8 @@ export interface RecentProject {
 	hostId: string;
 	hostType: HostType;
 	path: string;
+	/** hostType = ssh 时指向本地 HostProfile —— 重连所需的连接手段。 */
+	hostProfileId?: string;
 	/** Server Project id 的可失效缓存；身份仍然是 hostId + path。 */
 	serverProjectId?: string;
 	createdAt: number;
@@ -39,6 +41,8 @@ export interface NewProjectInput {
 	hostId: string;
 	hostType: HostType;
 	path: string;
+	/** hostType = ssh 时必带:连接用的本地 HostProfile id。 */
+	hostProfileId?: string;
 }
 
 /**

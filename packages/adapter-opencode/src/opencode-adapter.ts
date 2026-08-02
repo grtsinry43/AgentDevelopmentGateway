@@ -91,6 +91,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
     'context.compaction': true,
     'changes.revert': false,
     'extension.skills': false,
+    'session.rename': true,
   },
   raw: [
     'opencode.v2.session.status',
@@ -186,6 +187,8 @@ interface SessionState {
   turnObservedActivity: boolean
   statusPollAbort?: AbortController
   model?: ModelSelection
+  /** Last provider-generated title we published, to dedupe `title_changed` events. */
+  providerTitle?: string
   disposed: boolean
 }
 
@@ -503,6 +506,17 @@ export class OpenCodeAdapter implements RuntimeAdapter {
     session.model = { ...model }
   }
 
+  async renameSession(sessionId: SessionId, title: string): Promise<void> {
+    const session = this.getSession(sessionId)
+    // Released 1.18.x exposes the session-update route as V1 `PATCH /session/:id`
+    // (the `/api/session/:id` PATCH path only exists in the newer v2 API). V1 stays
+    // served for legacy clients, so prefer it for broadest compatibility.
+    await session.connection.client.void(
+      `/session/${encodeURIComponent(session.runtimeSessionId)}`,
+      { method: 'PATCH', body: { title } },
+    )
+  }
+
   async disposeSession(sessionId: SessionId): Promise<void> {
     const session = this.getSession(sessionId)
     session.disposed = true
@@ -725,6 +739,22 @@ export class OpenCodeAdapter implements RuntimeAdapter {
   private handleDurableEvent(session: SessionState, event: OpenCodeEvent): void {
     if (!event.durable || event.durable.aggregateID !== session.runtimeSessionId) return
     if (!this.markSeen(session, event)) return
+    // OpenCode auto-titles the session after the first prompt (small-model summary) and
+    // surfaces it as a `session.updated` event. Map it to the gateway title without
+    // latching Wait.live — a title change is not turn activity.
+    if (event.type === 'session.updated') {
+      const info = recordValue(event.data.info)
+      const title = stringValue(info?.title)
+      if (title && title !== session.providerTitle && !isOpenCodeDefaultTitle(title)) {
+        session.providerTitle = title
+        this.publish(session, {
+          type: 'session.title_changed',
+          payload: { title, source: 'provider' },
+          nativeRef: { eventId: event.id, eventType: event.type },
+        })
+      }
+      return
+    }
     // Durable deltas alone must not latch Wait.live (CLI: message.part.delta ignored).
     // Non-delta session.next.* (tool called/success, message complete, etc.) do.
     if (!event.type.endsWith('.delta')) this.markTurnLiveFromBus(session, event)
@@ -1136,6 +1166,11 @@ function requireResponseRecord(response: unknown, label: string): Record<string,
   const data = recordValue(unwrapData(response, label))
   if (!data) throw adapterError('protocol', `${label} returned invalid data`)
   return data
+}
+
+/** OpenCode's placeholder titles before auto-naming ("New session - <ISO>"). */
+function isOpenCodeDefaultTitle(title: string): boolean {
+  return /^(New session|Child session) - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(title)
 }
 
 async function findExecutable(name: string, pathValue: string | undefined): Promise<string | undefined> {

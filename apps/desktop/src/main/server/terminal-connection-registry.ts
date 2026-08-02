@@ -13,6 +13,8 @@ const TERMINAL_TAKEN_OVER_CLOSE_CODE = 4001
 
 export interface TerminalConnectionClient {
   terminalWebSocketUrl(terminalId: string): string
+  /** 远程 server 启用 token 认证时,WS upgrade 也要带 Authorization。 */
+  webSocketHeaders(): Record<string, string>
 }
 
 export interface TerminalConnectionContents {
@@ -23,6 +25,7 @@ export interface TerminalConnectionContents {
 }
 
 interface ActiveTerminalConnection {
+  client: TerminalConnectionClient
   contents: TerminalConnectionContents
   terminalId: string
   stopped: boolean
@@ -40,10 +43,9 @@ export class TerminalConnectionRegistry {
   private readonly active = new Map<string, ActiveTerminalConnection>()
   private readonly observedWebContents = new Set<number>()
 
-  constructor(private readonly client: TerminalConnectionClient) {}
-
   attach(
     contents: TerminalConnectionContents,
+    client: TerminalConnectionClient,
     terminalId: string,
     afterSequence: number | undefined,
     cols: number,
@@ -52,6 +54,7 @@ export class TerminalConnectionRegistry {
     const key = connectionKey(contents.id, terminalId)
     this.stop(this.active.get(key))
     const entry: ActiveTerminalConnection = {
+      client,
       contents,
       terminalId,
       stopped: false,
@@ -133,8 +136,9 @@ export class TerminalConnectionRegistry {
 
   private connect(entry: ActiveTerminalConnection): void {
     if (entry.stopped || entry.contents.isDestroyed()) return
-    const socket = new WebSocket(this.client.terminalWebSocketUrl(entry.terminalId), {
-      perMessageDeflate: false
+    const socket = new WebSocket(entry.client.terminalWebSocketUrl(entry.terminalId), {
+      perMessageDeflate: false,
+      headers: entry.client.webSocketHeaders()
     })
     entry.socket = socket
     socket.on('open', () => {

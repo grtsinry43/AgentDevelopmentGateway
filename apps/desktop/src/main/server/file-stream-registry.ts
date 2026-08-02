@@ -3,6 +3,7 @@ import type { WorkspaceFileEvent } from '@agent-gateway/shared'
 import { PUSH_CHANNEL, type PushEvent } from '../../contract/bridge.js'
 
 interface ActiveFileStream {
+  client: WorkspaceFileStreamClient
   controller: AbortController
   directories: Set<string>
   projectId: string
@@ -40,10 +41,9 @@ export class FileStreamRegistry {
   private readonly active = new Map<string, ActiveFileStream>()
   private readonly observedWebContents = new Set<number>()
 
-  constructor(private readonly client: WorkspaceFileStreamClient) {}
-
   watch(
     contents: FileStreamContents,
+    client: WorkspaceFileStreamClient,
     projectKey: string,
     projectId: string,
     directories: string[]
@@ -55,6 +55,7 @@ export class FileStreamRegistry {
     this.send(contents, { kind: 'files.stream', projectKey, state: 'connecting' })
 
     const entry: ActiveFileStream = {
+      client,
       controller,
       directories: new Set(directories),
       projectId,
@@ -74,7 +75,7 @@ export class FileStreamRegistry {
     const subscriptionId = entry.subscriptionId
     if (!subscriptionId) return
     try {
-      await this.client.updateWorkspaceFileSubscription(
+      await entry.client.updateWorkspaceFileSubscription(
         entry.projectId,
         subscriptionId,
         [...entry.directories]
@@ -94,7 +95,7 @@ export class FileStreamRegistry {
   retry(contents: FileStreamContents, projectKey: string): void {
     const entry = this.active.get(streamKey(contents.id, projectKey))
     if (!entry) throw new Error('文件事件流尚未启动')
-    this.watch(contents, entry.projectKey, entry.projectId, [...entry.directories])
+    this.watch(contents, entry.client, entry.projectKey, entry.projectId, [...entry.directories])
   }
 
   private async consume(contents: FileStreamContents, entry: ActiveFileStream): Promise<void> {
@@ -103,14 +104,14 @@ export class FileStreamRegistry {
       const subscriptionId = randomUUID()
       entry.subscriptionId = subscriptionId
       try {
-        for await (const event of this.client.workspaceFileEvents(
+        for await (const event of entry.client.workspaceFileEvents(
           entry.projectId,
           subscriptionId,
           entry.controller.signal
         )) {
           consecutiveFailures = 0
           if (event.type === 'workspace.files.resync') {
-            await this.client.updateWorkspaceFileSubscription(
+            await entry.client.updateWorkspaceFileSubscription(
               entry.projectId,
               subscriptionId,
               [...entry.directories]

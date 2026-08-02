@@ -31,9 +31,10 @@ export function baseWindowOptions(identity: WindowIdentity): BrowserWindowConstr
   return {
     show: false, // ready-to-show 才显示,避免白屏闪烁
     backgroundColor: isMac ? '#00000000' : '#1c1917',
-    // macOS 用 hiddenInset 保留原生红绿灯;其他平台用无边框 + 自绘控制按钮
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
+    // 用 hidden 而非 hiddenInset:后者会让 macOS 自己加 inset 并覆盖 trafficLightPosition,
+    // 造成红绿灯与标题不对齐、左右间距失衡。hidden 下坐标完全由我们控制。
+    titleBarStyle: 'hidden',
+    trafficLightPosition: isMac ? { x: 12, y: 12 } : undefined,
     ...(isMac ? { vibrancy: 'sidebar' as const, visualEffectState: 'active' as const } : {}),
     webPreferences: {
       contextIsolation: true,
@@ -50,7 +51,18 @@ export function baseWindowOptions(identity: WindowIdentity): BrowserWindowConstr
 }
 
 /** dev 下加载 vite server 的对应入口,prod 下加载打包出的 HTML。 */
-export function entryUrl(name: 'launcher' | 'project'): { url?: string; file?: string } {
+export function entryUrl(
+  name:
+    | 'launcher'
+    | 'project'
+    | 'new-project'
+    | 'host-manager'
+    | 'settings'
+    | 'open-project'
+    | 'about'
+    | 'export'
+    | 'capture'
+): { url?: string; file?: string } {
   const devServer = process.env.ELECTRON_RENDERER_URL
   if (devServer) return { url: `${devServer}/${name}.html` }
   return { file: join(__dirname, `../renderer/${name}.html`) }

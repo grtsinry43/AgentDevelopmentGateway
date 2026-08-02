@@ -21,10 +21,23 @@
 
 - Launcher and Project are separate renderer entries and BrowserWindows, not routes in one SPA.
 - Show windows on `ready-to-show`; retain native macOS vibrancy and an opaque fallback elsewhere.
-- Store recent projects, Context Profiles, window bounds, and workspace layout under Electron `userData`.
+- Store recent projects, Context Profiles, SSH host profiles, window bounds, and workspace layout under Electron `userData`.
 - Keep writes asynchronous, serialized, and atomic with temporary-file-plus-rename.
 - Preference corruption must not block startup; log it and use a safe default.
 - Workspace layout is per `projectKey`; debounce high-frequency resize persistence.
+
+## Local Server Lifecycle
+
+- `src/main/local/server-manager.ts` owns the local backend: it is a child process, never in-process. Idempotent `ensure()` reuses a live instance (health check on the local port) before spawning, so a manually started dev server is respected.
+- Spawn uses `ELECTRON_RUN_AS_NODE=1` + `process.execPath` (no system-node dependency), `PORT=0`, and parses the `AGENT_GATEWAY_LISTENING` stdout sentinel (same contract as remote bootstrap). Data dir keeps the server's default (`~/.agent-development-gateway/server`) so local hostId/identity stays compatible.
+- The local server outlives project windows; stop it on app quit (`before-quit` → `localServerManager.stop()`), never on window close. Never kill an externally started instance.
+
+## Remote Connections
+
+- `src/main/remote/` must stay electron-free (ssh/provision/manager); the electron glue lives only in `remote/index.ts`. This keeps the whole path verifiable headlessly with tsx.
+- Use system `ssh` with ControlMaster; never implement SSH auth in-process. Passwords go through `SSH_ASKPASS` helpers and `safeStorage`; plaintext never leaves the main process or touches the command line.
+- Resolve the server client per window (`event.sender → projectKey → connection`); a project window maps to exactly one host. Stream registries receive the client per call, not at construction.
+- Tunnels and control connections are disposable; the remote server outlives the client. Never kill the remote server from desktop code.
 
 ## Verification
 

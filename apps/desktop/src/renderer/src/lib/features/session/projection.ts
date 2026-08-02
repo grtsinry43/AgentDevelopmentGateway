@@ -526,7 +526,7 @@ function eventAttribution(event: RuntimeEventWire): { subagentRunId?: string } {
 	return { subagentRunId: event.attribution.subagentRunId };
 }
 
-function payloadString(payload: unknown, key: string): string | undefined {
+export function payloadString(payload: unknown, key: string): string | undefined {
 	if (!isRecord(payload)) return undefined;
 	return typeof payload[key] === 'string' ? payload[key] : undefined;
 }

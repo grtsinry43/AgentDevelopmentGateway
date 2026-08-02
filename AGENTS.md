@@ -54,6 +54,9 @@
 
 ## Current Boundary
 
-- The Common Runtime Model and `RuntimeAdapter` contract exist in `packages/core`.
-- The current desktop milestone includes the Launcher, typed IPC, local preference stores, design system, keymap, and Project dock shell.
-- Session transport/projection, real conversation panels, `packages/adapter-claude`, and `packages/runtime` remain future work.
+- The Common Runtime Model and `RuntimeAdapter` contract exist in `packages/core`; three adapters (`adapter-claude`, `adapter-codex`, `adapter-opencode`) are wired behind `packages/runtime`.
+- `apps/server` is a full single-user workspace host (projects, sessions, files, git, terminals) and is remote-ready: loopback + optional Bearer token, `PORT=0`, `runtime.json` discovery, stdout sentinel, and a self-contained tarball packager (`pnpm package`). See `docs/09-remote-development.md`.
+- The current desktop milestone includes the Launcher, typed IPC, local preference stores, design system, keymap, and Project dock shell with live session/git/files/terminal panels.
+- IDE-style auxiliary windows (one renderer entry each): new-project wizard, host manager, and settings — interactive flows are windows, not modals. The remote project wizard browses the remote directory tree (`/api/v1/host/files`) to pick the project root.
+- Desktop remote development (M5.3) is implemented: SSH HostProfiles (safeStorage passwords), system-ssh ControlMaster provisioning with local-tarball upload, SSH local forwarding, per-window connection routing (`event.sender → projectKey → client`), and reuse-time liveness checks that rebuild dead backends. Remote management UX is in place: title-bar host chip + status, pino-parsed remote log streaming, and a Launcher remote section (hosts grouped with probes/context menus, stop/restart/reinstall backend). Verified headless against real Linux/macOS hosts; see `docs/09`.
+- Auto-reconnect on network drop (M5.4) and `packages/runtime` context/memory features (`docs/06`) remain future work.

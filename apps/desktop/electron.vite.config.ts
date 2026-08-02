@@ -31,11 +31,18 @@ export default defineConfig({
     plugins: [tailwindcss(), svelte()],
     build: {
       rollupOptions: {
-        // 两个窗口 = 两个入口。Launcher 与 Project 是独立 BrowserWindow,
-        // 不是同一窗口内的路由。
+        // 一个窗口 = 一个入口。Launcher 与 Project 是主窗口;新建工程向导、
+        // 主机管理、设置是 IDE 风格的辅助独立窗口,不做模态弹窗。
         input: {
           launcher: resolve(rendererRoot, 'launcher.html'),
-          project: resolve(rendererRoot, 'project.html')
+          project: resolve(rendererRoot, 'project.html'),
+          'new-project': resolve(rendererRoot, 'new-project.html'),
+          'host-manager': resolve(rendererRoot, 'host-manager.html'),
+          settings: resolve(rendererRoot, 'settings.html'),
+          'open-project': resolve(rendererRoot, 'open-project.html'),
+          about: resolve(rendererRoot, 'about.html'),
+          export: resolve(rendererRoot, 'export.html'),
+          capture: resolve(rendererRoot, 'capture.html')
         }
       }
     }

@@ -2,7 +2,7 @@
 	import { relativeTime } from '$lib/shared/utils/format';
 	import { projectLabel } from '$lib/shared/utils/path';
 	import { systemInfo } from '$lib/shared/bridge/desktop';
-	import { HOST_STATUS } from '$lib/shared/utils/status';
+	import { hostLabelForProject } from '../hosts.svelte';
 	import { cx } from '$lib/shared/utils/cx';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import type { RecentProject } from '../types';
@@ -11,13 +11,16 @@
 		project: RecentProject;
 		selected: boolean;
 		onactivate: () => void;
+		/** 右键菜单回调(坐标为点击处)。 */
+		oncontextmenu?: (event: MouseEvent) => void;
 	}
 
-	let { project, selected, onactivate }: Props = $props();
+	let { project, selected, onactivate, oncontextmenu }: Props = $props();
 
-	const label = $derived(projectLabel(project.hostId, project.path, systemInfo.homeDir, 3));
-	// 远程工程在 Rust Remote Manager 接入前一律 offline(计划风险条目 3)
-	const status = $derived(project.hostType === 'local' ? HOST_STATUS.online : HOST_STATUS.offline);
+	// hostId(服务端 UUID)是内部身份,不展示;远程显示 hostname,本地无 @ 后缀。
+	const label = $derived(
+		projectLabel(project.path, systemInfo.homeDir, 3, hostLabelForProject(project))
+	);
 </script>
 
 <!--
@@ -34,6 +37,7 @@
 		selected && 'bg-surface-selected'
 	)}
 	onclick={onactivate}
+	oncontextmenu={(event) => oncontextmenu?.(event)}
 >
 	{#if selected}
 		<span class="absolute inset-y-1.5 left-0 w-0.5 bg-line-accent" aria-hidden="true"></span>
@@ -61,8 +65,9 @@
 	</span>
 
 	<span class="flex shrink-0 items-center gap-1.5 text-2xs text-faint">
-		<span class={cx('h-1.5 w-1.5 rounded-full', status.dot)} aria-hidden="true"></span>
-		<span>{status.label}</span>
+		{#if project.hostType === 'ssh'}
+			<span class="h-1.5 w-1.5 rounded-full bg-status-offline" aria-hidden="true"></span>
+		{/if}
 		{#if project.lastAdapterId}
 			<span class="font-mono text-muted">{project.lastAdapterId}</span>
 		{/if}

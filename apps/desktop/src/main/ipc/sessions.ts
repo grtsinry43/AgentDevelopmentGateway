@@ -19,7 +19,8 @@ import {
 } from '@agent-gateway/shared'
 import { ipcMain } from 'electron'
 import { IPC } from '../../contract/bridge.js'
-import { gatewayServer, resolveServerProject } from '../server/gateway.js'
+import { resolveForSender, resolveServerProject } from '../server/gateway.js'
+import type { GatewayServerClient } from '../server/client.js'
 import { sessionStreams } from '../server/session-streams.js'
 import { broadcast } from './broadcast.js'
 
@@ -27,13 +28,13 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.sessionsList, async (_event, rawProjectKey: unknown) => {
     const projectKey = parseProjectKey(rawProjectKey)
     const resolved = await resolveServerProject(projectKey)
-    return gatewayServer.sessions(resolved.serverProjectId)
+    return resolved.client.sessions(resolved.serverProjectId)
   })
 
   ipcMain.handle(IPC.sessionsAdapters, async (_event, rawProjectKey: unknown) => {
     const projectKey = parseProjectKey(rawProjectKey)
     const resolved = await resolveServerProject(projectKey)
-    return gatewayServer.adapters(resolved.serverProjectId)
+    return resolved.client.adapters(resolved.serverProjectId)
   })
 
   ipcMain.handle(
@@ -48,13 +49,14 @@ export function registerSessionHandlers(): void {
       const adapterId = adapterIdSchema.parse(rawAdapterId)
       const query = listModelsQuerySchema.parse(rawQuery)
       const resolved = await resolveServerProject(projectKey)
-      return gatewayServer.projectModels(resolved.serverProjectId, adapterId, query)
+      return resolved.client.projectModels(resolved.serverProjectId, adapterId, query)
     }
   )
 
-  ipcMain.handle(IPC.sessionsSessionModels, (_event, rawSessionId: unknown) =>
-    gatewayServer.sessionModels(gatewayIdSchema.parse(rawSessionId))
-  )
+  ipcMain.handle(IPC.sessionsSessionModels, async (event, rawSessionId: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    return client.sessionModels(gatewayIdSchema.parse(rawSessionId))
+  })
 
   ipcMain.handle(
     IPC.sessionsCreate,
@@ -62,141 +64,169 @@ export function registerSessionHandlers(): void {
       const projectKey = parseProjectKey(rawProjectKey)
       const input = createSessionRequestSchema.parse(rawInput)
       const resolved = await resolveServerProject(projectKey)
-      const created = await gatewayServer.createSession(resolved.serverProjectId, input)
-      void refreshSessions(resolved.recent.key, resolved.serverProjectId)
+      const created = await resolved.client.createSession(resolved.serverProjectId, input)
+      void refreshSessions(resolved.recent.key, resolved.serverProjectId, resolved.client)
       return created
     }
   )
 
-  ipcMain.handle(IPC.sessionsSend, async (_event, rawSessionId: unknown, rawInput: unknown) => {
+  ipcMain.handle(IPC.sessionsSend, async (event, rawSessionId: unknown, rawInput: unknown) => {
     const sessionId = gatewayIdSchema.parse(rawSessionId)
     const input = sendSessionInputRequestSchema.parse(rawInput)
-    return gatewayServer.sendInput(sessionId, input)
+    const { client } = await resolveForSender(event.sender)
+    return client.sendInput(sessionId, input)
   })
 
   ipcMain.handle(
     IPC.sessionsQueueReplace,
-    (_event, rawSessionId: unknown, rawInputId: unknown, rawInput: unknown) =>
-      gatewayServer.replaceQueuedInput(
+    async (event, rawSessionId: unknown, rawInputId: unknown, rawInput: unknown) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.replaceQueuedInput(
         gatewayIdSchema.parse(rawSessionId),
         gatewayIdSchema.parse(rawInputId),
         replaceQueuedInputRequestSchema.parse(rawInput)
       )
+    }
   )
 
-  ipcMain.handle(IPC.sessionsQueueReorder, (_event, rawSessionId: unknown, rawInput: unknown) =>
-    gatewayServer.reorderQueuedInputs(
+  ipcMain.handle(IPC.sessionsQueueReorder, async (event, rawSessionId: unknown, rawInput: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    return client.reorderQueuedInputs(
       gatewayIdSchema.parse(rawSessionId),
       reorderQueuedInputsRequestSchema.parse(rawInput)
     )
-  )
+  })
 
-  ipcMain.handle(IPC.sessionsQueueCancel, (_event, rawSessionId: unknown, rawInputId: unknown) =>
-    gatewayServer.cancelQueuedInput(
+  ipcMain.handle(IPC.sessionsQueueCancel, async (event, rawSessionId: unknown, rawInputId: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    return client.cancelQueuedInput(
       gatewayIdSchema.parse(rawSessionId),
       gatewayIdSchema.parse(rawInputId)
     )
-  )
+  })
 
-  ipcMain.handle(IPC.sessionsQueueSendNow, (_event, rawSessionId: unknown, rawInputId: unknown) =>
-    gatewayServer.sendQueuedInputNow(
+  ipcMain.handle(IPC.sessionsQueueSendNow, async (event, rawSessionId: unknown, rawInputId: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    return client.sendQueuedInputNow(
       gatewayIdSchema.parse(rawSessionId),
       gatewayIdSchema.parse(rawInputId)
     )
-  )
+  })
 
-  ipcMain.handle(IPC.sessionsGet, (_event, rawSessionId: unknown) =>
-    gatewayServer.session(gatewayIdSchema.parse(rawSessionId))
-  )
+  ipcMain.handle(IPC.sessionsGet, async (event, rawSessionId: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    return client.session(gatewayIdSchema.parse(rawSessionId))
+  })
 
   ipcMain.handle(
     IPC.sessionsInterrupt,
-    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
-      gatewayServer.interruptSession(
+    async (event, rawSessionId: unknown, rawInput: unknown = {}) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.interruptSession(
         gatewayIdSchema.parse(rawSessionId),
         interruptSessionRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsResolveInteraction,
-    (_event, rawSessionId: unknown, rawInteractionId: unknown, rawInput: unknown) =>
-      gatewayServer.resolveInteraction(
+    async (event, rawSessionId: unknown, rawInteractionId: unknown, rawInput: unknown) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.resolveInteraction(
         gatewayIdSchema.parse(rawSessionId),
         gatewayIdSchema.parse(rawInteractionId),
         resolveInteractionRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsClose,
-    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
-      gatewayServer.closeSession(
+    async (event, rawSessionId: unknown, rawInput: unknown = {}) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.closeSession(
         gatewayIdSchema.parse(rawSessionId),
         closeSessionRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsResume,
-    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
-      gatewayServer.resumeSession(
+    async (event, rawSessionId: unknown, rawInput: unknown = {}) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.resumeSession(
         gatewayIdSchema.parse(rawSessionId),
         resumeSessionRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsFork,
-    (_event, rawSessionId: unknown, rawInput: unknown = {}) =>
-      gatewayServer.forkSession(
+    async (event, rawSessionId: unknown, rawInput: unknown = {}) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.forkSession(
         gatewayIdSchema.parse(rawSessionId),
         forkSessionRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsSetTitle,
-    (_event, rawSessionId: unknown, rawInput: unknown) =>
-      gatewayServer.setSessionTitle(
+    async (event, rawSessionId: unknown, rawInput: unknown) => {
+      const { client, recent, serverProjectId } = await resolveForSender(event.sender)
+      const result = await client.setSessionTitle(
         gatewayIdSchema.parse(rawSessionId),
         setSessionTitleRequestSchema.parse(rawInput)
       )
+      void refreshSessions(recent.key, serverProjectId, client)
+      return result
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsSetModel,
-    (_event, rawSessionId: unknown, rawInput: unknown) =>
-      gatewayServer.setSessionModel(
+    async (event, rawSessionId: unknown, rawInput: unknown) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.setSessionModel(
         gatewayIdSchema.parse(rawSessionId),
         setSessionModelRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsSetWorkMode,
-    (_event, rawSessionId: unknown, rawInput: unknown) =>
-      gatewayServer.setWorkMode(
+    async (event, rawSessionId: unknown, rawInput: unknown) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.setWorkMode(
         gatewayIdSchema.parse(rawSessionId),
         setWorkModeRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsSetExecution,
-    (_event, rawSessionId: unknown, rawInput: unknown) =>
-      gatewayServer.setExecutionSettings(
+    async (event, rawSessionId: unknown, rawInput: unknown) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.setExecutionSettings(
         gatewayIdSchema.parse(rawSessionId),
         setExecutionSettingsRequestSchema.parse(rawInput)
       )
+    }
   )
 
   ipcMain.handle(
     IPC.sessionsWatch,
-    (event, rawSessionId: unknown, rawAfterSequence: unknown = 0) => {
+    async (event, rawSessionId: unknown, rawAfterSequence: unknown = 0) => {
       const sessionId = gatewayIdSchema.parse(rawSessionId)
       const { after } = sessionEventsQuerySchema.parse({ after: rawAfterSequence })
-      sessionStreams.watch(event.sender, sessionId, after)
+      const { client } = await resolveForSender(event.sender)
+      sessionStreams.watch(event.sender, client, sessionId, after)
     }
   )
 
@@ -211,9 +241,13 @@ function parseProjectKey(value: unknown): string {
   return value
 }
 
-async function refreshSessions(projectKey: string, serverProjectId: string): Promise<void> {
+async function refreshSessions(
+  projectKey: string,
+  serverProjectId: string,
+  client: GatewayServerClient
+): Promise<void> {
   try {
-    const sessions = await gatewayServer.sessions(serverProjectId)
+    const sessions = await client.sessions(serverProjectId)
     broadcast({ kind: 'sessions.changed', projectKey, sessions })
   } catch (error) {
     console.error('[sessions] 创建成功，但刷新 Session 列表失败:', error)

@@ -32,6 +32,8 @@ export interface PanelDefinition {
 	 * (AGENTS.md 硬规则)。省略表示与 runtime 能力无关(终端、文件树)。
 	 */
 	requiresFeature?: RuntimeFeature;
+	/** 仅远程工程显示。由 availablePanels 的 remote 参数控制。 */
+	requiresRemote?: boolean;
 	/**
 	 * Rail 图标出现策略。省略视为 `persistent`。
 	 * `contextual` 面板由 `railPanels` 结合「已占槽 / 内容就绪」决定是否显示图标。
@@ -62,9 +64,11 @@ export function listPanels(): PanelDefinition[] {
  * `features` 传 undefined 表示还没有活动会话 —— 此时只显示无能力依赖的面板。
  */
 export function availablePanels(
-	features: Partial<Record<RuntimeFeature, boolean>> | undefined
+	features: Partial<Record<RuntimeFeature, boolean>> | undefined,
+	remote = false
 ): PanelDefinition[] {
 	return listPanels().filter((panel) => {
+		if (panel.requiresRemote && !remote) return false;
 		if (!panel.requiresFeature) return true;
 		return features?.[panel.requiresFeature] === true;
 	});
@@ -80,13 +84,13 @@ export function railPanels(
 	options: {
 		openTypes: ReadonlySet<string> | readonly string[];
 		contextualReady?: (type: string) => boolean;
+		remote?: boolean;
 	}
 ): PanelDefinition[] {
-	const open =
-		options.openTypes instanceof Set ? options.openTypes : new Set(options.openTypes);
+	const open = options.openTypes instanceof Set ? options.openTypes : new Set(options.openTypes);
 	const ready = options.contextualReady ?? (() => false);
 
-	return availablePanels(features).filter((panel) => {
+	return availablePanels(features, options.remote ?? false).filter((panel) => {
 		const presence = panel.presence ?? 'persistent';
 		if (presence === 'persistent') return true;
 		return open.has(panel.type) || ready(panel.type);

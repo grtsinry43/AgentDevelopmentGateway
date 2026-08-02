@@ -33,6 +33,34 @@ test('serves the project and session lifecycle through validated HTTP contracts'
   assert.equal(serverInfo.statusCode, 200)
   const serverId = serverInfo.json<{ serverId: string }>().serverId
 
+  const serverStatus = await first.inject({ method: 'GET', url: '/api/v1/server/status' })
+  assert.equal(serverStatus.statusCode, 200)
+  const status = serverStatus.json<{
+    hostId: string
+    hostname: string
+    cpus: number
+    memory: { usagePercent: number }
+  }>()
+  assert.equal(status.hostId, serverId)
+  assert.ok(status.hostname.length > 0)
+  assert.ok(status.cpus >= 1)
+  assert.ok(status.memory.usagePercent >= 0 && status.memory.usagePercent <= 100)
+
+  const hostFiles = await first.inject({
+    method: 'GET',
+    url: '/api/v1/host/files?path=~'
+  })
+  assert.equal(hostFiles.statusCode, 200)
+  const hostDir = hostFiles.json<{ path: string; parent: string | null; entries: unknown[] }>()
+  assert.ok(hostDir.path.startsWith('/'))
+  assert.ok(Array.isArray(hostDir.entries))
+  assert.ok(hostDir.entries.length > 0)
+  const missing = await first.inject({
+    method: 'GET',
+    url: '/api/v1/host/files?path=/definitely-not-a-real-path-xyz'
+  })
+  assert.equal(missing.statusCode, 404)
+
   const invalid = await first.inject({
     method: 'POST',
     url: '/api/v1/projects',

@@ -1,1 +1,1 @@
-export { serverInfoSchema } from '@agent-gateway/shared'
+export { serverInfoSchema, serverStatusSchema } from '@agent-gateway/shared'

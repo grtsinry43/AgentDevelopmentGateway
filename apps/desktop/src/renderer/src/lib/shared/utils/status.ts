@@ -13,6 +13,7 @@ import type {
 	ToolCallStatus,
 	TurnStatus
 } from '@agent-gateway/core';
+import type { ConnectionState } from '$contract/hosts';
 
 type SessionStatus = AgentSession['status'];
 type HostStatus = Host['status'];
@@ -87,6 +88,14 @@ export const HOST_STATUS: Record<HostStatus, StatusVisual> = {
 	offline: { dot: 'bg-status-offline', text: 'text-status-offline', label: '离线' },
 	connecting: { dot: 'bg-status-connecting', text: 'text-status-connecting', label: '连接中' },
 	error: { dot: 'bg-status-error', text: 'text-status-error', label: '错误' }
+};
+
+/** 远程连接状态(标题栏主机 chip)。连接状态不在 core 枚举里,单独一张表。 */
+export const CONNECTION_STATE: Record<ConnectionState, StatusVisual> = {
+	connecting: { dot: 'bg-status-connecting', text: 'text-status-connecting', label: '连接中' },
+	connected: { dot: 'bg-status-online', text: 'text-status-online', label: '已连接' },
+	disconnected: { dot: 'bg-status-offline', text: 'text-status-offline', label: '已断开' },
+	error: { dot: 'bg-status-error', text: 'text-status-error', label: '连接失败' }
 };
 
 /** 状态是否应该显示脉冲动画(只有真正在推进的状态才动)。 */

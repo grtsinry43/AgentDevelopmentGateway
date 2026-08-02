@@ -1,5 +1,8 @@
 import { BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { IPC } from '../../contract/bridge.js'
+import { openHostManagerWindow } from '../windows/host-manager.js'
+import { openNewProjectWindow } from '../windows/new-project.js'
+import { openSettingsWindow } from '../windows/settings.js'
 import { broadcast } from './broadcast.js'
 
 export function registerSystemHandlers(): void {
@@ -40,4 +43,18 @@ export function registerWindowHandlers(): void {
   ipcMain.handle(IPC.windowClose, (event) => {
     senderWindow(event)?.close()
   })
+
+  ipcMain.handle(IPC.windowOpenNewProject, (_event, rawHostType: unknown) => {
+    const hostType = rawHostType === 'ssh' ? 'ssh' : 'local'
+    return openNewProjectWindow(hostType).then(() => undefined)
+  })
+
+  ipcMain.handle(IPC.windowOpenHostManager, (_event, rawHostProfileId: unknown) => {
+    if (typeof rawHostProfileId !== 'string' || rawHostProfileId.length === 0) {
+      throw new Error('无效的主机标识')
+    }
+    return openHostManagerWindow(rawHostProfileId).then(() => undefined)
+  })
+
+  ipcMain.handle(IPC.windowOpenSettings, () => openSettingsWindow().then(() => undefined))
 }

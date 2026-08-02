@@ -99,6 +99,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
     'context.session_injection': true,
     'context.turn_injection': true,
     'context.compaction': true,
+    'session.rename': true,
   },
   raw: [
     'codex.app-server.v2',
@@ -442,6 +443,14 @@ export class CodexAdapter implements RuntimeAdapter {
       mapThreadSettings(session.threadId, session.execution, model),
     )
     session.model = { ...model }
+  }
+
+  async renameSession(sessionId: SessionId, title: string): Promise<void> {
+    const session = this.getSession(sessionId)
+    await session.connection.client.request('thread/name/set', {
+      threadId: session.threadId,
+      name: title,
+    })
   }
 
   async configureExecution(

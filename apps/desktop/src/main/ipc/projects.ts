@@ -5,7 +5,15 @@ import { findProject, listRecentProjects, removeProject, togglePinProject, touch
 import { registerRecentProject, resolveServerProject } from '../server/gateway.js'
 import { loadLayout, saveLayout } from '../store/window-state.js'
 import { closeLauncher, getLauncher } from '../windows/launcher.js'
-import { openProjectWindow } from '../windows/project.js'
+import {
+  closeProjectChooser,
+  openProjectChooser,
+  projectChooserContext
+} from '../windows/project-chooser.js'
+import {
+  openProjectWindow,
+  setSuppressLastClosed
+} from '../windows/project.js'
 import { broadcast } from './broadcast.js'
 
 /** 列表变更后统一广播,让所有窗口(Launcher / 其他工程窗口)同步。 */
@@ -55,18 +63,62 @@ export function registerProjectHandlers(): void {
   })
 
   ipcMain.handle(IPC.projectsOpen, async (_event, key: string) => {
+    await openProjectIntoNewWindow(key)
+  })
+
+  // 切换工程:弹出「在此窗口 / 新窗口打开」选择器(来源窗口记下来给 This Window)。
+  ipcMain.handle(IPC.projectsOpenChooser, async (event, key: string) => {
     const cached = await findProject(key)
     if (!cached) throw new Error(`工程不存在: ${key}`)
-    const project =
-      cached.hostType === 'local' ? (await resolveServerProject(key)).recent : cached
-
-    await touchProject(project.key)
-    await openProjectWindow(project)
-    await announceProjects()
-
-    // Launcher 是一次性入口:工程窗口起来后就该让位。
-    if (getLauncher()) closeLauncher()
+    await openProjectChooser(key, event.sender.id)
   })
+
+  ipcMain.handle(IPC.projectsOpenFromChooser, async (_event, rawMode: unknown) => {
+    const mode = rawMode === 'this' ? 'this' : 'new'
+    const context = projectChooserContext()
+    if (!context) throw new Error('没有待打开的工程')
+    // 先打开、成功后关选择器;失败时选择器留在原地,渲染进程把错误显示出来。
+    if (mode === 'this') await openProjectIntoWindow(context.projectKey, context.sourceWindowId)
+    else await openProjectIntoNewWindow(context.projectKey)
+    closeProjectChooser()
+  })
+}
+
+/** 打开工程到新窗口(默认行为)。 */
+async function openProjectIntoNewWindow(key: string): Promise<void> {
+  const cached = await findProject(key)
+  if (!cached) throw new Error(`工程不存在: ${key}`)
+  // 本地与远程都先解析:远程会按需建立 SSH 连接 + provision,并把 hostId rebind 到服务端权威值。
+  const project = (await resolveServerProject(key)).recent
+
+  await touchProject(project.key)
+  await openProjectWindow(project)
+  await announceProjects()
+
+  // Launcher 是一次性入口:工程窗口起来后就该让位。
+  if (getLauncher()) closeLauncher()
+}
+
+/** This Window:用目标工程替换来源工程窗口(沿用来源窗口尺寸)。 */
+async function openProjectIntoWindow(key: string, sourceWebContentsId: number): Promise<void> {
+  const cached = await findProject(key)
+  if (!cached) throw new Error(`工程不存在: ${key}`)
+  const project = (await resolveServerProject(key)).recent
+
+  const source = BrowserWindow.getAllWindows().find(
+    (candidate) => !candidate.isDestroyed() && candidate.webContents.id === sourceWebContentsId
+  )
+  const bounds = source ? source.getBounds() : undefined
+
+  // 解析完成后再替换,避免目标不可用时把当前窗口关掉。
+  setSuppressLastClosed(true)
+  source?.close()
+  setSuppressLastClosed(false)
+
+  await touchProject(project.key)
+  await openProjectWindow(project, bounds ? { bounds } : undefined)
+  await announceProjects()
+  if (getLauncher()) closeLauncher()
 }
 
 export function registerLayoutHandlers(): void {

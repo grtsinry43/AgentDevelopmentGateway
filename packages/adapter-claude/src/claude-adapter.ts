@@ -30,6 +30,8 @@ import {
 } from '@agent-gateway/core'
 import {
   query as createClaudeQuery,
+  renameSession as claudeRenameSession,
+  getSessionInfo as claudeGetSessionInfo,
   type ModelInfo,
   type SDKControlInitializeResponse,
   type SDKMessage,
@@ -66,6 +68,7 @@ interface ClaudeConnectionState {
 interface ClaudeSessionState {
   id: SessionId
   runtimeSessionId: string
+  projectPath: string
   query: ClaudeQuery
   input: AsyncQueue<SDKUserMessage>
   events: AsyncQueue<AdapterEvent>
@@ -75,6 +78,8 @@ interface ClaudeSessionState {
   execution: SessionExecutionState
   activeTurnId?: TurnId
   lastTurnId?: TurnId
+  /** Last provider-generated title we published, to dedupe `title_changed` events. */
+  providerTitle?: string
   disposed: boolean
   failure?: unknown
   pump: Promise<void>
@@ -276,6 +281,12 @@ export class ClaudeAdapter implements RuntimeAdapter {
     })
   }
 
+  async renameSession(sessionId: SessionId, title: string): Promise<void> {
+    const session = this.getSession(sessionId)
+    // Appends a custom-title entry to the session's JSONL, persisted on the provider side.
+    await claudeRenameSession(session.runtimeSessionId, title, { dir: session.projectPath })
+  }
+
   async configureExecution(
     sessionId: SessionId,
     settings: SessionExecutionSettings,
@@ -401,6 +412,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
     const session: ClaudeSessionState = {
       id: input.id,
       runtimeSessionId: input.runtimeSessionId,
+      projectPath: input.projectPath,
       query,
       input: sdkInput,
       events,
@@ -509,6 +521,10 @@ export class ClaudeAdapter implements RuntimeAdapter {
             payload: { status: 'idle' },
             turnId: completedTurnId,
           })
+          // Claude Code auto-generates a session title after the first turn (small-model
+          // summary). The SDK exposes it via getSessionInfo (pull), not an event. Fetch it
+          // best-effort so provider auto-titles reach the gateway like Codex/OpenCode.
+          if (!session.providerTitle) void this.pullProviderTitle(session)
         }
       }
       if (!session.disposed) throw new Error('Claude Query ended unexpectedly')
@@ -525,6 +541,34 @@ export class ClaudeAdapter implements RuntimeAdapter {
       session.bridge.cancelAll('aborted', runtimeError.message)
       session.input.fail(error)
       session.events.fail(error)
+    }
+  }
+
+  /**
+   * Pull the provider auto-generated title after the first turn. Claude Code writes the
+   * `ai-title` to the session JSONL in the background a few seconds AFTER the turn ends
+   * (a separate subprocess), so poll across a generous window. Only publish when a real
+   * generated title exists (summary differs from the raw first prompt) and we have not
+   * already surfaced it.
+   */
+  private async pullProviderTitle(session: ClaudeSessionState): Promise<void> {
+    const ATTEMPTS = 30
+    const DELAY_MS = 500
+    for (let attempt = 0; attempt < ATTEMPTS && !session.disposed; attempt++) {
+      try {
+        const info = await claudeGetSessionInfo(session.runtimeSessionId, { dir: session.projectPath })
+        if (!session.disposed && info?.summary && info.summary !== info.firstPrompt) {
+          session.providerTitle = info.summary
+          this.publish(session, {
+            type: 'session.title_changed',
+            payload: { title: info.summary, source: 'provider' },
+          })
+          return
+        }
+      } catch {
+        // best-effort; the session keeps its local title when the fetch fails
+      }
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
     }
   }
 

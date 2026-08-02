@@ -1,4 +1,5 @@
 import { pushBus } from '$lib/shared/bridge/events';
+import { SvelteSet } from 'svelte/reactivity';
 import {
 	createDefaultSessionExecutionSettings,
 	type Host,
@@ -15,6 +16,7 @@ import type {
 } from '@agent-gateway/shared';
 import { interactionRequestSchema, interactionResolutionSchema } from '@agent-gateway/shared';
 import {
+	closeSession,
 	createSession,
 	cancelQueuedInput as cancelQueuedInputApi,
 	getSession,
@@ -30,12 +32,14 @@ import {
 	sendQueuedInputNow as sendQueuedInputNowApi,
 	setSessionExecutionSettings,
 	setSessionModel,
+	setSessionTitle,
 	setSessionWorkMode,
 	unwatchSession,
 	watchSession
 } from './api';
 import {
 	emptyConversationProjection,
+	payloadString,
 	projectRuntimeEvent,
 	type ConversationMessage,
 	type ConversationProjection,
@@ -54,6 +58,8 @@ interface PendingModelSelection {
 }
 
 const MAX_LOAD_ATTEMPTS = 5;
+/** 标题同步过渡时长(「生成标题…」→ 新标题)。 */
+const TITLE_SYNC_MS = 900;
 
 class SessionWorkspace {
 	projectKey = '';
@@ -76,6 +82,8 @@ class SessionWorkspace {
 	pendingModelSelection = $state.raw<PendingModelSelection | undefined>(undefined);
 	resolvingInteractionId = $state<string | undefined>(undefined);
 	queueBusyId = $state<string | undefined>(undefined);
+	/** 输入框草稿(跨会话保留;对话右键「引用到输入框」会追加)。 */
+	composerDraft = $state('');
 	selectedSubagentRunId = $state<string | undefined>(undefined);
 	serverError = $state<string | undefined>(undefined);
 	error = $state<string | undefined>(undefined);
@@ -85,6 +93,23 @@ class SessionWorkspace {
 	streamMessage = $state<string | undefined>(undefined);
 	streamRetryAttempt = $state(0);
 	projection = $state.raw<ConversationProjection>(emptyConversationProjection());
+
+	/** 标题正在同步中的会话(短暂显示「生成标题…」后切到新标题)。 */
+	titleSyncing = new SvelteSet<string>();
+	#titleSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	readonly isTitleSyncing = (sessionId: string): boolean => this.titleSyncing.has(sessionId);
+	#markTitleSyncing(sessionId: string): void {
+		this.titleSyncing.add(sessionId);
+		const existing = this.#titleSyncTimers.get(sessionId);
+		if (existing) clearTimeout(existing);
+		this.#titleSyncTimers.set(
+			sessionId,
+			setTimeout(() => {
+				this.#titleSyncTimers.delete(sessionId);
+				this.titleSyncing.delete(sessionId);
+			}, TITLE_SYNC_MS)
+		);
+	}
 
 	readonly selectedSession = $derived(
 		this.sessions.find((session) => session.id === this.selectedSessionId)
@@ -163,7 +188,7 @@ class SessionWorkspace {
 		this.projectKey = projectKey;
 
 		const offSessions = pushBus.on('sessions.changed', (event) => {
-			if (event.projectKey === this.projectKey) this.#applySessions(event.sessions);
+			if (event.projectKey === this.projectKey) this.#applySessions(event.sessions, true);
 		});
 		const offEvent = pushBus.on('session.event', (event) => this.#acceptEvent(event.event));
 		const offStream = pushBus.on('session.stream', (event) => {
@@ -490,6 +515,43 @@ class SessionWorkspace {
 		}
 	}
 
+	/** 把选中的对话片段以 Markdown 引用追加到输入框。 */
+	appendComposerQuote(quoted: string): void {
+		const block = quoted
+			.split('\n')
+			.map((line) => `> ${line}`)
+			.join('\n');
+		const base = this.composerDraft.replace(/\s+$/, '');
+		this.composerDraft = base ? `${base}\n\n${block}\n\n` : `${block}\n\n`;
+	}
+
+	/** 归档(关闭)一个会话;会话保留并标记为已结束。 */
+	async archiveSession(sessionId: string): Promise<void> {
+		try {
+			await closeSession(sessionId, {});
+			void this.load();
+		} catch (error) {
+			this.error = errorMessage(error);
+		}
+	}
+
+	/** 重命名会话标题(下推 provider,并本地刷新列表)。 */
+	async renameSession(sessionId: string, title: string): Promise<boolean> {
+		const trimmed = title.trim();
+		if (!trimmed || this.controlling) return false;
+		this.controlling = true;
+		this.error = undefined;
+		try {
+			await setSessionTitle(sessionId, { title: trimmed });
+			return true;
+		} catch (error) {
+			this.error = errorMessage(error);
+			return false;
+		} finally {
+			this.controlling = false;
+		}
+	}
+
 	openSubagent(runId: string): void {
 		if (!this.projection.subagents.some((item) => item.run.id === runId)) return;
 		this.selectedSubagentRunId = runId;
@@ -719,9 +781,17 @@ class SessionWorkspace {
 		this.#pendingControlRevision = undefined;
 	}
 
-	#applySessions(next: GatewaySession[]): void {
+	#applySessions(next: GatewaySession[], animateTitle = false): void {
 		const byId = new Map(next.map((session) => [session.id, session]));
+		const previousTitles = new Map(this.sessions.map((session) => [session.id, session.title]));
 		this.sessions = [...byId.values()];
+		if (animateTitle) {
+			for (const session of next) {
+				if (session.title && session.title !== previousTitles.get(session.id)) {
+					this.#markTitleSyncing(session.id);
+				}
+			}
+		}
 		if (this.selectedSessionId && !byId.has(this.selectedSessionId)) {
 			const removed = this.selectedSessionId;
 			this.#selectionGeneration += 1;
@@ -748,6 +818,11 @@ class SessionWorkspace {
 		}
 		const projected = projectRuntimeEvent(this.projection, event);
 		if (projected === this.projection) return;
+		if (event.type === 'session.title_changed') {
+			const currentTitle = this.sessions.find((session) => session.id === event.sessionId)?.title;
+			const nextTitle = payloadString(event.payload, 'title');
+			if (nextTitle && nextTitle !== currentTitle) this.#markTitleSyncing(event.sessionId);
+		}
 		this.projection = projected;
 		this.sessions = this.sessions.map((session) => {
 			if (session.id !== event.sessionId) return session;

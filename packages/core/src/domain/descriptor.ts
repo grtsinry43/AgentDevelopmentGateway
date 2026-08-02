@@ -31,6 +31,7 @@ export type RuntimeFeature =
   | 'context.turn_injection'
   | 'context.compaction'
   | 'changes.revert'
+  | 'session.rename'
 
 /** Steering support with a generic fallback (cradle tri-state, docs/05 §8). */
 export type SteerSupport = 'native' | 'queue-fallback' | 'unsupported'

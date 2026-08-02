@@ -9,6 +9,7 @@ import {
   type WorkspaceLayoutState
 } from '../contract/bridge.js'
 import type { ContextProfile, NewProjectInput } from '../contract/project.js'
+import type { HostProfileInput } from '../contract/hosts.js'
 import type {
   CloseSessionRequest,
   CreateSessionRequest,
@@ -89,7 +90,34 @@ const bridge: DesktopBridge = {
     remove: (key: string) => ipcRenderer.invoke(IPC.projectsRemove, key),
     togglePin: (key: string) => ipcRenderer.invoke(IPC.projectsTogglePin, key),
     open: (key: string) => ipcRenderer.invoke(IPC.projectsOpen, key),
+    openChooser: (key: string) => ipcRenderer.invoke(IPC.projectsOpenChooser, key),
+    openFromChooser: (mode: 'this' | 'new') =>
+      ipcRenderer.invoke(IPC.projectsOpenFromChooser, mode),
     touch: (key: string) => ipcRenderer.invoke(IPC.projectsTouch, key)
+  },
+
+  hosts: {
+    list: () => ipcRenderer.invoke(IPC.hostsList),
+    save: (input: HostProfileInput) => ipcRenderer.invoke(IPC.hostsSave, input),
+    remove: (id: string) => ipcRenderer.invoke(IPC.hostsRemove, id),
+    pickKeyFile: () => ipcRenderer.invoke(IPC.hostsPickKeyFile)
+  },
+
+  remote: {
+    status: (projectKey: string) => ipcRenderer.invoke(IPC.remoteStatus, projectKey),
+    reconnect: (projectKey: string) => ipcRenderer.invoke(IPC.remoteReconnect, projectKey),
+    disconnect: (projectKey: string) => ipcRenderer.invoke(IPC.remoteDisconnect, projectKey),
+    logStart: (hostProfileId: string) => ipcRenderer.invoke(IPC.remoteLogStart, hostProfileId),
+    logStop: (hostProfileId: string) => ipcRenderer.invoke(IPC.remoteLogStop, hostProfileId),
+    probeHosts: () => ipcRenderer.invoke(IPC.remoteProbeHosts),
+    stopServer: (hostProfileId: string) => ipcRenderer.invoke(IPC.remoteStopServer, hostProfileId),
+    hostDetail: (hostProfileId: string) => ipcRenderer.invoke(IPC.remoteHostDetail, hostProfileId),
+    hostStart: (hostProfileId: string) => ipcRenderer.invoke(IPC.remoteHostStart, hostProfileId),
+    hostRestart: (hostProfileId: string) => ipcRenderer.invoke(IPC.remoteHostRestart, hostProfileId),
+    hostReinstall: (hostProfileId: string) =>
+      ipcRenderer.invoke(IPC.remoteHostReinstall, hostProfileId),
+    browseDirectory: (hostProfileId: string, path: string) =>
+      ipcRenderer.invoke(IPC.remoteBrowseDirectory, hostProfileId, path)
   },
 
   sessions: {
@@ -206,13 +234,25 @@ const bridge: DesktopBridge = {
   window: {
     minimize: () => ipcRenderer.invoke(IPC.windowMinimize),
     toggleMaximize: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
-    close: () => ipcRenderer.invoke(IPC.windowClose)
+    close: () => ipcRenderer.invoke(IPC.windowClose),
+    openNewProject: (initialHostType: 'local' | 'ssh') =>
+      ipcRenderer.invoke(IPC.windowOpenNewProject, initialHostType),
+    openHostManager: (hostProfileId: string) =>
+      ipcRenderer.invoke(IPC.windowOpenHostManager, hostProfileId),
+    openSettings: () => ipcRenderer.invoke(IPC.windowOpenSettings)
   },
 
   layout: {
     get: (projectKey: string) => ipcRenderer.invoke(IPC.layoutGet, projectKey),
     save: (projectKey: string, layout: WorkspaceLayoutState) =>
       ipcRenderer.invoke(IPC.layoutSave, projectKey, layout)
+  },
+
+  export: {
+    conversation: (payload) => ipcRenderer.invoke(IPC.exportConversation, payload),
+    commit: (format) => ipcRenderer.invoke(IPC.exportCommit, format),
+    getData: () => ipcRenderer.invoke(IPC.exportGetData),
+    rendered: (height: number) => ipcRenderer.invoke(IPC.exportRendered, height)
   }
 }
 

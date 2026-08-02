@@ -12,6 +12,8 @@
 		branch?: string;
 		agentLabel?: string;
 		connectionStatus: Host['status'];
+		/** 点击设置齿轮。 */
+		onSettings?: () => void;
 		trailing?: Snippet;
 		class?: string;
 	}
@@ -22,6 +24,7 @@
 		branch,
 		agentLabel,
 		connectionStatus,
+		onSettings,
 		trailing,
 		class: className
 	}: Props = $props();
@@ -80,12 +83,12 @@
 			></span>
 		</span>
 
-		<span title="设置（未开放）">
+		<span title="设置">
 			<button
 				type="button"
-				class="flex h-7 w-7 items-center justify-center text-faint disabled:opacity-45"
-				disabled
-				aria-label="设置（未开放）"
+				class="flex h-7 w-7 items-center justify-center text-faint transition-colors hover:text-strong"
+				aria-label="设置"
+				onclick={onSettings}
 			>
 				<Icon name="settings" size={12} />
 			</button>

@@ -22,6 +22,43 @@ export const serverInfoSchema = z.strictObject({
   createdAt: gatewayTimestampSchema,
 })
 
+/** 主机运行状态:资源占用与版本。远程连接状态面板的展示依据。 */
+export const serverStatusSchema = z.strictObject({
+  hostId: gatewayIdSchema,
+  version: z.string(),
+  protocolVersion: z.number().int().positive(),
+  hostname: z.string().min(1),
+  platform: z.string().min(1),
+  arch: z.string().min(1),
+  cpus: z.number().int().positive(),
+  loadAvg: z.tuple([z.number(), z.number(), z.number()]),
+  memory: z.strictObject({
+    totalBytes: z.number().nonnegative(),
+    freeBytes: z.number().nonnegative(),
+    usagePercent: z.number().min(0).max(100),
+  }),
+  gateway: z.strictObject({
+    pid: z.number().int().positive(),
+    rssBytes: z.number().nonnegative(),
+  }),
+  uptimeSeconds: z.number().nonnegative(),
+})
+
+export type ServerStatus = z.infer<typeof serverStatusSchema>
+
+/** 主机文件系统目录浏览(新建远程工程时选工程根,不经 Project scope)。 */
+export const hostDirectoryEntrySchema = z.strictObject({
+  name: z.string().min(1),
+  type: z.enum(['dir', 'file', 'other']),
+  symlink: z.boolean(),
+})
+export const hostDirectoryResponseSchema = z.strictObject({
+  path: z.string().min(1),
+  parent: z.string().nullable(),
+  entries: z.array(hostDirectoryEntrySchema),
+})
+export type HostDirectoryResponse = z.infer<typeof hostDirectoryResponseSchema>
+
 export const projectAvailabilitySchema = z.enum(['available', 'missing', 'unreachable'])
 export const projectSchema = z.strictObject({
   id: gatewayIdSchema,

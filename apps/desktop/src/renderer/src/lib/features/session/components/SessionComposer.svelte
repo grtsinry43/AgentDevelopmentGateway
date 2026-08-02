@@ -15,7 +15,7 @@
 	}
 
 	let { workspace, height = 160 }: Props = $props();
-	let text = $state('');
+	// 输入草稿归 workspace.composerDraft:对话右键「引用到输入框」要能追加进来。
 	let adapterOverride = $state<GatewayAdapterAvailability['adapterId'] | undefined>(undefined);
 	let installationOverride = $state<string | undefined>(undefined);
 
@@ -100,7 +100,9 @@
 			: tokenLabel
 	);
 	const canSubmit = $derived(
-		text.trim().length > 0 && !workspace.sending && (!creating || Boolean(selectedAdapter))
+		workspace.composerDraft.trim().length > 0 &&
+			!workspace.sending &&
+			(!creating || Boolean(selectedAdapter))
 	);
 	const composerExtensions = $derived<Extension>([
 		Prec.highest(
@@ -127,7 +129,7 @@
 	]);
 
 	async function submit(): Promise<void> {
-		const value = text.trim();
+		const value = workspace.composerDraft.trim();
 		if (!value || !canSubmit) return;
 
 		const accepted = creating
@@ -139,7 +141,7 @@
 					)
 				: false
 			: await workspace.sendText(value);
-		if (accepted) text = '';
+		if (accepted) workspace.composerDraft = '';
 	}
 
 	function changeAdapter(adapterId: GatewayAdapterAvailability['adapterId']): void {
@@ -277,7 +279,7 @@
 
 	<div class="min-h-0 flex-1">
 		<MarkdownEditor
-			bind:value={text}
+			bind:value={workspace.composerDraft}
 			appearance="bare"
 			placeholder={creating
 				? '写下任务、背景、约束和你希望 Agent 完成的工作…'

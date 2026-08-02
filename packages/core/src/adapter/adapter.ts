@@ -86,6 +86,8 @@ export interface RuntimeAdapter {
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
   listModels?(input: ListModelsInput): Promise<ModelCatalog>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>
+  /** Persist a user-set title to the provider runtime; pairs with `features['session.rename']`. */
+  renameSession?(sessionId: SessionId, title: string): Promise<void>
   /** Atomically apply work mode, approval policy, and sandbox intent. */
   configureExecution?(
     sessionId: SessionId,

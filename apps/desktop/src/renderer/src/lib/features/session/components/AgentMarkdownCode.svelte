@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { highlightCode, normalizeCodeLanguage } from '../markdown/highlight';
 	import '../markdown/hljs-theme.css';
+	import { settings } from '$lib/shared/settings/settings.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 
 	interface Props {
@@ -18,8 +19,12 @@
 	const language = $derived(normalizeCodeLanguage(lang));
 	const languageLabel = $derived(lang?.trim() || 'text');
 	const highlighted = $derived(inline ? '' : highlightCode(text, language));
+	// 长行策略:softwrap 折行,scroll 保持行结构 + 横向滚动(设置项,见 settings store)。
+	const wrapClass = $derived(
+		settings.codeWrap === 'softwrap' ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
+	);
 	const blockCodeClass = $derived(
-		`agent-code__content hljs language-${language} block whitespace-pre font-mono`
+		`agent-code__content hljs language-${language} block font-mono ${wrapClass}`
 	);
 
 	async function copyCode(): Promise<void> {

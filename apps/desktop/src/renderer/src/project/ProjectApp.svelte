@@ -7,10 +7,12 @@
 	 */
 	import { startThemeSync, theme } from '$lib/shared/theme/theme.svelte';
 	import { keymap } from '$lib/shared/keymap/keymap.svelte';
-	import { requireProjectIdentity, systemInfo } from '$lib/shared/bridge/desktop';
+	import { desktop, requireProjectIdentity, systemInfo } from '$lib/shared/bridge/desktop';
 	import { railPanels as resolveRailPanels } from '$lib/shared/registry/panels';
-	import { tildify } from '$lib/shared/utils/path';
 	import { notifications } from '$lib/shared/notifications/notifications.svelte';
+	import { remoteConnection } from '$lib/features/remote/remote.svelte';
+	import { appError } from '$lib/features/project/app-error.svelte';
+	import ProjectSwitcher from '$lib/features/project/components/ProjectSwitcher.svelte';
 	import { LEFT_TABS, layout } from '$lib/features/workspace/layout.svelte';
 	import { registerWorkspacePanels } from '$lib/features/workspace/panels';
 	import LeftSidebar from '$lib/features/workspace/components/LeftSidebar.svelte';
@@ -28,6 +30,7 @@
 	import StatusBar from '$lib/ui/layout/StatusBar.svelte';
 	import TitleBar from '$lib/ui/layout/TitleBar.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
+	import Dialog from '$lib/ui/primitives/Dialog.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import NotificationCenter from '$lib/ui/notifications/NotificationCenter.svelte';
 
@@ -36,12 +39,10 @@
 
 	const projectIdentity = requireProjectIdentity();
 	const projectKey = projectIdentity.projectKey;
-	const projectPath = projectIdentity.projectPath;
-	const displayPath = $derived(tildify(projectPath, systemInfo.homeDir));
-	const projectName = $derived(displayPath.split(/[/\\]/).filter(Boolean).at(-1) ?? projectPath);
-	const hostLabel = $derived(
-		projectIdentity.hostType === 'local' ? 'Local' : projectIdentity.hostId
-	);
+	// 展示主机:远程 = hostname,本地 = 无;hostId(服务端 UUID)不展示。
+	const hostLabel = $derived(projectIdentity.hostLabel ?? '');
+	/** 状态栏 chip 本地显示「Local」。 */
+	const statusBarHost = $derived(hostLabel || 'Local');
 	const gitWorkspace = new GitWorkspace(projectKey);
 	const visibleLeftTabs = $derived(
 		gitWorkspace.state ? LEFT_TABS : LEFT_TABS.filter((tab) => tab !== 'git')
@@ -52,6 +53,20 @@
 	// Session workspace owns push subscriptions and the selected Session SSE registration.
 	$effect(() => sessionWorkspace.start(projectKey));
 	$effect(() => gitWorkspace.start());
+
+	// 远程工程:连接状态 + 资源占用(本地工程的 status 返回 isRemote=false,chip 不渲染)。
+	$effect(() => {
+		void remoteConnection.start(projectKey);
+		return remoteConnection.watch();
+	});
+
+	// 操作失败弹窗:error 置位即打开,关闭即清除。
+	$effect(() => {
+		if (appError.error) appErrorDialogOpen = true;
+	});
+	$effect(() => {
+		if (!appErrorDialogOpen && appError.error) appError.dismiss();
+	});
 
 	// A persisted Git selection must not leave an invisible active tab when the
 	// Server has conclusively reported that this project is not a repository.
@@ -109,6 +124,8 @@
 
 	/** 键盘聚焦的面板 id。⌘1..9 设置。 */
 	let focusedPanelId = $state<string | undefined>(undefined);
+	/** 操作失败弹窗:appError.error 置位即打开,关闭即清除。 */
+	let appErrorDialogOpen = $state(false);
 
 	/** 当前会话声明的 runtime capabilities；面板只按能力门控。 */
 	const capabilities = $derived(sessionWorkspace.features);
@@ -116,6 +133,7 @@
 	const railPanels = $derived(
 		resolveRailPanels(capabilities, {
 			openTypes: layout.panels.map((panel) => panel.type),
+			remote: projectIdentity.hostType === 'ssh',
 			contextualReady: (type) => {
 				if (type === 'preview') return filePreview.path !== null;
 				if (type === 'tasks') return sessionWorkspace.tasks.length > 0;
@@ -165,7 +183,10 @@
 <svelte:window onkeydown={(event) => keymap.dispatch(event)} />
 
 <div class="flex h-full flex-col overflow-hidden">
-	<TitleBar title={projectName} subtitle="{displayPath} @{projectIdentity.hostId}">
+	<TitleBar>
+		{#snippet leading()}
+			<ProjectSwitcher />
+		{/snippet}
 		{#snippet actions()}
 			<Button variant="icon" size="sm" title="切换侧栏 (⌘B)" onclick={() => layout.toggleLeft()}>
 				{#snippet icon()}
@@ -237,16 +258,29 @@
 
 	<StatusBar
 		hostType={projectIdentity.hostType}
-		{hostLabel}
+		hostLabel={statusBarHost}
 		branch={branchLabel}
 		{agentLabel}
 		connectionStatus={sessionWorkspace.serverConnectionStatus}
+		onSettings={() => void desktop.window.openSettings()}
 	>
 		{#snippet trailing()}
 			<NotificationCenter />
 		{/snippet}
 	</StatusBar>
 </div>
+
+<!-- 操作失败(如切换工程失败)弹窗展示,可取消。 -->
+<Dialog bind:open={appErrorDialogOpen} title="操作失败" description="打开或管理工程时出错。">
+	<p
+		class="max-h-56 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-cinnabar-600 dark:text-cinnabar-400"
+	>
+		{appError.error}
+	</p>
+	{#snippet footer()}
+		<Button variant="primary" onclick={() => appError.dismiss()}>关闭</Button>
+	{/snippet}
+</Dialog>
 
 <!-- 非 macOS 平台没有原生 vibrancy,窗口底色必须不透明以免露出桌面 -->
 {#if systemInfo.platform !== 'darwin'}

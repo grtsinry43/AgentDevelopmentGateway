@@ -2,13 +2,13 @@ import { workspaceFileSubscriptionSchema, workspaceRelativePathSchema } from '@a
 import { ipcMain } from 'electron'
 import { IPC } from '../../contract/bridge.js'
 import { fileStreams } from '../server/file-streams.js'
-import { gatewayServer, resolveServerProject } from '../server/gateway.js'
+import { resolveServerProject } from '../server/gateway.js'
 
 export function registerFileHandlers(): void {
   ipcMain.handle(IPC.filesCapabilities, async (_event, rawProjectKey: unknown) => {
     const projectKey = parseProjectKey(rawProjectKey)
-    await resolveServerProject(projectKey)
-    return (await gatewayServer.serverInfo()).capabilities.filter((capability) =>
+    const resolved = await resolveServerProject(projectKey)
+    return (await resolved.client.serverInfo()).capabilities.filter((capability) =>
       capability.startsWith('workspace.files.')
     )
   })
@@ -19,7 +19,7 @@ export function registerFileHandlers(): void {
       const projectKey = parseProjectKey(rawProjectKey)
       const path = workspaceRelativePathSchema.parse(rawPath)
       const resolved = await resolveServerProject(projectKey)
-      return gatewayServer.workspaceDirectory(resolved.serverProjectId, path)
+      return resolved.client.workspaceDirectory(resolved.serverProjectId, path)
     }
   )
 
@@ -30,7 +30,7 @@ export function registerFileHandlers(): void {
       const path = workspaceRelativePathSchema.parse(rawPath)
       if (path.length === 0) throw new Error('无效的文件路径')
       const resolved = await resolveServerProject(projectKey)
-      return gatewayServer.workspaceFileContent(resolved.serverProjectId, path)
+      return resolved.client.workspaceFileContent(resolved.serverProjectId, path)
     }
   )
 
@@ -40,7 +40,13 @@ export function registerFileHandlers(): void {
       const projectKey = parseProjectKey(rawProjectKey)
       const { directories } = workspaceFileSubscriptionSchema.parse({ directories: rawDirectories })
       const resolved = await resolveServerProject(projectKey)
-      fileStreams.watch(event.sender, resolved.recent.key, resolved.serverProjectId, directories)
+      fileStreams.watch(
+        event.sender,
+        resolved.client,
+        resolved.recent.key,
+        resolved.serverProjectId,
+        directories
+      )
     }
   )
 

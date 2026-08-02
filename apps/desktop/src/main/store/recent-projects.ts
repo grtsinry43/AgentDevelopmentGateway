@@ -59,6 +59,7 @@ export async function addProject(
                 ...project,
                 name: input.name,
                 lastOpenedAt: now,
+                ...(input.hostProfileId ? { hostProfileId: input.hostProfileId } : {}),
                 ...(serverProjectId ? { serverProjectId } : {})
               }
             : project
@@ -72,6 +73,7 @@ export async function addProject(
       hostId: input.hostId,
       hostType: input.hostType,
       path: input.path,
+      ...(input.hostProfileId ? { hostProfileId: input.hostProfileId } : {}),
       ...(serverProjectId ? { serverProjectId } : {}),
       createdAt: now,
       lastOpenedAt: now
@@ -99,11 +101,13 @@ export async function bindProjectToServer(
       key: nextKey,
       name: source.name,
       hostId: serverProject.hostId,
-      hostType: 'local',
+      // hostType/hostProfileId 保持 source 的:远程工程 rebind 后仍是远程工程。
+      hostType: source.hostType,
+      ...(source.hostProfileId ? { hostProfileId: source.hostProfileId } : {}),
       path: serverProject.path,
       serverProjectId: serverProject.id,
       createdAt: Math.min(source.createdAt, collision?.createdAt ?? source.createdAt),
-      lastOpenedAt: Math.max(source.lastOpenedAt, collision?.lastOpenedAt ?? source.lastOpenedAt),
+      lastOpenedAt: Math.max(source.lastOpenedAt, collision?.lastOpenedAt ?? source.createdAt),
       ...(source.pinned || collision?.pinned ? { pinned: true } : {})
     }
     return {

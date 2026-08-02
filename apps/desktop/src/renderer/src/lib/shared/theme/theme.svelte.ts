@@ -44,6 +44,15 @@ class ThemeManager {
 export const theme = new ThemeManager();
 
 /**
+ * 固定浅色主题(导出等需要纯色、无装饰背景的场合)。
+ * 去掉 `.dark` 类让 token 走浅色分支,并强制 color-scheme。
+ */
+export function forceLightTheme(): void {
+	document.documentElement.classList.remove('dark');
+	document.documentElement.style.colorScheme = 'light';
+}
+
+/**
  * 把 theme 状态同步到 DOM,并订阅系统主题变化。
  *
  * 必须在窗口根组件里调用一次(它内部用 `$effect`,只能在组件初始化期间调用)。

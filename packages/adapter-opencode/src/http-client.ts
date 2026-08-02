@@ -1,7 +1,7 @@
 import { AdapterError } from '@agent-gateway/core'
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE'
+  method?: 'GET' | 'POST' | 'DELETE' | 'PATCH'
   body?: unknown
   query?: Record<string, string | number | undefined>
   signal?: AbortSignal

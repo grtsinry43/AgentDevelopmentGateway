@@ -5,40 +5,41 @@ import {
 } from '@agent-gateway/shared'
 import { ipcMain } from 'electron'
 import { IPC } from '../../contract/bridge.js'
-import { gatewayServer, resolveServerProject } from '../server/gateway.js'
+import { resolveForSender, resolveServerProject } from '../server/gateway.js'
 import { terminalConnections } from '../server/terminal-connections.js'
 
 export function registerTerminalHandlers(): void {
   ipcMain.handle(IPC.terminalsCapabilities, async (_event, rawProjectKey: unknown) => {
-    await resolveServerProject(parseProjectKey(rawProjectKey))
-    return (await gatewayServer.serverInfo()).capabilities.filter((capability) =>
+    const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
+    return (await resolved.client.serverInfo()).capabilities.filter((capability) =>
       capability.startsWith('workspace.terminals.')
     )
   })
 
   ipcMain.handle(IPC.terminalsList, async (_event, rawProjectKey: unknown) => {
     const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
-    return gatewayServer.terminals(resolved.serverProjectId)
+    return resolved.client.terminals(resolved.serverProjectId)
   })
 
   ipcMain.handle(
     IPC.terminalsCreate,
     async (_event, rawProjectKey: unknown, rawInput: unknown) => {
       const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
-      return gatewayServer.createTerminal(
+      return resolved.client.createTerminal(
         resolved.serverProjectId,
         createTerminalRequestSchema.parse(rawInput)
       )
     }
   )
 
-  ipcMain.handle(IPC.terminalsClose, async (_event, rawTerminalId: unknown) => {
-    await gatewayServer.closeTerminal(parseTerminalId(rawTerminalId))
+  ipcMain.handle(IPC.terminalsClose, async (event, rawTerminalId: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    await client.closeTerminal(parseTerminalId(rawTerminalId))
   })
 
   ipcMain.handle(
     IPC.terminalsAttach,
-    (
+    async (
       event,
       rawTerminalId: unknown,
       rawAfterSequence: unknown,
@@ -52,8 +53,10 @@ export function registerTerminalHandlers(): void {
         rows: rawRows
       })
       if (message.type !== 'terminal.attach') throw new Error('无效的终端连接参数')
+      const { client } = await resolveForSender(event.sender)
       terminalConnections.attach(
         event.sender,
+        client,
         parseTerminalId(rawTerminalId),
         message.afterSequence,
         message.cols,

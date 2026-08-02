@@ -6,6 +6,7 @@ import {
 } from 'fastify-type-provider-zod'
 
 export type GatewayErrorCode =
+  | 'UNAUTHORIZED'
   | 'VALIDATION_ERROR'
   | 'PROJECT_NOT_FOUND'
   | 'PROJECT_CONFLICT'

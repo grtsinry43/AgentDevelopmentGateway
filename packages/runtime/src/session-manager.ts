@@ -491,6 +491,9 @@ export class RuntimeSessionManager {
     options: RuntimeControlOptions = {},
   ): Promise<RuntimeControlReceipt> {
     return this.enqueueControl(sessionId, options, async (managed) => {
+      if (managed.adapter.renameSession) {
+        await managed.adapter.renameSession(sessionId, title)
+      }
       this.bumpControlRevision(managed)
       this.append(managed, {
         type: 'session.title_changed',

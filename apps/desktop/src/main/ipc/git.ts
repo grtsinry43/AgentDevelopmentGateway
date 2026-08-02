@@ -7,12 +7,12 @@ import { ipcMain } from 'electron'
 import { IPC } from '../../contract/bridge.js'
 import { gitStreams } from '../server/git-streams.js'
 import { GatewayServerError } from '../server/client.js'
-import { gatewayServer, resolveServerProject } from '../server/gateway.js'
+import { resolveServerProject } from '../server/gateway.js'
 
 export function registerGitHandlers(): void {
   ipcMain.handle(IPC.gitCapabilities, async (_event, rawProjectKey: unknown) => {
-    await resolveServerProject(parseProjectKey(rawProjectKey))
-    return (await gatewayServer.serverInfo()).capabilities.filter((capability) =>
+    const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
+    return (await resolved.client.serverInfo()).capabilities.filter((capability) =>
       capability.startsWith('workspace.git.')
     )
   })
@@ -20,7 +20,7 @@ export function registerGitHandlers(): void {
   ipcMain.handle(IPC.gitStatus, async (_event, rawProjectKey: unknown) => {
     const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
     try {
-      return { available: true, state: await gatewayServer.gitStatus(resolved.serverProjectId) }
+      return { available: true, state: await resolved.client.gitStatus(resolved.serverProjectId) }
     } catch (error) {
       if (error instanceof GatewayServerError && error.code === 'GIT_NOT_REPOSITORY') {
         return { available: false, reason: 'not-repository', message: error.message }
@@ -37,32 +37,32 @@ export function registerGitHandlers(): void {
     async (_event, rawProjectKey: unknown, rawPath: unknown, rawArea: unknown) => {
       const input = gitDiffQuerySchema.parse({ path: rawPath, area: rawArea })
       const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
-      return gatewayServer.gitDiff(resolved.serverProjectId, input.path, input.area)
+      return resolved.client.gitDiff(resolved.serverProjectId, input.path, input.area)
     }
   )
 
   ipcMain.handle(IPC.gitStage, async (_event, rawProjectKey: unknown, rawPaths: unknown) => {
     const input = gitPathsRequestSchema.parse({ paths: rawPaths })
     const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
-    await gatewayServer.stageGit(resolved.serverProjectId, input.paths)
+    await resolved.client.stageGit(resolved.serverProjectId, input.paths)
   })
 
   ipcMain.handle(IPC.gitUnstage, async (_event, rawProjectKey: unknown, rawPaths: unknown) => {
     const input = gitPathsRequestSchema.parse({ paths: rawPaths })
     const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
-    await gatewayServer.unstageGit(resolved.serverProjectId, input.paths)
+    await resolved.client.unstageGit(resolved.serverProjectId, input.paths)
   })
 
   ipcMain.handle(IPC.gitCommit, async (_event, rawProjectKey: unknown, rawMessage: unknown) => {
     const input = gitCommitRequestSchema.parse({ message: rawMessage })
     const resolved = await resolveServerProject(parseProjectKey(rawProjectKey))
-    return gatewayServer.commitGit(resolved.serverProjectId, input.message)
+    return resolved.client.commitGit(resolved.serverProjectId, input.message)
   })
 
   ipcMain.handle(IPC.gitWatch, async (event, rawProjectKey: unknown) => {
     const projectKey = parseProjectKey(rawProjectKey)
     const resolved = await resolveServerProject(projectKey)
-    gitStreams.watch(event.sender, resolved.recent.key, resolved.serverProjectId)
+    gitStreams.watch(event.sender, resolved.client, resolved.recent.key, resolved.serverProjectId)
   })
 
   ipcMain.handle(IPC.gitUnwatch, (event, rawProjectKey: unknown) => {

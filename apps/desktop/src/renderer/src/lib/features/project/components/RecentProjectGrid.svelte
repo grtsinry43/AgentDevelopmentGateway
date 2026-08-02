@@ -7,7 +7,7 @@
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import RecentProjectCard from './RecentProjectCard.svelte';
 
-	const projects = $derived(launcher.filtered);
+	const projects = $derived(launcher.localProjects);
 
 	/** 选中项滚进视野。键盘导航到列表底部时列表必须跟着走。 */
 	function scrollIntoView(node: HTMLElement, selected: boolean) {
@@ -41,6 +41,7 @@
 						launcher.setCursor(index);
 						void launcher.openSelected();
 					}}
+					oncontextmenu={(event) => launcher.openProjectMenu(event, project)}
 				/>
 			</div>
 		{/each}

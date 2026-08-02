@@ -2,6 +2,7 @@ import type { GitEvent } from '@agent-gateway/shared'
 import { PUSH_CHANNEL, type PushEvent } from '../../contract/bridge.js'
 
 interface ActiveGitStream {
+  client: GitStreamClient
   controller: AbortController
   projectId: string
   projectKey: string
@@ -30,15 +31,19 @@ export class GitStreamRegistry {
   private readonly active = new Map<string, ActiveGitStream>()
   private readonly observedWebContents = new Set<number>()
 
-  constructor(private readonly client: GitStreamClient) {}
-
-  watch(contents: GitStreamContents, projectKey: string, projectId: string): void {
+  watch(
+    contents: GitStreamContents,
+    client: GitStreamClient,
+    projectKey: string,
+    projectId: string
+  ): void {
     const key = streamKey(contents.id, projectKey)
     this.active.get(key)?.controller.abort()
     const controller = new AbortController()
     this.observeDestruction(contents)
     this.send(contents, { kind: 'git.stream', projectKey, state: 'connecting' })
     const entry: ActiveGitStream = {
+      client,
       controller,
       projectId,
       projectKey,
@@ -57,14 +62,14 @@ export class GitStreamRegistry {
   retry(contents: GitStreamContents, projectKey: string): void {
     const entry = this.active.get(streamKey(contents.id, projectKey))
     if (!entry) throw new Error('Git 事件流尚未启动')
-    this.watch(contents, entry.projectKey, entry.projectId)
+    this.watch(contents, entry.client, entry.projectKey, entry.projectId)
   }
 
   private async consume(contents: GitStreamContents, entry: ActiveGitStream): Promise<void> {
     let consecutiveFailures = 0
     while (!entry.controller.signal.aborted) {
       try {
-        for await (const event of this.client.gitEvents(
+        for await (const event of entry.client.gitEvents(
           entry.projectId,
           entry.controller.signal,
           () => {

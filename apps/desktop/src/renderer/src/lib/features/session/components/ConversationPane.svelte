@@ -1,28 +1,102 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import type { ExportRawItem } from '$contract/bridge';
+	import { appError } from '$lib/features/project/app-error.svelte';
+	import { desktop } from '$lib/shared/bridge/desktop';
 	import { cx } from '$lib/shared/utils/cx';
 	import { SESSION_STATUS, isLiveStatus } from '$lib/shared/utils/status';
 	import EmptyState from '$lib/ui/common/EmptyState.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import ResizeHandle from '$lib/ui/layout/ResizeHandle.svelte';
 	import Badge from '$lib/ui/primitives/Badge.svelte';
+	import Spinner from '$lib/ui/primitives/Spinner.svelte';
 	import type { SessionWorkspaceState } from '../session-workspace.svelte';
-	import AgentMarkdown from './AgentMarkdown.svelte';
+	import Button from '$lib/ui/primitives/Button.svelte';
+	import ContextMenu, { type ContextMenuItem } from '$lib/ui/primitives/ContextMenu.svelte';
 	import AgentWorkingIndicator from './AgentWorkingIndicator.svelte';
-	import ChangeSetBlock from './ChangeSetBlock.svelte';
-	import ReasoningBlock from './ReasoningBlock.svelte';
+	import ConversationTranscript from './ConversationTranscript.svelte';
 	import SessionComposer from './SessionComposer.svelte';
-	import SubagentRunBlock from './SubagentRunBlock.svelte';
-	import ToolCallBlock from './ToolCallBlock.svelte';
 
 	interface Props {
 		workspace: SessionWorkspaceState;
+		projectName?: string;
 	}
 
-	let { workspace }: Props = $props();
+	let { workspace, projectName = '' }: Props = $props();
 	let transcript: HTMLDivElement | undefined = $state();
 	let pinnedToBottom = $state(true);
 	let composerHeight = $state(160);
+
+	/** 对话右键菜单:选中文本后 复制 / 引用到输入框。 */
+	let selectionMenu = $state<{ x: number; y: number; text: string } | undefined>(undefined);
+
+	function handleContextMenu(event: MouseEvent): void {
+		const selected = window.getSelection()?.toString().trim();
+		if (!selected) return;
+		event.preventDefault();
+		selectionMenu = { x: event.clientX, y: event.clientY, text: selected };
+	}
+
+	async function copySelection(text: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			/* 剪贴板不可用时静默失败 */
+		}
+	}
+
+	const selectionMenuItems = $derived.by<ContextMenuItem[]>(() => {
+		if (!selectionMenu) return [];
+		return [
+			{ label: '复制', icon: 'copy', run: () => void copySelection(selectionMenu!.text) },
+			{
+				label: '引用到输入框',
+				icon: 'plus',
+				run: () => workspace.appendComposerQuote(selectionMenu!.text)
+			}
+		];
+	});
+
+	// ── 单条消息复制 ─────────────────────────────────────────────────────
+	let copiedId = $state<string | undefined>(undefined);
+	let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function copyMessage(text: string, id: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(text);
+			copiedId = id;
+			if (copyResetTimer) clearTimeout(copyResetTimer);
+			copyResetTimer = setTimeout(() => (copiedId = undefined), 1_200);
+		} catch {
+			/* 剪贴板不可用 */
+		}
+	}
+
+	// ── 导出:打开导出对话框窗口(预览 + 选格式) ──────────────────────────
+	let exporting = $state(false);
+
+	async function openExport(): Promise<void> {
+		if (exporting) return;
+		exporting = true;
+		try {
+			await desktop.export.conversation({
+				projectName,
+				sessionTitle: workspace.selectedSession?.title,
+				adapterId: workspace.selectedSession?.adapterId,
+				items: buildExportItems()
+			});
+		} catch (cause) {
+			appError.show(cause);
+		} finally {
+			exporting = false;
+		}
+	}
+
+	function buildExportItems(): ExportRawItem[] {
+		// 直接带完整 timeline,不裁剪 —— 推理时长、工具入参/出参、changeSet 全保留,
+		// 导出页用真实组件渲染,状态与界面一致。
+		return workspace.timeline as unknown as ExportRawItem[];
+	}
 
 	const sessionVisual = $derived(
 		workspace.selectedSession ? SESSION_STATUS[workspace.selectedSession.status] : undefined
@@ -91,9 +165,16 @@
 			</button>
 		{/if}
 		<div class="min-w-0 flex-1">
-			<p class="truncate text-xs text-strong">
-				{workspace.selectedSubagent?.title ?? workspace.selectedSession?.title ?? '新建会话'}
-			</p>
+			{#if workspace.selectedSession && workspace.isTitleSyncing(workspace.selectedSession.id)}
+				<p class="flex items-center gap-1.5 text-xs text-faint">
+					<Spinner size="sm" label="正在生成标题" />
+					<span class="truncate">正在生成标题…</span>
+				</p>
+			{:else}
+				<p class="truncate text-xs text-strong">
+					{workspace.selectedSubagent?.title ?? workspace.selectedSession?.title ?? '新建会话'}
+				</p>
+			{/if}
 			{#if workspace.selectedSubagent}
 				<p class="truncate font-mono text-2xs text-faint">
 					子代理 · {workspace.selectedSubagent.agentName ??
@@ -111,6 +192,18 @@
 				{sessionVisual.label}
 			</Badge>
 		{/if}
+		<Button
+			variant="icon"
+			size="sm"
+			title="导出对话"
+			loading={exporting}
+			disabled={workspace.timeline.length === 0}
+			onclick={() => void openExport()}
+		>
+			{#snippet icon()}
+				<Icon name="download" size={12} />
+			{/snippet}
+		</Button>
 	</header>
 
 	{#if connectionNotice}
@@ -146,7 +239,10 @@
 		<div
 			bind:this={transcript}
 			class="scroll-thin min-h-0 flex-1 overflow-y-auto"
+			role="region"
+			aria-label="会话内容"
 			onscroll={updateScrollPin}
+			oncontextmenu={handleContextMenu}
 		>
 			{#if workspace.timeline.length === 0}
 				<EmptyState
@@ -160,44 +256,12 @@
 				</EmptyState>
 			{:else}
 				<div class="mx-auto w-full max-w-3xl px-5 py-4">
-					{#each workspace.timeline as item (item.id)}
-						{#if item.itemKind === 'subagent'}
-							<SubagentRunBlock {item} {workspace} />
-						{:else if item.itemKind === 'tool'}
-							<ToolCallBlock {item} />
-						{:else if item.itemKind === 'changes'}
-							<ChangeSetBlock {item} />
-						{:else if item.contentKind === 'reasoning'}
-							<ReasoningBlock
-								text={item.text}
-								streaming={item.streaming}
-								durationMs={item.durationMs}
-							/>
-						{:else}
-							<article
-								class={cx(
-									'content-auto selectable border-b border-subtle py-3 last:border-b-0',
-									item.role === 'user' && 'font-mono'
-								)}
-							>
-								<div
-									class="mb-1 flex items-center gap-2 text-2xs tracking-wide text-faint uppercase"
-								>
-									<span>{item.role === 'user' ? 'You' : 'Agent'}</span>
-									{#if item.streaming}
-										<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-status-running"></span>
-									{/if}
-								</div>
-								{#if item.role === 'assistant'}
-									<AgentMarkdown content={item.text || (item.streaming ? '…' : '')} />
-								{:else}
-									<p class="text-sm leading-6 whitespace-pre-wrap text-normal">
-										{item.text || (item.streaming ? '…' : '')}
-									</p>
-								{/if}
-							</article>
-						{/if}
-					{/each}
+					<ConversationTranscript
+						items={workspace.timeline}
+						{workspace}
+						onCopy={copyMessage}
+						{copiedId}
+					/>
 					{#if showWorkingIndicator}
 						<AgentWorkingIndicator />
 					{/if}
@@ -216,3 +280,12 @@
 		{/key}
 	{/if}
 </section>
+
+{#if selectionMenu}
+	<ContextMenu
+		x={selectionMenu.x}
+		y={selectionMenu.y}
+		items={selectionMenuItems}
+		onclose={() => (selectionMenu = undefined)}
+	/>
+{/if}

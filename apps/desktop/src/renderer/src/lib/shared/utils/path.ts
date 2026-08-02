@@ -57,12 +57,17 @@ export function projectKey(hostId: string, path: string): string {
 	return `${hostId}:${path.replace(/[/\\]+$/, '')}`;
 }
 
-/** 展示用标签:`~/AgentDevelopmentGateway @local`。 */
+/**
+ * 展示用标签:`~/project` 或(远程)`~/project @192.168.1.6`。
+ * hostLabel 是**已经加工好的展示主机**(hostname/IP/域名);本地工程传空则无 `@` 后缀。
+ * 工程内部身份用的 hostId(服务端 UUID)不该出现在这里。
+ */
 export function projectLabel(
-	hostId: string,
 	path: string,
 	homeDir?: string,
-	maxSegments = 4
+	maxSegments = 4,
+	hostLabel?: string
 ): string {
-	return `${shortenPath(tildify(path, homeDir), maxSegments)} @${hostId}`;
+	const base = shortenPath(tildify(path, homeDir), maxSegments);
+	return hostLabel ? `${base} @${hostLabel}` : base;
 }

@@ -266,8 +266,51 @@ export class SessionService {
   }
 
   async setTitle(id: string, body: SetSessionTitleBody): Promise<SessionControlResult> {
-    const sessionId = this.requireActive(id)
-    return this.runtime.renameSession(sessionId, body.title, body)
+    const stored = this.requireStored(id)
+    if (this.isActive(stored.session.id)) {
+      return this.runtime.renameSession(stored.session.id, body.title, body)
+    }
+    // Closed/archived session: the provider session is gone, so persist the title in the
+    // gateway store (authoritative) + a durable event so resume/restart keep the rename.
+    if (
+      body.expectedRevision !== undefined &&
+      body.expectedRevision !== stored.session.controlRevision
+    ) {
+      throw new GatewayHttpError(
+        409,
+        'SESSION_REVISION_CONFLICT',
+        `Session revision is ${stored.session.controlRevision}, expected ${body.expectedRevision}`
+      )
+    }
+    const previousEvents = this.eventsRepository.listAfter(id)
+    const now = Date.now()
+    const controlRevision = stored.session.controlRevision + 1
+    const sequence =
+      this.eventsRepository.durableCursor(id, stored.session.lastEventSequence) + 1
+    const session: AgentSession = {
+      ...stored.session,
+      title: body.title,
+      controlRevision,
+      lastEventSequence: sequence,
+      updatedAt: now
+    }
+    this.repository.updateSnapshot(
+      session,
+      stored.capabilities,
+      stored.taskState,
+      stored.subagentRuns,
+      stored.inputQueue
+    )
+    this.eventsRepository.append({
+      id: (previousEvents.at(-1)?.id ?? 0) + 1,
+      sequence,
+      sessionId: session.id,
+      adapterId: session.adapterId,
+      timestamp: now,
+      type: 'session.title_changed',
+      payload: { title: body.title, source: 'user' }
+    })
+    return { controlRevision }
   }
 
   async setModel(id: string, body: SetSessionModelBody): Promise<SessionControlResult> {

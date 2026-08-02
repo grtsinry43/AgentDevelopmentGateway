@@ -24,6 +24,7 @@ export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
     'work-mode.plan': true,
     'task.todo': true,
     'context.session_injection': true,
+    'session.rename': true,
   },
   raw: [],
 }

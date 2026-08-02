@@ -1,0 +1,36 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Agent Development Gateway 应用图标(浅色系,对齐设计系统 ink/jade)。
+       概念:AI sparkle 嵌在门户环里。环用渐变 + 透明度,有层次不是死板白环。 -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#fafaf9"/>
+      <stop offset="1" stop-color="#e7e5e4"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#99f6e4" stop-opacity="0.95"/>
+      <stop offset="0.55" stop-color="#d6d3d1" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#78716c" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="976" height="976" rx="236" fill="url(#tile)"/>
+  <circle cx="512" cy="512" r="330" fill="#2dd4bf" fill-opacity="0.14"/>
+
+  <!-- 门户环:渐变描边,上浅下深,非死板白环 -->
+  <rect x="188" y="188" width="648" height="648" rx="176" fill="none" stroke="url(#ring)" stroke-width="20"/>
+
+  <!-- AI sparkle:jade 强调 -->
+  <path d="M512 222 L620 404 L802 512 L620 620 L512 802 L404 620 L222 512 L404 404 Z"
+        fill="url(#spark)"/>
+
+  <!-- 右上角小 sparkle(ink) -->
+  <path d="M742 268 L780 330 L842 368 L780 406 L742 468 L704 406 L642 368 L704 330 Z"
+        fill="#57534e" fill-opacity="0.85"/>
+
+  <!-- 主节点高光 -->
+  <circle cx="462" cy="462" r="40" fill="#ffffff" fill-opacity="0.4"/>
+</svg>

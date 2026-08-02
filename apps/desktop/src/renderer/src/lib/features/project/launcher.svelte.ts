@@ -16,9 +16,9 @@
  */
 
 import { pushBus } from '$lib/shared/bridge/events';
+import type { HostProfile } from '$contract/hosts';
 import {
-	addProject,
-	draftToInput,
+	createProjectFromDraft,
 	listRecentProjects,
 	openProject,
 	removeProject,
@@ -49,7 +49,13 @@ class LauncherStore {
 		);
 	});
 
-	readonly selected = $derived<RecentProject | undefined>(this.filtered[this.cursor]);
+	/** 「最近工程」区只放本地工程;远程工程按 host 分组放远程区。 */
+	readonly localProjects = $derived(
+		this.filtered.filter((project) => project.hostType === 'local')
+	);
+	readonly remoteProjects = $derived(this.filtered.filter((project) => project.hostType === 'ssh'));
+
+	readonly selected = $derived<RecentProject | undefined>(this.localProjects[this.cursor]);
 
 	/** 首屏加载。异步,不阻塞渲染 —— UI 先出骨架,数据到了再填。 */
 	async load(): Promise<void> {
@@ -86,7 +92,7 @@ class LauncherStore {
 		this.projects = next;
 
 		if (previousKey) {
-			const index = this.filtered.findIndex((item) => item.key === previousKey);
+			const index = this.localProjects.findIndex((item) => item.key === previousKey);
 			if (index >= 0) {
 				this.cursor = index;
 				return;
@@ -103,7 +109,7 @@ class LauncherStore {
 
 	/** 移动光标。到边界就停,不循环 —— 循环在长列表里会让人失去位置感。 */
 	moveCursor(delta: number): void {
-		const count = this.filtered.length;
+		const count = this.localProjects.length;
 		if (count === 0) return;
 		this.cursor = Math.min(count - 1, Math.max(0, this.cursor + delta));
 	}
@@ -113,15 +119,24 @@ class LauncherStore {
 		this.clampCursor();
 	}
 
-	/** 包一层:统一 busy 标记与错误呈现,避免每个动作重复 try/catch。 */
+	/** 操作类错误(打开工程/连接失败/删除失败等)。弹窗展示,不占列表区。 */
+	actionError = $state<string | undefined>(undefined);
+
+	dismissActionError(): void {
+		this.actionError = undefined;
+	}
+
+	/**
+	 * 包一层:统一 busy 标记与错误呈现,避免每个动作重复 try/catch。
+	 * 动作失败进 actionError(弹窗),不写 this.error —— 列表区的 error 只属于首屏读取。
+	 */
 	async #run(action: () => Promise<void>): Promise<void> {
 		if (this.busy) return;
 		this.busy = true;
-		this.error = undefined;
 		try {
 			await action();
 		} catch (cause) {
-			this.error = cause instanceof Error ? cause.message : String(cause);
+			this.actionError = cause instanceof Error ? cause.message : String(cause);
 		} finally {
 			this.busy = false;
 		}
@@ -130,12 +145,25 @@ class LauncherStore {
 	openSelected(): Promise<void> {
 		const project = this.selected;
 		if (!project) return Promise.resolve();
-		return this.#run(() => openProject(project.key));
+		return this.#run(() => this.#open(project.key, project.name));
+	}
+
+	/** 正在打开的工程(远程项目连接/provision 期间显示提示层)。 */
+	openingProject = $state<string | undefined>(undefined);
+
+	async #open(key: string, name: string | undefined): Promise<void> {
+		this.openingProject = name;
+		try {
+			await openProject(key);
+		} finally {
+			this.openingProject = undefined;
+		}
 	}
 
 	create(draft: ProjectDraft): Promise<void> {
 		return this.#run(async () => {
-			const created = await addProject(draftToInput(draft));
+			// ssh + 新主机时会先保存主机,再 provision(探测/上传/启动/隧道),最后建工程。
+			const created = await createProjectFromDraft(draft);
 			// 直接打开,不让用户再点一次 —— 新建的意图就是要进去
 			await openProject(created.key);
 		});
@@ -156,8 +184,54 @@ class LauncherStore {
 
 	/** 过滤/删除后光标可能越界,收敛到有效范围。 */
 	clampCursor(): void {
-		const count = this.filtered.length;
+		const count = this.localProjects.length;
 		this.cursor = count === 0 ? 0 : Math.min(this.cursor, count - 1);
+	}
+
+	// ── 右键上下文菜单 ────────────────────────────────────────────────
+
+	context = $state.raw<
+		| { x: number; y: number; kind: 'project'; project: RecentProject }
+		| { x: number; y: number; kind: 'remote-project'; project: RecentProject }
+		| { x: number; y: number; kind: 'host'; host: HostProfile }
+		| undefined
+	>(undefined);
+
+	openProjectMenu(event: MouseEvent, project: RecentProject, remote = false): void {
+		event.preventDefault();
+		this.context = {
+			x: event.clientX,
+			y: event.clientY,
+			kind: remote ? 'remote-project' : 'project',
+			project
+		};
+	}
+
+	openHostMenu(event: MouseEvent, host: HostProfile): void {
+		event.preventDefault();
+		this.context = { x: event.clientX, y: event.clientY, kind: 'host', host };
+	}
+
+	closeContextMenu(): void {
+		this.context = undefined;
+	}
+
+	/** 打开任意工程(远程区点项目也用这个)。 */
+	openProject(key: string): Promise<void> {
+		return this.#run(async () => {
+			const project = this.projects.find((entry) => entry.key === key);
+			await this.#open(key, project?.name);
+		});
+	}
+
+	/** 删除任意工程。 */
+	removeProject(key: string): Promise<void> {
+		return this.#run(() => removeProject(key));
+	}
+
+	/** 置顶/取消置顶任意工程。 */
+	togglePinProject(key: string): Promise<void> {
+		return this.#run(() => togglePinProject(key));
 	}
 }
 

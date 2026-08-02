@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { filePreview } from '$lib/features/files/file-preview.svelte';
+	import { settings } from '$lib/shared/settings/settings.svelte';
 	import { cx } from '$lib/shared/utils/cx';
 	import { TOOL_STATUS } from '$lib/shared/utils/status';
 	import type { ConversationToolCall } from '../projection';
-	import { DEFAULT_EXPAND_FILE_TOOL_DIFF } from '../preferences';
 	import DiffViewer from './DiffViewer.svelte';
 	import ToolActivityText from './ToolActivityText.svelte';
 	import ToolCallLeadingIcons from './ToolCallLeadingIcons.svelte';
@@ -39,7 +39,7 @@
 	}
 </script>
 
-<details class="group my-1 text-xs" open={DEFAULT_EXPAND_FILE_TOOL_DIFF}>
+<details class="group my-1 text-xs" open={settings.expandFileToolDiff}>
 	<summary
 		class="flex h-7 cursor-pointer list-none items-center gap-1.5 rounded-default px-1.5 text-muted marker:hidden hover:bg-surface-hover"
 	>

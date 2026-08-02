@@ -1,7 +1,10 @@
 import { registerContextProfileHandlers } from './context-profiles.js'
+import { registerExportIpc } from '../export/manager.js'
 import { registerFileHandlers } from './files.js'
 import { registerGitHandlers } from './git.js'
+import { registerHostHandlers } from './hosts.js'
 import { registerLayoutHandlers, registerProjectHandlers } from './projects.js'
+import { registerRemoteHandlers } from './remote.js'
 import { registerSessionHandlers } from './sessions.js'
 import { registerSystemHandlers, registerWindowHandlers } from './system.js'
 import { registerTerminalHandlers } from './terminals.js'
@@ -11,6 +14,9 @@ export function registerIpcHandlers(): void {
   registerSystemHandlers()
   registerWindowHandlers()
   registerProjectHandlers()
+  registerHostHandlers()
+  registerRemoteHandlers()
+  registerExportIpc()
   registerSessionHandlers()
   registerFileHandlers()
   registerGitHandlers()

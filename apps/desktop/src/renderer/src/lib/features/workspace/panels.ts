@@ -7,6 +7,7 @@
  */
 
 import { registerPanel } from '$lib/shared/registry/panels';
+import RemoteLogPanel from '$lib/features/remote/components/RemoteLogPanel.svelte';
 import ChangesPanel from './panels/ChangesPanel.svelte';
 import FilePreviewPanel from './panels/FilePreviewPanel.svelte';
 import PortsPanel from './panels/PortsPanel.svelte';
@@ -63,6 +64,16 @@ export function registerWorkspacePanels(): void {
 		title: '端口',
 		icon: 'server',
 		component: PortsPanel,
+		presence: 'persistent'
+	});
+
+	registerPanel({
+		type: 'remoteLog',
+		title: '远程日志',
+		icon: 'log',
+		component: RemoteLogPanel,
+		requiresRemote: true,
+		contentOverflow: 'hidden',
 		presence: 'persistent'
 	});
 }

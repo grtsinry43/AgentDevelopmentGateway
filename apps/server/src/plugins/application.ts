@@ -1,6 +1,7 @@
 import type { RuntimeAdapter } from '@agent-gateway/core'
 import { AdapterRegistry, RuntimeSessionManager } from '@agent-gateway/runtime'
 import type { FastifyPluginAsync } from 'fastify'
+import { hostFilesRoutes } from '../features/host-files/routes.js'
 import { workspaceFileRoutes } from '../features/files/routes.js'
 import { WorkspaceFileService } from '../features/files/service.js'
 import { WorkspaceFileWatchHub } from '../features/files/watch-hub.js'
@@ -11,7 +12,7 @@ import { GitWatchHub } from '../features/git/watch-hub.js'
 import { ProjectRepository } from '../features/projects/repository.js'
 import { projectRoutes } from '../features/projects/routes.js'
 import { ProjectService } from '../features/projects/service.js'
-import { ServerIdentityRepository } from '../features/server/repository.js'
+import { ServerIdentityRepository, type ServerIdentity } from '../features/server/repository.js'
 import { serverRoutes } from '../features/server/routes.js'
 import { SessionRepository } from '../features/sessions/repository.js'
 import { SessionEventRepository } from '../features/sessions/event-repository.js'
@@ -27,6 +28,8 @@ export interface ApplicationPluginOptions {
   adapters: RuntimeAdapter[]
   databasePath: string
   environment: Record<string, string>
+  /** 启动入口需要 hostId 写 runtime.json / 哨兵行,插件创建身份后回传。 */
+  onServerIdentity?: (identity: ServerIdentity) => void
   terminalPtyFactory?: TerminalPtyFactory
   terminalRetentionMs?: number
   terminalOutputBufferBytes?: number
@@ -38,6 +41,7 @@ export const applicationPlugin: FastifyPluginAsync<ApplicationPluginOptions> = a
 ) => {
   const database = openGatewayDatabase(options.databasePath)
   const identity = new ServerIdentityRepository(database).getOrCreate()
+  options.onServerIdentity?.(identity)
   const projectsRepository = new ProjectRepository(database)
   const sessionsRepository = new SessionRepository(database)
   const sessionEventsRepository = new SessionEventRepository(database)
@@ -97,6 +101,7 @@ export const applicationPlugin: FastifyPluginAsync<ApplicationPluginOptions> = a
   })
 
   await server.register(serverRoutes, { identity, prefix: '/api/v1' })
+  await server.register(hostFilesRoutes, { prefix: '/api/v1' })
   await server.register(projectRoutes, { projects, prefix: '/api/v1' })
   await server.register(workspaceFileRoutes, {
     files,

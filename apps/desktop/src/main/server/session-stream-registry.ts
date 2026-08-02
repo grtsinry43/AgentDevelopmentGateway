@@ -38,12 +38,14 @@ export class SessionStreamRegistry {
   private readonly active = new Map<string, ActiveStream>()
   private readonly observedWebContents = new Set<number>()
 
-  constructor(
-    private readonly client: SessionStreamClient,
-    private readonly retry: SessionStreamRetryOptions = DEFAULT_RETRY_OPTIONS
-  ) {}
+  constructor(private readonly retry: SessionStreamRetryOptions = DEFAULT_RETRY_OPTIONS) {}
 
-  watch(contents: StreamContents, sessionId: string, afterSequence: number): void {
+  watch(
+    contents: StreamContents,
+    client: SessionStreamClient,
+    sessionId: string,
+    afterSequence: number
+  ): void {
     const key = streamKey(contents.id, sessionId)
     this.active.get(key)?.controller.abort()
 
@@ -53,9 +55,11 @@ export class SessionStreamRegistry {
 
     const entry: ActiveStream = {
       controller,
-      task: this.consume(contents, sessionId, afterSequence, controller.signal).finally(() => {
-        if (this.active.get(key) === entry) this.active.delete(key)
-      })
+      task: this.consume(contents, client, sessionId, afterSequence, controller.signal).finally(
+        () => {
+          if (this.active.get(key) === entry) this.active.delete(key)
+        }
+      )
     }
     this.active.set(key, entry)
   }
@@ -66,6 +70,7 @@ export class SessionStreamRegistry {
 
   private async consume(
     contents: StreamContents,
+    client: SessionStreamClient,
     sessionId: string,
     afterSequence: number,
     signal: AbortSignal
@@ -75,7 +80,7 @@ export class SessionStreamRegistry {
 
     while (!signal.aborted) {
       try {
-        for await (const event of this.client.events(sessionId, cursor, signal, {
+        for await (const event of client.events(sessionId, cursor, signal, {
           onOpen: () => {
             this.send(contents, { kind: 'session.stream', sessionId, state: 'connected' })
           },
@@ -93,7 +98,7 @@ export class SessionStreamRegistry {
         }
         if (signal.aborted) return
 
-        const session = await this.client.session(sessionId)
+        const session = await client.session(sessionId)
         if (!isLiveSessionStatus(session.status)) {
           this.send(contents, { kind: 'session.stream', sessionId, state: 'closed' })
           return

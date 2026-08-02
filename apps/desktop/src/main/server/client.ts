@@ -31,7 +31,9 @@ import {
   setSessionModelRequestSchema,
   setSessionTitleRequestSchema,
   setWorkModeRequestSchema,
+  hostDirectoryResponseSchema,
   serverInfoSchema,
+  serverStatusSchema,
   sessionListResponseSchema,
   sessionSchema,
   workspaceDirectoryResponseSchema,
@@ -50,6 +52,8 @@ import {
   type GatewayModelCatalog,
   type GatewayProject,
   type GatewayServerInfo,
+  type HostDirectoryResponse,
+  type ServerStatus,
   type GatewaySession,
   type GitChangeArea,
   type GitCommitResponse,
@@ -96,10 +100,31 @@ export class GatewayServerError extends Error {
 }
 
 export class GatewayServerClient {
-  constructor(private readonly baseUrl = LOCAL_SERVER_URL) {}
+  constructor(
+    private readonly baseUrl = LOCAL_SERVER_URL,
+    private readonly authToken?: string
+  ) {}
 
   serverInfo(): Promise<GatewayServerInfo> {
     return this.request('/api/v1/server', serverInfoSchema)
+  }
+
+  /** 主机运行状态(资源占用 + 版本),远程连接状态面板用。 */
+  serverStatus(): Promise<ServerStatus> {
+    return this.request('/api/v1/server/status', serverStatusSchema)
+  }
+
+  /** 浏览主机目录(新建远程工程选工程根)。 */
+  hostDirectory(path: string): Promise<HostDirectoryResponse> {
+    return this.request(
+      `/api/v1/host/files?path=${encodeURIComponent(path)}`,
+      hostDirectoryResponseSchema
+    )
+  }
+
+  /** 远程 server 启用 token 认证时,所有 /api 请求(含 WS upgrade)都要带。 */
+  webSocketHeaders(): Record<string, string> {
+    return this.authToken ? { authorization: `Bearer ${this.authToken}` } : {}
   }
 
   async ensureProject(path: string, name?: string): Promise<GatewayProject> {
@@ -212,7 +237,7 @@ export class GatewayServerClient {
   ): AsyncGenerator<GitEvent> {
     const response = await net.fetch(
       `${this.baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/git/events`,
-      { signal, headers: { accept: 'text/event-stream' } }
+      { signal, headers: { accept: 'text/event-stream', ...this.webSocketHeaders() } }
     )
     if (!response.ok) throw await this.responseError(response)
     if (!response.body) throw new Error('Server returned an empty Git event stream')
@@ -271,7 +296,7 @@ export class GatewayServerClient {
   ): AsyncGenerator<WorkspaceFileEvent> {
     const response = await net.fetch(
       `${this.baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/files/subscriptions/${encodeURIComponent(subscriptionId)}/events`,
-      { signal, headers: { accept: 'text/event-stream' } }
+      { signal, headers: { accept: 'text/event-stream', ...this.webSocketHeaders() } }
     )
     if (!response.ok) throw await this.responseError(response)
     if (!response.body) throw new Error('Server returned an empty workspace file event stream')
@@ -407,7 +432,7 @@ export class GatewayServerClient {
   ): AsyncGenerator<RuntimeEventWire> {
     const response = await net.fetch(
       `${this.baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/events?after=${afterSequence}`,
-      { signal, headers: { accept: 'text/event-stream' } }
+      { signal, headers: { accept: 'text/event-stream', ...this.webSocketHeaders() } }
     )
     if (!response.ok) throw await this.responseError(response)
     if (!response.body) throw new Error('Server returned an empty Session event stream')
@@ -424,9 +449,9 @@ export class GatewayServerClient {
     const response = await net.fetch(`${this.baseUrl}${path}`, {
       method: options.method ?? 'GET',
       ...(options.body === undefined
-        ? {}
+        ? { headers: { ...this.webSocketHeaders() } }
         : {
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', ...this.webSocketHeaders() },
             body: JSON.stringify(options.body)
           })
     })
@@ -441,8 +466,11 @@ export class GatewayServerClient {
     const response = await net.fetch(`${this.baseUrl}${path}`, {
       method: options.method,
       ...(options.body === undefined
-        ? {}
-        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(options.body) })
+        ? { headers: { ...this.webSocketHeaders() } }
+        : {
+            headers: { 'content-type': 'application/json', ...this.webSocketHeaders() },
+            body: JSON.stringify(options.body)
+          })
     })
     if (!response.ok) throw await this.responseError(response)
   }
