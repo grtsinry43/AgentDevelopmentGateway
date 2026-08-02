@@ -1,183 +1,213 @@
 <script lang="ts">
 	/**
-	 * 抖色圆角格阵 —— 环境装饰。
+	 * 克制版字符雨 —— 环境装饰。
 	 *
-	 * 参考 cradle-app 的 `DitheredGradientDecoration`(canvas-art.tsx),用 Svelte 5 重写。
-	 * 关键取舍(与 cradle 一致的部分,都是有理由的):
+	 * 结构仿经典 Matrix 数字雨(列内字符、头亮尾变、块级刷新),
+	 * 视觉压到中性灰 + 低存在感,避免霓虹绿或「水珠淌屏」。
 	 *
-	 *   - **canvas 而非 DOM**:上千个格子用 div 会造出上千个布局节点,滚动与 blur
-	 *     会立刻掉帧。canvas 一次性绘制,且鼠标光晕只需重绘不需回流。
-	 *   - **位置稳定的抖色**:格子的明暗由 `(col,row)` 的确定性哈希决定,而不是
-	 *     `Math.random()`。否则窗口一 resize 整片图案就会重新洗牌,像故障。
-	 *   - **底部渐隐**:用 `destination-out` 合成擦掉底部,让格阵融进内容区,
-	 *     而不是硬生生截断。
-	 *   - **不可见就不画**:IntersectionObserver + visibilitychange,窗口切后台
-	 *     就停手 —— 装饰不该在用户看不见的时候烧 CPU。
-	 *
+	 * 性能:canvas、约 30fps、不可见停画;只维护活跃列的短缓冲。
 	 * 纯装饰,`pointer-events-none` + `aria-hidden`。
 	 */
 	import { cx } from '$lib/shared/utils/cx';
 	import { theme } from '$lib/shared/theme/theme.svelte';
 
 	interface Props {
-		/**
-		 * 行数。给定时画布高度固定为 `rows * (cellSize + gap)`;
-		 * 省略则铺满父容器高度(父容器需要有确定高度,比如 `absolute inset-0`)。
-		 */
 		rows?: number;
+		/** 列宽/字号基准(px)。 */
 		cellSize?: number;
 		gap?: number;
-		/** 格子圆角。这是「圆角矩形格」观感的来源。 */
+		/** 兼容旧调用,字符雨忽略圆角。 */
 		radius?: number;
-		/** 鼠标光晕半径(px)。0 表示不响应鼠标。 */
-		glowRadius?: number;
-		/** 可见格子占比 0-1。越低越稀疏。 */
+		/** 活跃列占比 0-1。 */
 		density?: number;
-		/** 底部渐隐。外层已用 mask 收边时应关掉,免得叠两层衰减。 */
+		trailMin?: number;
+		trailMax?: number;
 		fadeBottom?: boolean;
-		/** 从 window 而非 canvas 取鼠标位置 —— 格阵在底层且被内容盖住时需要。 */
-		trackGlobal?: boolean;
-		/** 关闭后停止重绘(比如窗口失焦)。 */
 		active?: boolean;
-		/** 色调。accent 会带上主色的色度。 */
 		tone?: 'neutral' | 'accent';
 		class?: string;
 	}
 
 	let {
 		rows,
-		cellSize = 10,
-		gap = 3,
-		radius = 2.5,
-		glowRadius = 130,
-		density = 0.45,
+		cellSize = 11,
+		gap = 2,
+		density = 0.35,
+		trailMin = 10,
+		trailMax = 18,
 		fadeBottom = true,
-		trackGlobal = false,
 		active = true,
 		tone = 'neutral',
 		class: className
 	}: Props = $props();
 
 	const step = $derived(cellSize + gap);
-	/** 固定高度模式下的 CSS 高度;自适应模式为 undefined(由父容器决定)。 */
 	const fixedHeight = $derived(rows === undefined ? undefined : rows * step);
+	const FRAME_MS = 1000 / 30;
 
-	/** 明度阶梯。索引 0 = 不绘制。 */
-	const LIGHTNESS = {
-		light: [0, 0.9, 0.82, 0.72, 0.62],
-		dark: [0, 0.22, 0.3, 0.4, 0.52]
-	} as const;
+	// 拉丁字母 + 数字 + 少量符号(不用片假名/CJK,避免和 UI 中文抢字形气质)
+	const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123456789:.=*+<>/\\|';
 
-	interface Cell {
-		x: number;
-		y: number;
-		cx: number;
-		cy: number;
-		light: number;
-		dark: number;
+	const TONE_DARK = [0, 0.2, 0.32, 0.46, 0.7] as const;
+	const TONE_LIGHT = [0, 0.8, 0.64, 0.5, 0.34] as const;
+	const TONE_ALPHA = [0, 0.38, 0.52, 0.68, 0.88] as const;
+
+	interface Drop {
+		col: number;
+		headRow: number;
+		speed: number;
+		/** 每格字符。 */
+		glyphs: string[];
+		/** 每格明度档 0–4;0 = 空隙。 */
+		tones: number[];
+		mutateIn: number;
 	}
 
-	/**
-	 * 确定性哈希。同样的 (col,row) 永远得到同样的值 —— 这是「resize 不洗牌」的关键。
-	 * 经典的 sin-fract 技巧,够随机且无需存种子表。
-	 */
-	function hash(col: number, row: number): number {
-		const value = Math.sin(col * 127.1 + row * 311.7) * 43758.5453;
+	function hash(col: number, salt: number): number {
+		const value = Math.sin(col * 127.1 + salt * 311.7) * 43758.5453;
 		return value - Math.floor(value);
 	}
 
-	function buildCells(cols: number, rowCount: number): Cell[] {
-		const out: Cell[] = [];
-		const levels = LIGHTNESS.light.length - 1;
-
-		for (let row = 0; row < rowCount; row += 1) {
-			for (let col = 0; col < cols; col += 1) {
-				const roll = hash(col, row);
-				if (roll > density) continue;
-
-				// 在可见的格子里再分明度档位,制造抖色质感而不是均匀一片
-				const level = 1 + Math.floor((roll / density) * levels * 0.999);
-				const x = col * step;
-				const y = row * step;
-
-				out.push({
-					x,
-					y,
-					cx: x + cellSize / 2,
-					cy: y + cellSize / 2,
-					light: LIGHTNESS.light[level] ?? 0,
-					dark: LIGHTNESS.dark[level] ?? 0
-				});
-			}
-		}
-		return out;
+	function pickGlyph(col: number, salt: number): string {
+		const idx = Math.floor(hash(col, salt) * GLYPHS.length) % GLYPHS.length;
+		return GLYPHS[idx] ?? '0';
 	}
 
-	function fill(lightness: number): string {
-		// oklch:明度与色度解耦,光晕过渡不会串色。accent 带一点主色色度。
+	function rollTone(col: number, salt: number, forHead: boolean): number {
+		const r = hash(col, salt);
+		if (forHead) return 4;
+		if (r < 0.1) return 0;
+		if (r < 0.38) return 1;
+		if (r < 0.7) return 2;
+		return 3;
+	}
+
+	function fill(lightness: number, alpha: number): string {
+		const a = Math.max(0, Math.min(1, alpha)).toFixed(3);
 		return tone === 'accent'
-			? `oklch(${lightness.toFixed(3)} 0.06 180)`
-			: `oklch(${lightness.toFixed(3)} 0 0)`;
+			? `oklch(${lightness.toFixed(3)} 0.05 180 / ${a})`
+			: `oklch(${lightness.toFixed(3)} 0 0 / ${a})`;
 	}
 
-	/**
-	 * attachment 内部的重绘触发器。canvas 的像素不是响应式的,主题切换时必须显式
-	 * 重画一次 —— 把 schedule 提出来给下面的 `$effect` 用,比往元素上 dispatch
-	 * 假事件干净。
-	 */
-	let requestRepaint: (() => void) | null = null;
+	let kick: (() => void) | null = null;
 
-	/**
-	 * 绘制与生命周期。用 `{@attach}` 而不是 `$effect` + bind:this —— attachment 的
-	 * 生命周期直接绑在元素上,元素换了自动重建,不用手动比对。
-	 */
 	function paint(node: HTMLCanvasElement) {
 		const ctx = node.getContext('2d');
 		if (!ctx) return;
 
-		let cells: Cell[] = [];
+		let drops: Drop[] = [];
 		let cols = 0;
-		let rowCount = 0;
 		let width = 0;
 		let height = 0;
 		let visible = true;
 		let frame = 0;
-		const mouse = { x: -9999, y: -9999 };
+		let lastTs = 0;
+		let accum = 0;
+		let tickSalt = 0;
 
-		const render = (): void => {
-			frame = 0;
+		const seedDrop = (col: number, atTop: boolean): Drop => {
+			const h1 = hash(col, 1);
+			const h2 = hash(col, 2);
+			const h3 = hash(col, 3);
+			const span = Math.max(0, trailMax - trailMin);
+			const trailLen = trailMin + Math.floor(h1 * (span + 0.999));
+			const glyphs: string[] = [];
+			const tones: number[] = [];
+			for (let i = 0; i < trailLen; i += 1) {
+				glyphs.push(pickGlyph(col, 20 + i * 31 + Math.floor(h2 * 50)));
+				tones.push(rollTone(col, 40 + i * 17, i === 0));
+			}
+			const rowsVisible = Math.max(1, Math.ceil(height / step));
+			return {
+				col,
+				headRow: atTop ? -trailLen * (0.25 + h2 * 0.6) : h2 * rowsVisible,
+				speed: 1.4 + h3 * 2.2,
+				glyphs,
+				tones,
+				mutateIn: 0.12 + h1 * 0.3
+			};
+		};
+
+		const rebuildDrops = (nextCols: number): void => {
+			const next: Drop[] = [];
+			for (let col = 0; col < nextCols; col += 1) {
+				if (hash(col, 0) > density) continue;
+				next.push(seedDrop(col, false));
+			}
+			drops = next;
+		};
+
+		const advanceHead = (drop: Drop): void => {
+			drop.glyphs.pop();
+			drop.tones.pop();
+			drop.glyphs.unshift(pickGlyph(drop.col, tickSalt + drop.col * 7));
+			drop.tones.unshift(4);
+			if (drop.tones.length > 2) {
+				const idx = 1 + Math.floor(hash(drop.col, tickSalt) * (drop.tones.length - 2));
+				drop.tones[idx] = rollTone(drop.col, tickSalt + idx * 13, false);
+				drop.glyphs[idx] = pickGlyph(drop.col, tickSalt + idx * 29);
+			}
+		};
+
+		const mutateTrail = (drop: Drop): void => {
+			if (drop.glyphs.length < 2) return;
+			const count = 1 + (hash(drop.col, tickSalt) > 0.55 ? 1 : 0);
+			for (let n = 0; n < count; n += 1) {
+				const idx = 1 + Math.floor(hash(drop.col, tickSalt + n * 41) * (drop.glyphs.length - 1));
+				drop.glyphs[idx] = pickGlyph(drop.col, tickSalt + idx * 19 + n);
+				drop.tones[idx] = rollTone(drop.col, tickSalt + idx * 23 + n, false);
+			}
+		};
+
+		const draw = (dt: number): void => {
+			tickSalt = (tickSalt + 1) % 10_000;
 			const dpr = window.devicePixelRatio || 1;
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			ctx.clearRect(0, 0, width, height);
+			ctx.font = `${cellSize}px "Victor Mono", ui-monospace, monospace`;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
 
 			const isDark = theme.resolved === 'dark';
-			const hasMouse = mouse.x > -9998 && glowRadius > 0;
-			const glowSq = glowRadius * glowRadius;
+			const levels = isDark ? TONE_DARK : TONE_LIGHT;
+			const rowsVisible = Math.max(1, Math.ceil(height / step));
 
-			for (const cell of cells) {
-				let lightness = isDark ? cell.dark : cell.light;
+			for (const drop of drops) {
+				const before = Math.floor(drop.headRow);
+				drop.headRow += drop.speed * dt;
+				const after = Math.floor(drop.headRow);
+				for (let row = before; row < after; row += 1) advanceHead(drop);
 
-				if (hasMouse) {
-					const dx = mouse.x - cell.cx;
-					const dy = mouse.y - cell.cy;
-					const distSq = dx * dx + dy * dy;
-					if (distSq < glowSq) {
-						// 1.5 次幂让光晕边缘更柔和,线性衰减看起来像个硬边圆盘
-						const glow = Math.max(0, 1 - Math.sqrt(distSq) / glowRadius) ** 1.5;
-						lightness = isDark
-							? Math.min(0.95, lightness + glow * 0.33)
-							: Math.max(0.05, lightness - glow * 0.3);
-					}
+				drop.mutateIn -= dt;
+				if (drop.mutateIn <= 0) {
+					mutateTrail(drop);
+					drop.mutateIn = 0.14 + hash(drop.col, tickSalt) * 0.35;
 				}
 
-				ctx.fillStyle = fill(lightness);
-				ctx.beginPath();
-				ctx.roundRect(cell.x, cell.y, cellSize, cellSize, radius);
-				ctx.fill();
+				const headCell = Math.floor(drop.headRow);
+				const x = drop.col * step + cellSize / 2;
+
+				for (let i = 0; i < drop.tones.length; i += 1) {
+					const tier = drop.tones[i] ?? 0;
+					if (tier <= 0) continue;
+					const y = (headCell - i) * step + cellSize / 2;
+					if (y < -cellSize || y > height + cellSize) continue;
+
+					ctx.fillStyle = fill(levels[tier] ?? 0.4, TONE_ALPHA[tier] ?? 0.4);
+					ctx.fillText(drop.glyphs[i] ?? '0', x, y);
+				}
+
+				if (headCell - drop.tones.length > rowsVisible + 1) {
+					const reset = seedDrop(drop.col, true);
+					drop.headRow = reset.headRow;
+					drop.speed = reset.speed;
+					drop.glyphs = reset.glyphs;
+					drop.tones = reset.tones;
+					drop.mutateIn = reset.mutateIn;
+				}
 			}
 
 			if (fadeBottom) {
-				// destination-out:用渐变擦除已绘制内容,底部彻底透明
 				const gradient = ctx.createLinearGradient(0, 0, 0, height);
 				gradient.addColorStop(0, 'rgba(0,0,0,0)');
 				gradient.addColorStop(0.35, 'rgba(0,0,0,0)');
@@ -189,15 +219,41 @@
 			}
 		};
 
-		const schedule = (): void => {
+		const tick = (ts: number): void => {
+			frame = 0;
+			if (!visible || !active || width === 0 || height === 0) return;
+
+			if (lastTs === 0) lastTs = ts;
+			const rawDt = Math.min(0.05, (ts - lastTs) / 1000);
+			lastTs = ts;
+			accum += rawDt * 1000;
+
+			if (accum >= FRAME_MS) {
+				const dt = Math.min(0.05, accum / 1000);
+				accum = 0;
+				draw(dt);
+			}
+
+			frame = requestAnimationFrame(tick);
+		};
+
+		const start = (): void => {
 			if (!visible || !active || frame) return;
-			frame = requestAnimationFrame(render);
+			lastTs = 0;
+			accum = FRAME_MS;
+			frame = requestAnimationFrame(tick);
+		};
+
+		const stop = (): void => {
+			if (frame) cancelAnimationFrame(frame);
+			frame = 0;
+			lastTs = 0;
+			accum = 0;
 		};
 
 		const resize = (): void => {
 			const dpr = window.devicePixelRatio || 1;
 			width = node.clientWidth;
-			// 自适应模式下高度来自父容器;固定模式下由 rows 决定
 			height = fixedHeight ?? node.clientHeight;
 			if (width === 0 || height === 0) return;
 
@@ -205,88 +261,52 @@
 			node.height = Math.round(height * dpr);
 
 			const nextCols = Math.ceil(width / step) + 1;
-			const nextRows = Math.ceil(height / step) + 1;
-			// 行列数没变就复用已建好的格子 —— 重建要重跑上千次 hash
-			if (nextCols !== cols || nextRows !== rowCount) {
+			if (nextCols !== cols) {
 				cols = nextCols;
-				rowCount = nextRows;
-				cells = buildCells(nextCols, nextRows);
+				rebuildDrops(nextCols);
 			}
-			schedule();
-		};
-
-		const onMouseMove = (event: MouseEvent): void => {
-			const rect = node.getBoundingClientRect();
-			mouse.x = event.clientX - rect.left;
-			mouse.y = event.clientY - rect.top;
-			schedule();
-		};
-
-		const onMouseLeave = (): void => {
-			mouse.x = -9999;
-			mouse.y = -9999;
-			schedule();
+			start();
 		};
 
 		const observer = new ResizeObserver(resize);
 		observer.observe(node);
 
-		// 不可见就别画。装饰在用户看不见时烧 CPU 是纯粹的浪费。
 		const intersection = new IntersectionObserver((entries) => {
 			visible = entries[0]?.isIntersecting ?? true;
-			schedule();
+			if (visible) start();
+			else stop();
 		});
 		intersection.observe(node);
 
 		const onVisibility = (): void => {
 			visible = document.visibilityState === 'visible';
-			schedule();
+			if (visible) start();
+			else stop();
 		};
 		document.addEventListener('visibilitychange', onVisibility);
 
-		if (glowRadius > 0) {
-			if (trackGlobal) {
-				window.addEventListener('mousemove', onMouseMove);
-				window.addEventListener('mouseleave', onMouseLeave);
-			} else {
-				node.addEventListener('mousemove', onMouseMove);
-				node.addEventListener('mouseleave', onMouseLeave);
-			}
-		}
-
 		resize();
-		requestRepaint = schedule;
+		kick = () => {
+			if (visible && active) start();
+			else stop();
+		};
 
 		return () => {
-			requestRepaint = null;
-			cancelAnimationFrame(frame);
+			kick = null;
+			stop();
 			observer.disconnect();
 			intersection.disconnect();
 			document.removeEventListener('visibilitychange', onVisibility);
-			if (glowRadius > 0) {
-				if (trackGlobal) {
-					window.removeEventListener('mousemove', onMouseMove);
-					window.removeEventListener('mouseleave', onMouseLeave);
-				} else {
-					node.removeEventListener('mousemove', onMouseMove);
-					node.removeEventListener('mouseleave', onMouseLeave);
-				}
-			}
 		};
 	}
 
-	// 主题切换 / active 变化要重绘 —— canvas 像素不参与 Svelte 的响应式更新。
 	$effect(() => {
 		void theme.resolved;
 		void active;
-		requestRepaint?.();
+		kick?.();
 	});
 </script>
 
-<!--
-	自适应模式(未传 rows)靠 h-full 撑满父容器,父容器必须有确定高度
-	(比如 `absolute inset-0`)。固定模式用 rows 算出的像素高度。
--->
 <canvas
 	{@attach paint}
 	aria-hidden="true"

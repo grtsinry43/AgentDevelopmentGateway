@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ToolActivityText from './ToolActivityText.svelte';
+
 	interface Props {
 		text: string;
 		streaming: boolean;
@@ -23,10 +25,7 @@
 		class="flex cursor-pointer list-none items-center gap-2 text-xs text-muted select-none hover:text-normal"
 	>
 		<span class="reasoning-chevron text-faint" aria-hidden="true">›</span>
-		<span>{title}</span>
-		{#if streaming}
-			<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-status-running"></span>
-		{/if}
+		<ToolActivityText text={title} active={streaming} />
 	</summary>
 	<div
 		class="mt-2 border-l border-subtle pl-3 font-mono text-xs leading-5 whitespace-pre-wrap text-muted"

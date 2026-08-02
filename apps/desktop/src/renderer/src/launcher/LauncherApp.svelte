@@ -14,6 +14,7 @@
 	import Button from '$lib/ui/primitives/Button.svelte';
 	import Input from '$lib/ui/primitives/Input.svelte';
 	import DitheredGrid from '$lib/ui/common/DitheredGrid.svelte';
+	import PerspectiveFloor from '$lib/ui/common/PerspectiveFloor.svelte';
 	import KeyHintBar from '$lib/ui/common/KeyHintBar.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import { systemInfo } from '$lib/shared/bridge/desktop';
@@ -79,19 +80,24 @@
 
 <div class="relative flex h-full flex-col overflow-hidden">
 	<!--
-		装饰格阵:右下象限,宽高各约占窗口一半。
-		放标题区背后会和文字抢注意力(格子的高频纹理干扰阅读),挪到右下做「角落纹理」——
-		视觉重量落在空白处,也是阅读路径(左上→右下)的末端。
-		不传 rows = 铺满这个容器的高度;mask 从右下角向左上衰减,越靠左上越稀。
+		装饰分层:
+		- 右上:稀疏矩形雨(不抢标题阅读)
+		- 右下:透视地平面(角落 HUD)
+		都在负空间,-z-10 + mask 收边。
 	-->
 	<div
-		class="launcher-grid-mask pointer-events-none absolute top-1/2 right-0 bottom-0 left-1/2 -z-10 opacity-40"
+		class="launcher-rain-mask pointer-events-none absolute top-0 right-0 left-1/2 h-1/2 -z-10 opacity-50"
 	>
-		<DitheredGrid density={0.4} glowRadius={140} fadeBottom={false} trackGlobal />
+		<DitheredGrid density={0.72} cellSize={12} trailMin={12} trailMax={20} fadeBottom={false} />
+	</div>
+	<div
+		class="launcher-floor-mask pointer-events-none absolute top-1/2 right-0 bottom-0 left-1/2 -z-10 opacity-40"
+	>
+		<PerspectiveFloor />
 	</div>
 
 	<!-- 顶部拖拽区:frameless 窗口需要一块可拖动的区域。macOS 的红绿灯就在这里。 -->
-	<header class="drag-region shrink-0 px-7 pt-10 pb-6">
+	<header class="drag-region shrink-0 px-7 pt-16 pb-6">
 		<div class="flex items-end justify-between gap-4">
 			<div class="no-drag">
 				<h1 class="text-display leading-none font-medium tracking-[-0.025em] text-strong">
@@ -167,7 +173,16 @@
 {/if}
 
 <style>
-	.launcher-grid-mask {
+	.launcher-rain-mask {
+		mask-image: radial-gradient(
+			120% 115% at 100% 0%,
+			black 10%,
+			rgba(0, 0, 0, 0.45) 48%,
+			transparent 82%
+		);
+	}
+
+	.launcher-floor-mask {
 		mask-image: radial-gradient(
 			115% 110% at 100% 100%,
 			black 8%,

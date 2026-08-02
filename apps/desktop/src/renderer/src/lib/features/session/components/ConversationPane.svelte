@@ -50,13 +50,7 @@
 		}
 		return undefined;
 	});
-	const showWorkingIndicator = $derived(
-		workspace.selectedSession?.status === 'running' &&
-			!workspace.messages.some((message) => message.streaming) &&
-			!workspace.tools.some(
-				(item) => item.toolCall.status === 'pending' || item.toolCall.status === 'running'
-			)
-	);
+	const showWorkingIndicator = $derived(workspace.selectedSession?.status === 'running');
 
 	function updateScrollPin(): void {
 		if (!transcript) return;

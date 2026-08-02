@@ -12,8 +12,7 @@ const editorTheme = EditorView.theme({
 		fontSize: 'var(--text-sm)'
 	},
 	'&.cm-focused': {
-		outline: '1px solid var(--focus-ring)',
-		outlineOffset: '-1px'
+		outline: 'none'
 	},
 	'.cm-scroller': {
 		overflow: 'auto',
