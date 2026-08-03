@@ -43,7 +43,7 @@ import { build as esbuild } from 'esbuild'
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SUPPORTED_TARGETS = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64']
-const NATIVE_PACKAGES = ['better-sqlite3', 'node-pty']
+const NATIVE_PACKAGES = ['better-sqlite3', 'node-pty', 'fsevents']
 /**
  * claude-agent-sdk 不能内联:它运行时用 createRequire 解析按平台的可选依赖
  * @anthropic-ai/claude-agent-sdk-<os>-<arch>(原生 CLI 二进制)与 ajv 等未打包的
@@ -214,6 +214,15 @@ function readProtocolVersion() {
 }
 
 function assertNativePrebuild(name, packageDirectory, target) {
+  if (name === 'fsevents') {
+    // fsevents 是 macOS 专用单流 watcher,只随 darwin 目标打包;
+    // linux 目标里的 fsevents 是无害死代码(platform 守卫,永不 import)。
+    if (target !== 'darwin-arm64' && target !== 'darwin-x64') return
+    if (!existsSync(join(packageDirectory, 'fsevents.node'))) {
+      fail(`${name} 缺少 ${target} 的 prebuild: ${join(packageDirectory, 'fsevents.node')}`)
+    }
+    return
+  }
   const candidates =
     name === 'better-sqlite3'
       ? [join(packageDirectory, 'prebuilds', `${target}.node`)]

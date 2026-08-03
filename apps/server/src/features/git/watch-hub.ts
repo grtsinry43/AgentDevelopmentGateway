@@ -13,9 +13,14 @@ interface Subscriber {
 
 interface ProjectWatcher {
   metadata: FSWatcher
+  /**
+   * macOS 上用 fsevents 单流监视 worktree(fd 恒定,能扛巨型仓库)。
+   * 其他平台不递归监视整个 worktree:chokidar 是逐目录 fs.watch,
+   * 在 31k 目录级别的大仓库会耗尽 fd / inotify watch(见 attach)。
+   */
+  worktree?: { stop: () => void | Promise<void> }
   pending?: ReturnType<typeof setTimeout>
   references: number
-  worktree: FSWatcher
 }
 
 const INVALIDATION_DEBOUNCE_MS = 75
@@ -55,7 +60,7 @@ export class GitWatchHub {
     await Promise.all(
       watchers.flatMap((project) => {
         if (project.pending) clearTimeout(project.pending)
-        return [project.worktree.close(), project.metadata.close()]
+        return [project.worktree?.stop(), project.metadata.close()]
       })
     )
   }
@@ -67,12 +72,6 @@ export class GitWatchHub {
       return
     }
     const repository = await resolveGitRepository(this.projectsService, this.runner, projectId)
-    const worktree = watch(repository.projectPath, {
-      followSymlinks: false,
-      ignoreInitial: true,
-      ignored: (path, stats) => this.ignoreWorktreePath(repository.projectPath, path, stats),
-      persistent: true
-    })
     const metadata = watch(
       [
         join(repository.gitDirectory, 'HEAD'),
@@ -82,17 +81,39 @@ export class GitWatchHub {
       ],
       { followSymlinks: false, ignoreInitial: true, persistent: true }
     )
-    const project: ProjectWatcher = { metadata, references: 1, worktree }
+    const project: ProjectWatcher = { metadata, references: 1 }
     const changed = (): void => this.notify(projectId)
     const failed = (error: unknown): void => {
       this.onError(error, projectId)
       this.fail(projectId)
     }
-    worktree.on('all', changed)
     metadata.on('all', changed)
-    worktree.on('error', failed)
     metadata.on('error', failed)
+    // worktree 监视只在 macOS 用 fsevents;其他平台退回「元数据 + 按需刷新」。
+    if (process.platform === 'darwin') {
+      project.worktree = await this.attachWorktree(repository.projectPath, projectId, changed, failed)
+    }
     this.projects.set(projectId, project)
+  }
+
+  /** fsevents 单流 worktree 监视:回调里过滤 .git / 生成目录的噪音。 */
+  private async attachWorktree(
+    root: string,
+    projectId: string,
+    changed: () => void,
+    failed: (error: unknown) => void
+  ): Promise<{ stop: () => Promise<void> } | undefined> {
+    try {
+      const fsevents = await import('fsevents')
+      const stop = fsevents.watch(root, (path: string) => {
+        if (isIgnoredWorktreePath(root, path, this.filePolicy)) return
+        changed()
+      })
+      return { stop }
+    } catch (error) {
+      failed(error)
+      return undefined
+    }
   }
 
   private async *iterate(subscriber: Subscriber): AsyncGenerator<GitEvent> {
@@ -110,7 +131,7 @@ export class GitWatchHub {
     if (project.references > 0) return
     this.projects.delete(projectId)
     if (project.pending) clearTimeout(project.pending)
-    await Promise.all([project.worktree.close(), project.metadata.close()])
+    await Promise.all([project.worktree?.stop(), project.metadata.close()])
   }
 
   private flush(projectId: string): void {
@@ -129,14 +150,18 @@ export class GitWatchHub {
       subscriber.queue.close()
     }
   }
+}
 
-  private ignoreWorktreePath(root: string, path: string, stats?: { isDirectory(): boolean }): boolean {
-    const child = relative(root, path)
-    if (!child || child === '.') return false
-    if (child === '..' || child.startsWith(`..${sep}`)) return true
-    const first = child.split(sep, 1)[0]
-    return first === '.git' || (stats?.isDirectory() === true && this.filePolicy.isGeneratedDirectory(first ?? ''))
-  }
+function isIgnoredWorktreePath(
+  root: string,
+  path: string,
+  filePolicy: WorkspaceFilePolicy
+): boolean {
+  const child = relative(root, path)
+  if (!child || child === '.') return false
+  if (child === '..' || child.startsWith(`..${sep}`)) return true
+  const first = child.split(sep, 1)[0]
+  return first === '.git' || filePolicy.isGeneratedDirectory(first ?? '')
 }
 
 class AsyncEventQueue<T> implements AsyncIterable<T> {
