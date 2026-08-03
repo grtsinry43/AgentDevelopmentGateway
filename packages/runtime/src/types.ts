@@ -10,6 +10,7 @@ import type {
   RuntimeConnection,
   RuntimeError,
   RuntimeHostContext,
+  SlashCommand,
   RuntimeInstallation,
   RuntimeEvent,
   SessionId,
@@ -48,7 +49,17 @@ export interface ListRuntimeModelsInput {
   providerConfig?: ProviderRuntimeConfig
 }
 
+/** 拉取 slash 命令/技能目录的运行时入参(与模型目录同构)。 */
+export interface ListRuntimeCommandsInput {
+  host: RuntimeHostContext
+  projectPath: string
+  adapterId: AdapterId
+  installationPath?: string
+  providerConfig?: ProviderRuntimeConfig
+}
+
 export type RuntimeModelCatalog = ModelCatalog
+export type RuntimeSlashCommands = SlashCommand[]
 
 export interface RuntimeSessionSnapshot {
   session: AgentSession

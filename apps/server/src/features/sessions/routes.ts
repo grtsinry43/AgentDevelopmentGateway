@@ -11,6 +11,7 @@ import {
   inputAdmissionReceiptSchema,
   interruptSessionRequestSchema,
   modelCatalogSchema,
+  slashCommandsSchema,
   projectSessionsParamsSchema,
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
@@ -176,6 +177,17 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       }
     },
     async (request) => options.sessions.listModels(request.params.sessionId)
+  )
+
+  server.get(
+    '/sessions/:sessionId/commands',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        response: { 200: slashCommandsSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => ({ commands: await options.sessions.listCommands(request.params.sessionId) })
   )
 
   server.patch(

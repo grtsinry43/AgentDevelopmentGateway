@@ -16,8 +16,10 @@ import {
   type ExecutionConfigurationResult,
   type InteractionResolution,
   type ListModelsInput,
+  type ListCommandsInput,
   type ModelCatalog,
   type ModelSelection,
+  type SlashCommand,
   type ProviderRuntimeConfig,
   type ResumeSessionInput,
   type RuntimeAdapter,
@@ -80,6 +82,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
     'session.resume': true,
     'session.fork': false,
     'model.catalog': true,
+    'command.catalog': true,
     'output.partial_text': true,
     'output.partial_reasoning': true,
     'tool.input_stream': true,
@@ -498,6 +501,56 @@ export class OpenCodeAdapter implements RuntimeAdapter {
         }]
       }),
     }
+  }
+
+  /**
+   * 拉取 slash 命令/技能目录:OpenCode 用 `command.list` + `skill.list` 分开。
+   * command.list 会把 skills 也合并进来(带 source:"skill"),这里只取真正的命令
+   * (command/mcp),skills 走 skill.list 且只收 `slash: true`(其余是 agent 自动调)。
+   */
+  async listCommands(input: ListCommandsInput): Promise<SlashCommand[]> {
+    if (!input.connection) return []
+    const connection = this.requireConnection(input.connection)
+    const query = { 'location[directory]': input.projectPath }
+    const commands: SlashCommand[] = []
+
+    const commandResponse = recordValue(
+      await connection.client.json('/api/command', { query })
+    )
+    if (commandResponse && Array.isArray(commandResponse.data)) {
+      for (const value of commandResponse.data) {
+        const command = recordValue(value)
+        const name = stringValue(command?.name)
+        if (!name) continue
+        if (stringValue(command?.source) === 'skill') continue
+        commands.push({
+          name,
+          description: stringValue(command?.description) ?? name,
+          kind: 'command',
+          source: 'project',
+          invoke: '/' + name,
+        })
+      }
+    }
+
+    const skillResponse = recordValue(await connection.client.json('/api/skill', { query }))
+    if (skillResponse && Array.isArray(skillResponse.data)) {
+      for (const value of skillResponse.data) {
+        const skill = recordValue(value)
+        const name = stringValue(skill?.name)
+        if (!name) continue
+        if (skill?.slash !== true) continue
+        commands.push({
+          name,
+          description: stringValue(skill?.description) ?? name,
+          kind: 'skill',
+          source: 'project',
+          invoke: '/' + name,
+        })
+      }
+    }
+
+    return commands
   }
 
   async setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {

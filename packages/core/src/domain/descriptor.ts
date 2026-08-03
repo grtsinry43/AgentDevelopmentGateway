@@ -15,6 +15,7 @@ export type RuntimeFeature =
   | 'output.partial_text'
   | 'output.partial_reasoning'
   | 'model.catalog'
+  | 'command.catalog'
   | 'tool.input_stream'
   | 'interaction.permission'
   | 'interaction.question'

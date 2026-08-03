@@ -6,6 +6,7 @@ export class FakeClaudeQuery implements ClaudeQuery {
   readonly messages = new AsyncQueue<SDKMessage>()
   readonly models: Array<string | undefined> = []
   readonly modelCatalog: ModelInfo[] = []
+  readonly commands: Array<import('@anthropic-ai/claude-agent-sdk').SlashCommand> = []
   readonly flagSettings: Array<{
     model?: string | null
     effortLevel?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
@@ -22,6 +23,10 @@ export class FakeClaudeQuery implements ClaudeQuery {
 
   supportedModels(): Promise<ModelInfo[]> {
     return Promise.resolve(this.modelCatalog.map((model) => ({ ...model })))
+  }
+
+  supportedCommands(): Promise<import('@anthropic-ai/claude-agent-sdk').SlashCommand[]> {
+    return Promise.resolve(this.commands.map((command) => ({ ...command })))
   }
 
   resolveInitialization(): void {

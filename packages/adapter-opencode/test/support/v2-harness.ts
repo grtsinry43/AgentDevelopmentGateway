@@ -36,6 +36,10 @@ export interface V2HarnessOptions {
    * then busy→idle — regressions must not settle in the admit window.
    */
   settleMode?: 'sse-idle' | 'status-poll' | 'admit-before-busy' | 'step-then-idle'
+  /** 供 /api/command 返回的目录。 */
+  commandCatalog?: unknown[]
+  /** 供 /api/skill 返回的目录。 */
+  skillCatalog?: unknown[]
 }
 
 export async function createV2Harness(options: V2HarnessOptions = {}): Promise<V2Harness> {
@@ -59,6 +63,8 @@ export async function createV2Harness(options: V2HarnessOptions = {}): Promise<V
           replayEvents,
           sessionDiffs,
           settleMode: options.settleMode ?? 'sse-idle',
+          commandCatalog: options.commandCatalog,
+          skillCatalog: options.skillCatalog,
         }),
         OPENCODE_V2_REQUEST_LOG: requestLog,
       },
@@ -312,6 +318,14 @@ const server = http.createServer((request, response) => {
         },
         data: fixture.modelCatalog
       })
+      return
+    }
+    if (request.method === 'GET' && url.pathname === '/api/command') {
+      sendJson(response, { data: fixture.commandCatalog ?? [] })
+      return
+    }
+    if (request.method === 'GET' && url.pathname === '/api/skill') {
+      sendJson(response, { data: fixture.skillCatalog ?? [] })
       return
     }
     if (request.method === 'POST' && url.pathname === '/api/session') {

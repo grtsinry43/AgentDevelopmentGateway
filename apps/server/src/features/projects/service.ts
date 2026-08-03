@@ -3,6 +3,7 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 import { basename, isAbsolute, normalize, parse } from 'node:path'
 import type { AdapterId, ModelCatalog } from '@agent-gateway/core'
+import type { RuntimeSlashCommands } from '@agent-gateway/runtime'
 import type { RuntimeAdapterAvailability, RuntimeSessionManager } from '@agent-gateway/runtime'
 import { GatewayHttpError } from '../../http/errors.js'
 import type { SessionRepository } from '../sessions/repository.js'
@@ -82,6 +83,24 @@ export class ProjectService {
   listModels(id: string, adapterId: AdapterId, installationPath?: string): Promise<ModelCatalog> {
     const project = this.require(id)
     return this.runtime.listModels({
+      host: {
+        hostId: project.hostId,
+        platform: process.platform,
+        env: this.hostEnvironment
+      },
+      projectPath: project.path,
+      adapterId,
+      installationPath
+    })
+  }
+
+  listCommands(
+    id: string,
+    adapterId: AdapterId,
+    installationPath?: string
+  ): Promise<RuntimeSlashCommands> {
+    const project = this.require(id)
+    return this.runtime.listCommands({
       host: {
         hostId: project.hostId,
         platform: process.platform,

@@ -6,19 +6,41 @@ import test from 'node:test'
 import { asSessionId, asTurnId } from '@agent-gateway/core'
 import { CodexAdapter } from '../src/codex-adapter.js'
 
-test('keeps Gateway turn ids authoritative while addressing Codex by native turn id', async () => {
+async function makeConnection() {
   const directory = await mkdtemp(join(tmpdir(), 'gateway-codex-adapter-'))
   const executable = join(directory, 'fake-codex')
   await writeFile(executable, fakeAppServer, 'utf8')
   await chmod(executable, 0o755)
-
   const adapter = new CodexAdapter()
+  const context = { hostId: 'local', env: { PATH: process.env.PATH ?? '' } }
+  const connection = await adapter.connect({
+    context,
+    installation: { path: executable, version: 'test', source: 'custom' },
+  })
+  return { adapter, connection, directory }
+}
+
+test('maps skills/list into unified slash commands with $ invoke', async () => {
+  const { adapter, connection, directory } = await makeConnection()
   try {
-    const context = { hostId: 'local', env: { PATH: process.env.PATH ?? '' } }
-    const connection = await adapter.connect({
-      context,
-      installation: { path: executable, version: 'test', source: 'custom' },
+    const commands = await adapter.listCommands({ connection, projectPath: directory })
+    assert.equal(commands.length, 1)
+    assert.deepEqual(commands[0], {
+      name: 'code-review',
+      description: 'Review',
+      kind: 'skill',
+      source: 'project',
+      invoke: '$code-review',
     })
+  } finally {
+    await adapter.dispose?.()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('keeps Gateway turn ids authoritative while addressing Codex by native turn id', async () => {
+  const { adapter, connection, directory } = await makeConnection()
+  try {
     const catalog = await adapter.listModels({ connection, projectPath: directory })
     assert.deepEqual(catalog.models[0], {
       id: 'gpt-test',
@@ -78,6 +100,15 @@ lines.on('line', (line) => {
         { reasoningEffort: 'medium', description: 'Balanced' }
       ]
     }], nextCursor: null } })
+  } else if (message.method === 'skills/list') {
+    send({ jsonrpc: '2.0', id: message.id, result: { data: [{
+      cwd: message.params.cwds[0],
+      skills: [
+        { name: 'code-review', description: 'Review code', shortDescription: 'Review', path: '/x', scope: 'repo', enabled: true },
+        { name: 'disabled-skill', description: 'Disabled', path: '/y', scope: 'user', enabled: false }
+      ],
+      errors: []
+    }] } })
   } else if (message.method === 'thread/start') {
     send({ jsonrpc: '2.0', id: message.id, result: { thread: { id: 'native-thread' } } })
   } else if (message.method === 'turn/start') {

@@ -7,6 +7,7 @@ import {
   createProjectBodySchema,
   listModelsQuerySchema,
   modelCatalogSchema,
+  slashCommandsSchema,
   projectErrorResponses,
   projectAgentParamsSchema,
   projectListResponseSchema,
@@ -93,5 +94,23 @@ export const projectRoutes: FastifyPluginAsyncZod<ProjectRoutesOptions> = async 
         request.params.adapterId,
         request.query.installationPath
       )
+  )
+
+  server.get(
+    '/projects/:id/agents/:adapterId/commands',
+    {
+      schema: {
+        params: projectAgentParamsSchema,
+        querystring: listModelsQuerySchema,
+        response: { 200: slashCommandsSchema, ...projectErrorResponses }
+      }
+    },
+    async (request) => ({
+      commands: await options.projects.listCommands(
+        request.params.id,
+        request.params.adapterId,
+        request.query.installationPath
+      )
+    })
   )
 }

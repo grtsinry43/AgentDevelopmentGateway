@@ -8,6 +8,9 @@ import {
   type RuntimeEvent,
   type SessionId
 } from '@agent-gateway/core'
+import {
+  type RuntimeSlashCommands
+} from '@agent-gateway/runtime'
 import { projectDurableRuntimeState, type RuntimeSessionManager } from '@agent-gateway/runtime'
 import { GatewayHttpError } from '../../http/errors.js'
 import type { ProjectRepository } from '../projects/repository.js'
@@ -407,6 +410,20 @@ export class SessionService {
     const project = this.projects.findById(stored.session.projectId)
     if (!project) throw new GatewayHttpError(404, 'PROJECT_NOT_FOUND', 'Project was not found')
     return this.runtime.listModels({
+      host: { hostId: project.hostId, platform: process.platform, env: this.hostEnvironment },
+      projectPath: project.path,
+      adapterId: stored.session.adapterId
+    })
+  }
+
+  listCommands(id: string): Promise<RuntimeSlashCommands> {
+    const stored = this.requireStored(id)
+    if (this.isActive(stored.session.id)) {
+      return this.runtime.listSessionCommands(stored.session.id)
+    }
+    const project = this.projects.findById(stored.session.projectId)
+    if (!project) throw new GatewayHttpError(404, 'PROJECT_NOT_FOUND', 'Project was not found')
+    return this.runtime.listCommands({
       host: { hostId: project.hostId, platform: process.platform, env: this.hostEnvironment },
       projectPath: project.path,
       adapterId: stored.session.adapterId

@@ -5,6 +5,50 @@ import { toNativeMessageId } from '../src/input.js'
 import { nativeSessionId } from './fixtures/opencode-v2.js'
 import { createV2Harness, waitForRequest } from './support/v2-harness.js'
 
+test('lists v2 commands and slash-invocable skills as unified slash commands', async () => {
+  const harness = await createV2Harness({
+    commandCatalog: [
+      { name: 'init', template: 'Init', description: 'Init a project' },
+      { name: 'commit', template: 'Commit', description: 'Commit changes' },
+    ],
+    skillCatalog: [
+      { name: 'reviewer', description: 'Review code', slash: true, location: '/x', content: 'x' },
+      { name: 'auto', description: 'Auto skill', slash: false, location: '/y', content: 'y' },
+    ],
+  })
+  try {
+    const commands = await harness.adapter.listCommands({
+      connection: harness.connection,
+      projectPath: harness.directory,
+    })
+    assert.deepEqual(commands, [
+      {
+        name: 'init',
+        description: 'Init a project',
+        kind: 'command',
+        source: 'project',
+        invoke: '/init',
+      },
+      {
+        name: 'commit',
+        description: 'Commit changes',
+        kind: 'command',
+        source: 'project',
+        invoke: '/commit',
+      },
+      {
+        name: 'reviewer',
+        description: 'Review code',
+        kind: 'skill',
+        source: 'project',
+        invoke: '/reviewer',
+      },
+    ])
+  } finally {
+    await harness.close()
+  }
+})
+
 test('prefixes Gateway client message ids for OpenCode Message.ID', () => {
   assert.equal(
     toNativeMessageId('6689c1d1-aff3-417a-b941-b5d6460a7782'),

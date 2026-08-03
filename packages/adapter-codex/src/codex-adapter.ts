@@ -19,8 +19,10 @@ import {
   type InteractionResolution,
   type InterruptOptions,
   type ListModelsInput,
+  type ListCommandsInput,
   type ModelCatalog,
   type ModelSelection,
+  type SlashCommand,
   type ProviderRuntimeConfig,
   type ResumeSessionInput,
   type RuntimeAdapter,
@@ -89,6 +91,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
     'session.resume': true,
     'session.fork': true,
     'model.catalog': true,
+    'command.catalog': true,
     'output.partial_text': true,
     'output.partial_reasoning': true,
     'interaction.permission': true,
@@ -437,6 +440,43 @@ export class CodexAdapter implements RuntimeAdapter {
       cursor = stringValue(result.nextCursor)
     } while (cursor)
     return { models }
+  }
+
+  /**
+   * 拉取 slash 命令/技能目录:Codex 的 catalog 全是 skills(`skills/list`),
+   * 自定义命令就是技能,用 `$name` 触发。内置命令是 TUI 客户端动作,不在协议 catalog 里。
+   */
+  async listCommands(input: ListCommandsInput): Promise<SlashCommand[]> {
+    if (!input.connection) return []
+    const connection = this.requireConnection(input.connection)
+    const result = await connection.client.request('skills/list', {
+      cwds: [input.projectPath],
+    })
+    if (!isRecord(result) || !Array.isArray(result.data)) {
+      throw protocolError('Codex skills/list returned an invalid catalog')
+    }
+    const commands: SlashCommand[] = []
+    for (const entry of result.data) {
+      if (!isRecord(entry) || !Array.isArray(entry.skills)) continue
+      for (const skill of entry.skills) {
+        if (!isRecord(skill)) continue
+        const name = stringValue(skill.name)
+        if (!name) continue
+        if (skill.enabled === false) continue
+        const scope = stringValue(skill.scope)
+        const source: SlashCommand['source'] =
+          scope === 'repo' ? 'project' : scope === 'user' ? 'user' : 'builtin'
+        commands.push({
+          name,
+          description:
+            stringValue(skill.shortDescription) ?? stringValue(skill.description) ?? name,
+          kind: 'skill',
+          source,
+          invoke: '$' + name,
+        })
+      }
+    }
+    return commands
   }
 
   async setModel(sessionId: SessionId, model: ModelSelection): Promise<void> {

@@ -18,6 +18,7 @@ import type {
   SendOptions,
   UserInput,
 } from './io.js'
+import type { ListCommandsInput, SlashCommand } from './commands.js'
 import type {
   RuntimeConnectOptions,
   RuntimeConnection,
@@ -85,6 +86,8 @@ export interface RuntimeAdapter {
   interrupt(sessionId: SessionId, options?: InterruptOptions): Promise<void>
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void>
   listModels?(input: ListModelsInput): Promise<ModelCatalog>
+  /** 拉取 slash 命令/技能目录(统一模型,抹平三家差异)。与 `features['command.catalog']` 配对。 */
+  listCommands?(input: ListCommandsInput): Promise<SlashCommand[]>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>
   /** Persist a user-set title to the provider runtime; pairs with `features['session.rename']`. */
   renameSession?(sessionId: SessionId, title: string): Promise<void>

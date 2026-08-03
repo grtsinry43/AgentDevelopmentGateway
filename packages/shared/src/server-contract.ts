@@ -333,6 +333,18 @@ export const listModelsQuerySchema = z.strictObject({
   installationPath: z.string().min(1).optional(),
 })
 
+export const slashCommandSchema = z.strictObject({
+  name: z.string(),
+  description: z.string(),
+  argumentHint: z.string().optional(),
+  kind: z.enum(['command', 'skill']),
+  source: z.enum(['builtin', 'project', 'user']).optional(),
+  invoke: z.string(),
+})
+export const slashCommandsSchema = z.strictObject({
+  commands: z.array(slashCommandSchema),
+})
+
 export const sessionStatusSchema = z.enum([
   'starting',
   'idle',
@@ -874,6 +886,8 @@ export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>
 export type TerminalServerMessage = z.infer<typeof terminalServerMessageSchema>
 export type GatewayAdapterAvailability = z.infer<typeof adapterAvailabilitySchema>
 export type GatewayModelCatalog = z.infer<typeof modelCatalogSchema>
+export type GatewaySlashCommands = z.infer<typeof slashCommandsSchema>
+export type GatewaySlashCommand = z.infer<typeof slashCommandSchema>
 export type GatewayRuntimeModel = z.infer<typeof runtimeModelSchema>
 export type ListModelsQuery = z.infer<typeof listModelsQuerySchema>
 export type GatewaySession = z.infer<typeof sessionSchema>

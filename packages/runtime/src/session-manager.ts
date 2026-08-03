@@ -42,6 +42,8 @@ import type {
   CreateRuntimeSessionInput,
   ForkRuntimeSessionInput,
   ListRuntimeModelsInput,
+  ListRuntimeCommandsInput,
+  RuntimeSlashCommands,
   ResumeRuntimeSessionInput,
   RuntimeAdapterAvailability,
   RuntimeControlOptions,
@@ -121,6 +123,35 @@ export class RuntimeSessionManager {
       input.providerConfig,
     )
     return this.loadModelCatalog(adapter, connection, input.projectPath)
+  }
+
+  async listCommands(input: ListRuntimeCommandsInput): Promise<RuntimeSlashCommands> {
+    const adapter = this.registry.get(input.adapterId)
+    if (!adapter.listCommands || !adapter.descriptor.capabilities.features['command.catalog']) {
+      throw unsupported('command catalog')
+    }
+    const connection = await this.connections.connect(
+      input.adapterId,
+      input.host,
+      input.installationPath,
+      input.providerConfig,
+    )
+    return adapter.listCommands({ connection, projectPath: input.projectPath })
+  }
+
+  listSessionCommands(sessionId: SessionId): Promise<RuntimeSlashCommands> {
+    const managed = this.requireSession(sessionId)
+    if (
+      !managed.adapter.listCommands ||
+      !managed.connection.capabilities.features['command.catalog']
+    ) {
+      throw unsupported('command catalog')
+    }
+    return managed.adapter.listCommands({
+      connection: managed.connection,
+      projectPath: managed.projectPath,
+      sessionId,
+    })
   }
 
   listSessionModels(sessionId: SessionId): Promise<ModelCatalog> {

@@ -9,8 +9,10 @@ import {
   type InteractionResolution,
   type InterruptOptions,
   type ListModelsInput,
+  type ListCommandsInput,
   type ModelCatalog,
   type ModelSelection,
+  type SlashCommand,
   type ProviderRuntimeConfig,
   type ExecutionConfigurationResult,
   type ResumeSessionInput,
@@ -43,6 +45,7 @@ import {
 import { z } from 'zod'
 import { AsyncQueue } from './async-queue.js'
 import { CLAUDE_BASE_CAPABILITIES } from './capabilities.js'
+import { listClaudeCommands } from './commands.js'
 import { ClaudeInteractionBridge } from './interaction-bridge.js'
 import { mapSessionContext } from './input.js'
 import { ClaudeMessageMapper } from './message-mapper.js'
@@ -51,6 +54,7 @@ import { createClaudePreToolUseHook, resolveClaudeExecution } from './execution-
 export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
   initializationResult(): Promise<SDKControlInitializeResponse>
   supportedModels(): Promise<ModelInfo[]>
+  supportedCommands(): Promise<import('@anthropic-ai/claude-agent-sdk').SlashCommand[]>
   interrupt(): Promise<unknown>
   setModel(model?: string): Promise<unknown>
   applyFlagSettings(settings: {
@@ -284,6 +288,40 @@ export class ClaudeAdapter implements RuntimeAdapter {
       model: resolveClaudeModel(model.model, session.providerConfig),
       effortLevel: model.reasoningEffort ? mapEffort(model.reasoningEffort) : null,
     })
+  }
+
+  /**
+   * 拉取 slash 命令/技能目录:读 `.claude/commands` + `.claude/skills` + 内置,按 kind 分类。
+   * 有活动会话时用 SDK `supportedCommands()` 拿权威全集并按磁盘目录补充分类。
+   */
+  async listCommands(input: ListCommandsInput): Promise<SlashCommand[]> {
+    const fromDisk = listClaudeCommands(input.projectPath)
+    const sessionId = input.sessionId
+    if (!sessionId) return fromDisk
+    const session = this.sessions.get(sessionId)
+    if (!session) return fromDisk
+    try {
+      const supported = await session.query.supportedCommands()
+      if (!supported.length) return fromDisk
+      const byName = new Map(fromDisk.map((command) => [command.name, command]))
+      return supported.map((command) => {
+        const known = byName.get(command.name)
+        return {
+          name: command.name,
+          description: known?.description ?? command.description,
+          ...(command.argumentHint
+            ? { argumentHint: command.argumentHint }
+            : known?.argumentHint
+              ? { argumentHint: known.argumentHint }
+              : {}),
+          kind: known?.kind ?? 'command',
+          source: known?.source ?? 'builtin',
+          invoke: `/${command.name}`,
+        }
+      })
+    } catch {
+      return fromDisk
+    }
   }
 
   async renameSession(sessionId: SessionId, title: string): Promise<void> {
