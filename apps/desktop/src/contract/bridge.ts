@@ -23,6 +23,7 @@ import type {
 	GatewayAdapterAvailability,
 	GatewayAdapterId,
 	GatewayModelCatalog,
+	GatewaySlashCommands,
 	GitChangeArea,
 	GitCommitResponse,
 	GitDiffResponse,
@@ -127,6 +128,8 @@ export const IPC = {
 	sessionsAdapters: 'sessions:adapters',
 	sessionsModels: 'sessions:models',
 	sessionsSessionModels: 'sessions:sessionModels',
+	sessionsCommands: 'sessions:commands',
+	sessionsSessionCommands: 'sessions:sessionCommands',
 	sessionsCreate: 'sessions:create',
 	sessionsSend: 'sessions:send',
 	sessionsQueueReplace: 'sessions:queueReplace',
@@ -550,6 +553,12 @@ export interface DesktopBridge {
 			query?: ListModelsQuery
 		): Promise<GatewayModelCatalog>;
 		sessionModels(sessionId: string): Promise<GatewayModelCatalog>;
+		commands(
+			projectKey: string,
+			adapterId: GatewayAdapterId,
+			query?: ListModelsQuery
+		): Promise<GatewaySlashCommands>;
+		sessionCommands(sessionId: string): Promise<GatewaySlashCommands>;
 		create(projectKey: string, input: CreateSessionRequest): Promise<CreateSessionResponse>;
 		send(sessionId: string, input: SendSessionInputRequest): Promise<InputAdmissionReceipt>;
 		replaceQueuedInput(

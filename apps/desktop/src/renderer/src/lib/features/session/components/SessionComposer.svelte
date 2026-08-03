@@ -6,7 +6,10 @@
 	import type { GatewayAdapterAvailability, GatewaySession } from '@agent-gateway/shared';
 	import { Prec, type Extension } from '@codemirror/state';
 	import { EditorView, keymap } from '@codemirror/view';
+	import { autocompletion, completionStatus } from '@codemirror/autocomplete';
 	import type { ExecutionPreset, SessionWorkspaceState } from '../session-workspace.svelte';
+	import { listCommands, listSessionCommands } from '../api';
+	import { setSlashCommands, slashCommandSource } from './slash-command-source';
 	import InteractionTray from './InteractionTray.svelte';
 	import InputQueuePanel from './InputQueuePanel.svelte';
 
@@ -19,6 +22,30 @@
 	// 输入草稿归 workspace.composerDraft:对话右键「引用到输入框」要能追加进来。
 	let adapterOverride = $state<GatewayAdapterAvailability['adapterId'] | undefined>(undefined);
 	let installationOverride = $state<string | undefined>(undefined);
+
+	// ── slash 命令补全(CodeMirror 原生 autocomplete) ───────────────────
+	$effect(() => {
+		const sessionId = workspace.selectedSessionId;
+		if (sessionId) {
+			setSlashCommands([]);
+			listSessionCommands(sessionId).then(
+				(result) => {
+					if (workspace.selectedSessionId === sessionId) setSlashCommands(result.commands);
+				},
+				(error) => console.error('[slash] 拉取会话命令失败', error)
+			);
+			return;
+		}
+		// 用当前选中的 adapter(含用户切换的 override),切换时重拉。
+		const adapterId = adapterOverride ?? workspace.availableAdapters[0]?.adapterId;
+		const projectKey = workspace.projectKey;
+		if (!adapterId || !projectKey) return;
+		setSlashCommands([]);
+		listCommands(projectKey, adapterId).then(
+			(result) => setSlashCommands(result.commands),
+			(error) => console.error('[slash] 拉取项目命令失败', error)
+		);
+	});
 
 	function changeProviderProfile(profileId: string): void {
 		workspace.draftProviderProfileId = profileId || undefined;
@@ -155,12 +182,15 @@
 					key: 'Enter',
 					run: (view) => {
 						if (view.composing) return false;
+						// 补全弹窗激活时让给 autocomplete 的 Enter(选中),不提交。
+						if (completionStatus(view.state)) return false;
 						void submit();
 						return true;
 					}
 				}
 			])
 		),
+		autocompletion({ override: [slashCommandSource], icons: false, defaultKeymap: true }),
 		EditorView.theme({
 			'&': { height: '100%' },
 			'.cm-gutters': { display: 'none' },
@@ -168,7 +198,89 @@
 				minHeight: creating ? '100%' : '104px',
 				padding: creating ? '24px 0 48px' : '12px 0 20px'
 			},
-			'.cm-scroller': { height: '100%', overflow: 'auto' }
+			'.cm-scroller': { height: '100%', overflow: 'auto' },
+			'.cm-tooltip-autocomplete': {
+				border: '1px solid var(--border-line)',
+				backgroundColor: 'var(--surface-raised)',
+				borderRadius: 'var(--radius-panel)',
+				boxShadow: 'var(--shadow-float)',
+				padding: '4px',
+				fontFamily: 'var(--font-sans)',
+				animation: 'pop-in 0.12s ease-out'
+			},
+			'.cm-tooltip-autocomplete > ul': {
+				fontFamily: 'var(--font-sans)',
+				fontSize: '12px',
+				lineHeight: 1.5,
+				minWidth: '272px',
+				maxWidth: '420px',
+				maxHeight: '300px',
+				overflowY: 'auto',
+				padding: 0,
+				scrollbarWidth: 'thin',
+				scrollbarColor: 'transparent transparent',
+				'&:hover': { scrollbarColor: 'var(--border-strong) transparent' },
+				'&::-webkit-scrollbar': { width: '8px', height: '8px' },
+				'&::-webkit-scrollbar-track': { background: 'transparent' },
+				'&::-webkit-scrollbar-thumb': {
+					border: '2px solid transparent',
+					borderRadius: '4px',
+					backgroundClip: 'content-box',
+					backgroundColor: 'transparent'
+				},
+				'&:hover::-webkit-scrollbar-thumb': { backgroundColor: 'var(--border-strong)' }
+			},
+			'.cm-tooltip-autocomplete > ul > li': {
+				padding: '5px 10px',
+				margin: 0,
+				borderRadius: '5px',
+				display: 'flex',
+				alignItems: 'center',
+				gap: '10px',
+				'&:hover': { backgroundColor: 'var(--surface-hover)' }
+			},
+			'.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+				backgroundColor: 'var(--surface-active)',
+				color: 'inherit',
+				'&:hover': { backgroundColor: 'var(--surface-active)' }
+			},
+			'.cm-tooltip-autocomplete .cm-completionLabel': {
+				color: 'var(--status-running)',
+				fontWeight: 700,
+				fontFamily: 'var(--font-mono)',
+				fontSize: '12px',
+				flexShrink: 0
+			},
+			'.cm-tooltip-autocomplete .cm-completionDetail': {
+				marginLeft: '10px',
+				fontStyle: 'normal',
+				color: 'var(--text-muted)',
+				fontSize: '11px',
+				overflow: 'hidden',
+				textOverflow: 'ellipsis',
+				whiteSpace: 'nowrap'
+			},
+			'.cm-tooltip-autocomplete .cm-completionSection': {
+				display: 'flex',
+				alignItems: 'center',
+				gap: '6px',
+				padding: '4px 10px 2px',
+				fontSize: '10px',
+				fontWeight: 600,
+				letterSpacing: '0.06em',
+				textTransform: 'uppercase',
+				color: 'var(--text-faint)',
+				'&::after': {
+					content: '""',
+					flex: 1,
+					height: '1px',
+					backgroundColor: 'var(--border-subtle)'
+				}
+			},
+			'.cm-tooltip-autocomplete .cm-completionMatchedText': {
+				color: 'var(--text-strong)',
+				fontWeight: 700
+			}
 		})
 	]);
 

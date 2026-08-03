@@ -57,9 +57,30 @@ export function registerSessionHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    IPC.sessionsCommands,
+    async (
+      _event,
+      rawProjectKey: unknown,
+      rawAdapterId: unknown,
+      rawQuery: unknown = {}
+    ) => {
+      const projectKey = parseProjectKey(rawProjectKey)
+      const adapterId = adapterIdSchema.parse(rawAdapterId)
+      const query = listModelsQuerySchema.parse(rawQuery)
+      const resolved = await resolveServerProject(projectKey)
+      return resolved.client.projectCommands(resolved.serverProjectId, adapterId, query)
+    }
+  )
+
   ipcMain.handle(IPC.sessionsSessionModels, async (event, rawSessionId: unknown) => {
     const { client } = await resolveForSender(event.sender)
     return client.sessionModels(gatewayIdSchema.parse(rawSessionId))
+  })
+
+  ipcMain.handle(IPC.sessionsSessionCommands, async (event, rawSessionId: unknown) => {
+    const { client } = await resolveForSender(event.sender)
+    return client.sessionCommands(gatewayIdSchema.parse(rawSessionId))
   })
 
   ipcMain.handle(

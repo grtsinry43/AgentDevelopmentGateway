@@ -53,6 +53,9 @@ importers:
       '@agent-gateway/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@codemirror/autocomplete':
+        specifier: ^6.20.3
+        version: 6.20.3
       '@codemirror/lang-markdown':
         specifier: ^6.5.1
         version: 6.5.1

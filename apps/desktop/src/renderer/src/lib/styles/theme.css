@@ -334,6 +334,18 @@
 	}
 }
 
+/* 浮层弹入:补全/菜单类气泡淡入 + 2px 上滑。 */
+@keyframes pop-in {
+	from {
+		opacity: 0;
+		transform: translateY(-2px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
 @utility shimmer-text {
 	/* 极浅的水印感:基色 faint,扫过的一道光也只亮到 muted,整体再降透明度。 */
 	background-image: linear-gradient(

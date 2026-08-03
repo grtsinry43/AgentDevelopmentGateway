@@ -7,6 +7,7 @@ import type {
 	GatewayAdapterId,
 	GatewayAdapterAvailability,
 	GatewayModelCatalog,
+	GatewaySlashCommands,
 	GatewaySession,
 	InputAdmissionReceipt,
 	EventsHistoryResponse,
@@ -47,6 +48,18 @@ export function listModels(
 
 export function listSessionModels(sessionId: string): Promise<GatewayModelCatalog> {
 	return desktop.sessions.sessionModels(sessionId);
+}
+
+export function listSessionCommands(sessionId: string): Promise<GatewaySlashCommands> {
+	return desktop.sessions.sessionCommands(sessionId);
+}
+
+export function listCommands(
+	projectKey: string,
+	adapterId: GatewayAdapterId,
+	query: ListModelsQuery = {}
+): Promise<GatewaySlashCommands> {
+	return desktop.sessions.commands(projectKey, adapterId, query);
 }
 
 export function createSession(

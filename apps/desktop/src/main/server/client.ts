@@ -18,6 +18,7 @@ import {
   inputAdmissionReceiptSchema,
   listModelsQuerySchema,
   modelCatalogSchema,
+  slashCommandsSchema,
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
@@ -50,6 +51,7 @@ import {
   type GatewayAdapterAvailability,
   type GatewayAdapterId,
   type GatewayModelCatalog,
+  type GatewaySlashCommands,
   type GatewayProject,
   type GatewayServerInfo,
   type HostDirectoryResponse,
@@ -175,6 +177,21 @@ export class GatewayServerClient {
     return this.request(
       `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(adapterId)}/models${suffix}`,
       modelCatalogSchema
+    )
+  }
+
+  projectCommands(
+    projectId: string,
+    adapterId: GatewayAdapterId,
+    query: ListModelsQuery = {}
+  ): Promise<GatewaySlashCommands> {
+    const parsed = listModelsQuerySchema.parse(query)
+    const params = new URLSearchParams()
+    if (parsed.installationPath) params.set('installationPath', parsed.installationPath)
+    const suffix = params.size ? `?${params.toString()}` : ''
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(adapterId)}/commands${suffix}`,
+      slashCommandsSchema
     )
   }
 
@@ -316,6 +333,13 @@ export class GatewayServerClient {
     return this.request(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/models`,
       modelCatalogSchema
+    )
+  }
+
+  sessionCommands(sessionId: string): Promise<GatewaySlashCommands> {
+    return this.request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/commands`,
+      slashCommandsSchema
     )
   }
 

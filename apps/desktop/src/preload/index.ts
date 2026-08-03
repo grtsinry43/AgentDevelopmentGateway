@@ -140,6 +140,10 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.sessionsModels, projectKey, adapterId, query),
     sessionModels: (sessionId: string) =>
       ipcRenderer.invoke(IPC.sessionsSessionModels, sessionId),
+    commands: (projectKey: string, adapterId: GatewayAdapterId, query: ListModelsQuery = {}) =>
+      ipcRenderer.invoke(IPC.sessionsCommands, projectKey, adapterId, query),
+    sessionCommands: (sessionId: string) =>
+      ipcRenderer.invoke(IPC.sessionsSessionCommands, sessionId),
     create: (projectKey: string, input: CreateSessionRequest) =>
       ipcRenderer.invoke(IPC.sessionsCreate, projectKey, input),
     send: (sessionId: string, input: SendSessionInputRequest) =>
