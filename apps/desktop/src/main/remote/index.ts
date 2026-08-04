@@ -46,12 +46,14 @@ const packageManifestSchema = z.object({
  * 所以 app.getAppPath() = apps/desktop。server 产物在 apps/server/out/package:
  * apps/desktop → .. = apps → server/out/package。
  *
- * 打包后的应用没有仓库旁支,用 AGENT_GATEWAY_SERVER_PACKAGE_DIR 显式指向分发位置。
+ * 打包后的应用没有仓库旁支:优先 AGENT_GATEWAY_SERVER_PACKAGE_DIR 显式指向分发位置,
+ * 否则用内嵌的 Resources/server-packages(electron-builder extraResources)。
  */
 function packageDirectory(): string {
   if (process.env.AGENT_GATEWAY_SERVER_PACKAGE_DIR) {
     return process.env.AGENT_GATEWAY_SERVER_PACKAGE_DIR
   }
+  if (app.isPackaged) return join(process.resourcesPath, 'server-packages')
   return resolve(app.getAppPath(), '../server/out/package')
 }
 

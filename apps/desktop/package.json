@@ -74,6 +74,11 @@
 			{
 				"from": "../server/out/bundle/node_modules",
 				"to": "server/node_modules"
+			},
+			{
+				"from": "../server/out/package",
+				"to": "server-packages",
+				"filter": ["*.tar.gz", "*.sha256", "manifest.json"]
 			}
 		],
 		"mac": {
