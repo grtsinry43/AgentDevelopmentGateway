@@ -8,7 +8,9 @@
 		"dev": "electron-vite dev",
 		"lint": "eslint .",
 		"preview": "electron-vite preview",
-		"typecheck": "tsc -p tsconfig.node.json --noEmit && svelte-check --tsconfig ./tsconfig.web.json"
+		"typecheck": "tsc -p tsconfig.node.json --noEmit && svelte-check --tsconfig ./tsconfig.web.json",
+		"bundle:server": "pnpm --filter @agent-gateway/server... build && pnpm --filter @agent-gateway/server exec node scripts/bundle-local.mjs",
+		"pack:mac": "pnpm bundle:server && pnpm build && electron-builder --mac dmg"
 	},
 	"dependencies": {
 		"@agent-gateway/core": "workspace:*",
@@ -44,6 +46,7 @@
 		"@tailwindcss/vite": "^4.3.3",
 		"@types/ws": "^8.18.1",
 		"electron": "^43.2.0",
+		"electron-builder": "^26.15.3",
 		"electron-vite": "^5.0.0",
 		"svelte": "^5.56.8",
 		"svelte-check": "^4.7.4",
@@ -51,5 +54,35 @@
 		"tailwindcss": "^4.3.3",
 		"vite": "^7.3.6"
 	},
-	"productName": "Agent Development Gateway"
+	"productName": "Agent Development Gateway",
+	"build": {
+		"appId": "ai.agentgateway.desktop",
+		"productName": "Agent Development Gateway",
+		"directories": {
+			"output": "release"
+		},
+		"files": ["out/**", "package.json"],
+		"extraResources": [
+			{
+				"from": "../server/out/bundle/server.mjs",
+				"to": "server/server.mjs"
+			},
+			{
+				"from": "../server/out/bundle/install.json",
+				"to": "server/install.json"
+			},
+			{
+				"from": "../server/out/bundle/node_modules",
+				"to": "server/node_modules"
+			}
+		],
+		"mac": {
+			"target": ["dmg"],
+			"category": "public.app-category.developer-tools",
+			"identity": null
+		},
+		"dmg": {
+			"sign": false
+		}
+	}
 }

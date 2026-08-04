@@ -32,6 +32,9 @@ export interface LocalServerInfo {
 /** dev:electron-vite 以 cwd=apps/desktop 启动,server 产物在 ../server/dist。 */
 const DEV_SERVER_ENTRY = resolve(app.getAppPath(), '../server/dist/index.js')
 
+/** 生产:electron-builder extraResources 把 server bundle 放到 resources/server/server.mjs。 */
+const PROD_SERVER_ENTRY = join(process.resourcesPath, 'server', 'server.mjs')
+
 const SPAWN_TIMEOUT_MS = 20_000
 
 export class LocalServerManager {
@@ -99,9 +102,9 @@ export class LocalServerManager {
     }
   }
 
-  /** 从仓库产物拉起本地 server,解析 stdout 哨兵拿到端口。 */
+  /** 从仓库产物或生产 bundle 拉起本地 server,解析 stdout 哨兵拿到端口。 */
   private async spawn(): Promise<LocalServerInfo> {
-    const entry = DEV_SERVER_ENTRY
+    const entry = app.isPackaged ? PROD_SERVER_ENTRY : DEV_SERVER_ENTRY
     if (!existsSync(entry)) {
       throw new Error(`找不到本地 server 产物: ${entry}\n请先运行 pnpm build`)
     }
