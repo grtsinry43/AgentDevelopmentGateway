@@ -93,6 +93,59 @@ describe('session itemizer', () => {
     assert.equal((timeline[0] as { run: { status: string } }).run.status, 'completed')
   })
 
+  it('keeps a subagent in place when its status updates (no drift to the bottom)', () => {
+    const state = feed(
+      createSessionItemState(),
+      event('input.admitted', { entry: { input: { text: 'before' } } }),
+      event('subagent.started', { run: { id: 's1', status: 'running' } }),
+      event('subagent.updated', { run: { id: 's1', status: 'running', updated: 'once' } }),
+      event('subagent.updated', { run: { id: 's1', status: 'running', updated: 'twice' } }),
+      event('subagent.completed', { run: { id: 's1', status: 'completed' } }),
+      event('input.admitted', { entry: { input: { text: 'after' } } }),
+    )
+    const timeline = sessionTimeline(state)
+    assert.equal(timeline.length, 3)
+    assert.equal((timeline[0] as { role: string }).role, 'user')
+    assert.equal((timeline[0] as { text: string }).text, 'before')
+    // 无论多少次 updated,subagent 都钉在第一个 user 消息之后、第二个之前。
+    assert.equal(timeline[1]?.itemKind, 'subagent')
+    assert.equal((timeline[1] as { run: { id: string; status: string } }).run.id, 's1')
+    assert.equal((timeline[1] as { run: { id: string; status: string } }).run.status, 'completed')
+    assert.equal((timeline[2] as { text: string }).text, 'after')
+    // 原始 sequence 保住了(在 before 与 after 之间),而不是漂到最新。
+    const subagent = timeline[1] as { sequence: number }
+    const before = timeline[0] as { sequence: number }
+    const after = timeline[2] as { sequence: number }
+    assert.ok(subagent.sequence > before.sequence && subagent.sequence < after.sequence)
+  })
+
+  it('survives re-materialization: replayed subagent events re-finalize the same item', () => {
+    const events = [
+      event('input.admitted', { entry: { input: { text: 'before' } } }),
+      event('subagent.started', { run: { id: 's1', status: 'running' } }),
+      event('subagent.updated', { run: { id: 's1', status: 'running', updated: 'once' } }),
+      event('subagent.completed', { run: { id: 's1', status: 'completed' } }),
+      event('input.admitted', { entry: { input: { text: 'after' } } }),
+    ]
+    const first = feed(createSessionItemState(), ...events)
+    // 模拟重放:全新 state 从同一批 durable 事件重建(会话切换后回来)。
+    const rebuilt = feed(createSessionItemState(), ...events)
+    for (const [label, state] of [
+      ['first', first],
+      ['rebuilt', rebuilt],
+    ] as const) {
+      const timeline = sessionTimeline(state)
+      assert.equal(timeline.length, 3, `${label}: expected 3 blocks`)
+      assert.equal(timeline[1]?.itemKind, 'subagent', `${label}: subagent missing`)
+      const subagent = timeline[1] as { run: { id: string; status: string }; sequence: number }
+      assert.equal(subagent.run.id, 's1')
+      assert.equal(subagent.run.status, 'completed')
+      const before = timeline[0] as { sequence: number }
+      const after = timeline[2] as { sequence: number }
+      assert.ok(subagent.sequence > before.sequence && subagent.sequence < after.sequence)
+    }
+  })
+
   it('tracks a tool-scoped change set onto its tool', () => {
     const state = feed(
       createSessionItemState(),

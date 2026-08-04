@@ -2,6 +2,7 @@
 	import { cx } from '$lib/shared/utils/cx';
 	import MarkdownEditor from '$lib/ui/editor/MarkdownEditor.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
+	import Icon from '$lib/ui/icons/Icon.svelte';
 	import { providers } from '$lib/shared/settings/providers.svelte';
 	import type { GatewayAdapterAvailability, GatewaySession } from '@agent-gateway/shared';
 	import { Prec, type Extension } from '@codemirror/state';
@@ -159,6 +160,10 @@
 			: workspace.selectedSession?.capabilities.execution
 	);
 	const executionCanUpdate = $derived(executionCapabilities?.update === 'in-session');
+	/** 当前回合是否在跑:显示「停止」按钮。 */
+	const turnActive = $derived(
+		workspace.selectedSession?.status === 'running' || workspace.selectedSession?.status === 'waiting'
+	);
 	const executionPreset = $derived(
 		classifyExecutionPreset(
 			creating ? workspace.draftExecution : workspace.selectedSession?.execution.effective
@@ -611,6 +616,19 @@
 				{contextLabel}
 			</span>
 			<span class="hidden text-2xs text-faint 2xl:inline">Enter 发送</span>
+			{#if !creating && turnActive}
+				<Button
+					variant="ghost"
+					size="sm"
+					title="停止当前回合（也可双击 Esc）"
+					onclick={() => void workspace.stopActiveTurn()}
+				>
+					{#snippet icon()}
+						<Icon name="stop" size={12} />
+					{/snippet}
+					停止
+				</Button>
+			{/if}
 			<Button
 				variant="primary"
 				size="sm"

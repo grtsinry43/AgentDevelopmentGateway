@@ -79,6 +79,12 @@ export interface SessionItemState {
 	 * 要能补挂到对应成品块 —— 没有这张表就丢了 diff。
 	 */
 	finalizedTools: Record<string, SessionItemTool>;
+	/**
+	 * 已定型 subagent 块按 run.id 索引(跨 consume 保留)。subagent 从 started 即定型,
+	 * updated/completed 就地更新 run 并保持原始 sequence —— 否则每次更新换新 sequence
+	 * 会让它在时间线里漂到最底部,且会话重选后 in-flight subagent 会从渲染态消失。
+	 */
+	finalizedSubagents: Record<string, SessionItemSubagent>;
 	lastSequence: number;
 }
 
@@ -95,6 +101,7 @@ export function createSessionItemState(): SessionItemState {
 		toolInputDeltas: {},
 		toolOutputDeltas: {},
 		finalizedTools: {},
+		finalizedSubagents: {},
 		lastSequence: 0
 	};
 }
@@ -285,30 +292,13 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 			return [item];
 		}
 		case 'subagent.started':
-		case 'subagent.updated': {
-			const run = subagentPayload(event.payload);
-			if (!run) return [];
-			const index = state.live.findIndex(
-				(item): item is SessionItemSubagent => item.itemKind === 'subagent' && item.run.id === run.id
-			);
-			const item: SessionItemSubagent = {
-				itemKind: 'subagent',
-				id: `subagent-${run.id}`,
-				run,
-				sequence: event.sequence,
-				...(event.turnId ? { turnId: event.turnId } : {})
-			};
-			if (index >= 0) state.live.splice(index, 1, item);
-			else state.live.push(item);
-			return [];
-		}
+		case 'subagent.updated':
 		case 'subagent.completed': {
 			const run = subagentPayload(event.payload);
 			if (!run) return [];
-			const index = state.live.findIndex(
-				(item): item is SessionItemSubagent => item.itemKind === 'subagent' && item.run.id === run.id
-			);
-			const existing = index >= 0 ? (state.live[index] as SessionItemSubagent) : undefined;
+			// 从 started 即定型:subagent 是跨 consume 的稳定实体,updated/completed 就地
+			// 更新并保持原始 sequence,否则每次更新都在时间线里漂到底部、重选后会消失。
+			const existing = state.finalizedSubagents[run.id] ?? findLiveSubagent(state, run.id);
 			const item: SessionItemSubagent = {
 				itemKind: 'subagent',
 				id: `subagent-${run.id}`,
@@ -316,7 +306,12 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 				sequence: existing?.sequence ?? event.sequence,
 				...(event.turnId ? { turnId: event.turnId } : {})
 			};
-			if (index >= 0) state.live.splice(index, 1);
+			state.finalizedSubagents[run.id] = item;
+			if (existing) {
+				// 就地更新:同 id 已定型,upsert 落库覆盖;渲染端按 id 就地刷新,位置不变。
+				replaceItemInPlace(state, existing, item);
+				return [item];
+			}
 			state.items.push(item);
 			return [item];
 		}
@@ -381,6 +376,29 @@ function findLiveBlock(
 	return -1;
 }
 
+function findLiveSubagent(state: SessionItemState, runId: string): SessionItemSubagent | undefined {
+	const index = state.live.findIndex(
+		(item) => item.itemKind === 'subagent' && item.run.id === runId
+	);
+	const found = index >= 0 ? state.live[index] : undefined;
+	return found?.itemKind === 'subagent' ? found : undefined;
+}
+
+/** 就地替换已定型 subagent 块(可能在 live 或 items 缓冲里),保持其在数组中的位置。 */
+function replaceItemInPlace(
+	state: SessionItemState,
+	existing: SessionItemSubagent,
+	item: SessionItemSubagent
+): void {
+	const liveIndex = state.live.findIndex((candidate) => candidate.id === existing.id);
+	if (liveIndex >= 0) {
+		state.live[liveIndex] = item;
+		return;
+	}
+	const itemsIndex = state.items.findIndex((candidate) => candidate.id === existing.id);
+	if (itemsIndex >= 0) state.items[itemsIndex] = item;
+}
+
 function finalizeMessage(
 	state: SessionItemState,
 	event: RuntimeEventWire,
@@ -388,8 +406,7 @@ function finalizeMessage(
 	blockId: string,
 	text: string
 ): SessionItemMessage {
-	const index = findLiveBlock(state, event, contentKind, blockId);
-	const existing = index >= 0 ? (state.live[index] as LiveBlock) : undefined;
+	const index = findLiveBlock(state, event, contentKind, blockId);	const existing = index >= 0 ? (state.live[index] as LiveBlock) : undefined;
 	const startedAt = existing?.startedAt ?? event.timestamp;
 	const item: SessionItemMessage = {
 		itemKind: 'message',
