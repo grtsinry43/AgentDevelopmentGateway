@@ -13,10 +13,10 @@
 
 	let { href = '', title, children }: Props = $props();
 
-	const gatewayPath = $derived(parseAgentGatewayFileHref(href));
+	const gatewayRef = $derived(parseAgentGatewayFileHref(href));
 
 	const externalUrl = $derived.by(() => {
-		if (gatewayPath) return undefined;
+		if (gatewayRef) return undefined;
 		try {
 			const url = new URL(href);
 			return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : undefined;
@@ -27,8 +27,12 @@
 
 	function handleClick(event: MouseEvent): void {
 		event.preventDefault();
-		if (gatewayPath) {
-			void filePreview.open(gatewayPath);
+		if (gatewayRef) {
+			void filePreview.open(gatewayRef.path, {
+				line: gatewayRef.line,
+				startLine: gatewayRef.startLine,
+				endLine: gatewayRef.endLine
+			});
 			return;
 		}
 		if (!externalUrl) return;
@@ -36,7 +40,7 @@
 	}
 </script>
 
-{#if gatewayPath}
+{#if gatewayRef}
 	<button
 		type="button"
 		class="inline-flex max-w-full items-center gap-1 rounded-default bg-jade-500/12 px-1.5 py-px align-baseline text-accent hover:bg-jade-500/18"

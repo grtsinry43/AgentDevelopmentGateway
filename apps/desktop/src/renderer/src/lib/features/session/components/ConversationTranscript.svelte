@@ -13,6 +13,7 @@
 	import type { SessionWorkspaceState } from '../session-workspace.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import AgentMarkdown from './AgentMarkdown.svelte';
+	import SlashCommandBlock from './SlashCommandBlock.svelte';
 	import ChangeSetBlock from './ChangeSetBlock.svelte';
 	import ReasoningBlock from './ReasoningBlock.svelte';
 	import SubagentRunBlock from './SubagentRunBlock.svelte';
@@ -159,6 +160,11 @@
 		void $virtualizer.getVirtualItems();
 		maybeLoadOlder();
 	});
+
+	/** 用户消息以 `/command` 开头 → 按命令块渲染。 */
+	function isSlashCommand(text: string): boolean {
+		return /^\/([\w-]+)(?:\s|$)/.test(text.trim());
+	}
 </script>
 
 {#snippet block(item: ConversationTimelineItem)}
@@ -196,6 +202,8 @@
 			</div>
 			{#if item.role === 'assistant'}
 				<AgentMarkdown content={item.text || (item.streaming ? '…' : '')} />
+			{:else if isSlashCommand(item.text)}
+				<SlashCommandBlock text={item.text} />
 			{:else}
 				<p class="text-sm leading-6 whitespace-pre-wrap text-normal">
 					{item.text || (item.streaming ? '…' : '')}

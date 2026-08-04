@@ -59,7 +59,7 @@
 {#if inline}
 	<code
 		{...attrs}
-		class={`max-w-full rounded-default bg-surface-active px-1 py-0.5 font-mono text-[0.92em] break-words whitespace-pre-wrap ${className}`.trim()}
+		class={`max-w-full rounded-default bg-surface-active px-1 py-px font-mono text-[0.92em] break-words whitespace-pre-wrap ${className}`.trim()}
 		>{text}</code
 	>
 {:else}

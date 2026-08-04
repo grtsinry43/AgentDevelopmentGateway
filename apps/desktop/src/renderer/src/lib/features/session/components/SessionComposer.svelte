@@ -163,7 +163,8 @@
 	const executionCanUpdate = $derived(executionCapabilities?.update === 'in-session');
 	/** 当前回合是否在跑:显示「停止」按钮。 */
 	const turnActive = $derived(
-		workspace.selectedSession?.status === 'running' || workspace.selectedSession?.status === 'waiting'
+		workspace.selectedSession?.status === 'running' ||
+			workspace.selectedSession?.status === 'waiting'
 	);
 	const executionPreset = $derived(
 		classifyExecutionPreset(
@@ -244,12 +245,14 @@
 				display: 'flex',
 				alignItems: 'center',
 				gap: '10px',
-				'&:hover': { backgroundColor: 'var(--surface-hover)' }
+				// 命令/技能菜单用浅绿底纹与正文区分。
+				backgroundColor: 'rgba(20, 184, 166, 0.06)',
+				'&:hover': { backgroundColor: 'rgba(20, 184, 166, 0.12)' }
 			},
 			'.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-				backgroundColor: 'var(--surface-active)',
+				backgroundColor: 'rgba(20, 184, 166, 0.16)',
 				color: 'inherit',
-				'&:hover': { backgroundColor: 'var(--surface-active)' }
+				'&:hover': { backgroundColor: 'rgba(20, 184, 166, 0.16)' }
 			},
 			'.cm-tooltip-autocomplete .cm-completionLabel': {
 				color: 'var(--status-running)',

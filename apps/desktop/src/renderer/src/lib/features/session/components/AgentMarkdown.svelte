@@ -128,7 +128,8 @@
 	.agent-markdown :global(code:not(.agent-code__content)) {
 		border-radius: var(--radius-default);
 		background: var(--surface-active);
-		padding: 0.1rem 0.3rem;
+		/* 上下内边距尽量小:行内代码要保持行高,竖向上只留发丝级底纹。 */
+		padding: 0.04rem 0.3rem;
 		font-family: var(--font-mono);
 		font-size: 0.92em;
 	}
