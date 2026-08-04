@@ -24,6 +24,8 @@ import type {
   ReorderQueuedInputsBody,
   ReplaceQueuedInputBody,
   ResumeSessionBody,
+  RewindSessionBody,
+  RewindSessionResult,
   SendSessionInputBody,
   SendSessionInputResult,
   SessionControlResult,
@@ -172,6 +174,48 @@ export class SessionService {
   async interrupt(id: string, body: InterruptSessionBody): Promise<void> {
     const sessionId = this.requireActive(id)
     await this.runtime.interrupt(sessionId, body)
+  }
+
+  /** 回退:原生优先、fork 备份(preview/apply)。removedMessageCount 由 itemizer 物化块统计。 */
+  async rewind(id: string, body: RewindSessionBody): Promise<RewindSessionResult> {
+    // 会话须在 Server 进程内活跃:历史会话由桌面端先 resume(会注入 providerConfig),
+    // server 内自行 resume 拿不到中继/API key,provider 起不来。
+    const sessionId = this.requireActive(id)
+    this.itemizer.ensureMaterialized(sessionId)
+    const item = this.itemsRepository.findById(sessionId, body.target.messageUuid)
+    const targetSequence = item?.sequence
+    const target =
+      item?.itemKind === 'message'
+        ? {
+            ...body.target,
+            ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
+            ...(item.text ? { text: item.text } : {}),
+          }
+        : body.target
+    const result = await this.runtime.rewindSession({
+      sessionId,
+      target,
+      mode: body.mode,
+      preferFork: body.preferFork,
+    })
+    // 原生 apply:真正截断会话记录(内存事件流 + durable 事件 + 物化块),否则对话视图不变。
+    if (body.mode === 'apply' && result.strategy === 'native' && targetSequence !== undefined) {
+      this.runtime.truncateSession(sessionId, targetSequence)
+      this.eventsRepository.truncateAfter(sessionId, targetSequence)
+      this.itemsRepository.truncateAfter(sessionId, targetSequence)
+      this.itemizer.reset(sessionId)
+      const snapshot = this.runtime.getSession(sessionId)
+      this.persistSnapshot(snapshot)
+    }
+    return {
+      ...result,
+      removedMessageCount:
+        result.removedMessageCount > 0
+          ? result.removedMessageCount
+          : targetSequence === undefined
+            ? 0
+            : this.itemsRepository.countMessagesAfter(sessionId, targetSequence),
+    }
   }
 
   async resolveInteraction(

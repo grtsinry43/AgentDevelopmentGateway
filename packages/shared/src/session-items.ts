@@ -24,6 +24,8 @@ export interface SessionItemMessage {
 	text: string;
 	sequence: number;
 	turnId?: string;
+	/** 用户消息的 Gateway 客户端消息 id(input.admitted 的 entry.input.clientMessageId),回退/编辑定位用。 */
+	clientMessageId?: string;
 	subagentRunId?: string;
 	streaming: boolean;
 	startedAt?: number;
@@ -125,6 +127,9 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 				text,
 				sequence: event.sequence,
 				...(event.turnId ? { turnId: event.turnId } : {}),
+				...(admittedClientMessageId(event.payload)
+					? { clientMessageId: admittedClientMessageId(event.payload) }
+					: {}),
 				streaming: false
 			};
 			state.items.push(item);
@@ -435,6 +440,13 @@ function eventAttribution(event: RuntimeEventWire): { subagentRunId?: string } {
 function admittedText(payload: unknown): string | undefined {
 	if (!isRecord(payload) || !isRecord(payload.entry) || !isRecord(payload.entry.input)) return undefined;
 	return typeof payload.entry.input.text === 'string' ? payload.entry.input.text : undefined;
+}
+
+function admittedClientMessageId(payload: unknown): string | undefined {
+	if (!isRecord(payload) || !isRecord(payload.entry) || !isRecord(payload.entry.input)) return undefined;
+	return typeof payload.entry.input.clientMessageId === 'string'
+		? payload.entry.input.clientMessageId
+		: undefined;
 }
 
 function subagentPayload(payload: unknown): SubagentRunWire | undefined {

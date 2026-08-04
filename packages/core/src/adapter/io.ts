@@ -253,3 +253,53 @@ export interface ForkSessionInput {
   context?: SessionContext
   execution?: SessionExecutionSettings
 }
+
+/**
+ * Rewind target — a conversation position to roll back to. `messageUuid` is a Gateway
+ * message item id (`input-<sequence>` / assistant block id); `clientMessageId`(用户消息
+ * 的 Gateway 客户端 id)由 server 从物化 item 解析后注入,adapter 用它查自家 provider id 索引。
+ */
+export type RewindTarget = {
+  by: 'message'
+  messageUuid: string
+  partId?: string
+  /** 用户消息的 Gateway 客户端 id(server 从物化 item 注入),adapter 用它查自家索引。 */
+  clientMessageId?: string
+  /** 目标用户消息文本(server 从物化 item 注入),供 resume 后的会话按内容兜底解析。 */
+  text?: string
+}
+
+/** Rewind request: preview or apply. Native in-place preferred; fork as fallback. */
+export interface RewindSessionInput {
+  sessionId: SessionId
+  /** Authoritative project path (provider session lookup / fork cwd). */
+  projectPath: string
+  target: RewindTarget
+  /** preview 只算「会删什么 / 文件 diff」不落地;apply 真正执行(截断或分支)。 */
+  mode: 'preview' | 'apply'
+  /** 强制走 fork 分支而不是原生原地截断(默认 false = 原生优先)。 */
+  preferFork?: boolean
+}
+
+/** Per-file rollback preview/result (native providers only). */
+export interface RewindFileDiff {
+  file: string
+  insertions: number
+  deletions: number
+}
+
+/** Result of a rewind preview/apply. */
+export interface RewindSessionResult {
+  /** native = 原地截断/回滚;fork = 新建分支会话。 */
+  strategy: 'native' | 'fork'
+  /** 该回退点之后将被/已移除的消息数。 */
+  removedMessageCount: number
+  /** 文件回滚预览(native 且 provider 支持 dry-run 时)。 */
+  fileDiff: RewindFileDiff[]
+  /** 当前可用的回退行为(供前端二次确认时选择)。 */
+  available: { native: boolean; fork: boolean }
+  /** apply(native)是否真的还原了文件。 */
+  filesReverted?: boolean
+  /** apply(fork)新建的分支 Gateway 会话 id(仅 fork 策略)。 */
+  forkSessionId?: SessionId
+}

@@ -307,6 +307,15 @@ const server = http.createServer((request, response) => {
       sendJson(response, fixture.sessionDiffs ?? [])
       return
     }
+    // Official: POST /session/:id/revert (rewind apply) → session info
+    if (
+      request.method === 'POST' &&
+      url.pathname.startsWith('/session/') &&
+      url.pathname.endsWith('/revert')
+    ) {
+      sendJson(response, fixture.sessionInfo)
+      return
+    }
     if (request.method === 'GET' && url.pathname === '/api/model') {
       sendJson(response, {
         location: {

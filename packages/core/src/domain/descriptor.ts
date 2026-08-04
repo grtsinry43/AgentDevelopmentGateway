@@ -38,6 +38,13 @@ export type RuntimeFeature =
 export type SteerSupport = 'native' | 'queue-fallback' | 'unsupported'
 
 /**
+ * Rewind/edit support (回退对话):native in-place truncation (Claude rewindFiles +
+ * resumeSessionAt, OpenCode revert/cleanup), or fork-based (Codex thread/fork), or
+ * nothing (frontend must mark the adapter as not supporting rewind).
+ */
+export type RewindSupport = 'native' | 'fork' | 'unsupported'
+
+/**
  * Model-switch support: some runtimes switch in-session, some must restart the session
  * (which changes lifecycle, not just a call), some can't (cradle `sessionModelSwitch`).
  */
@@ -64,6 +71,8 @@ export interface CapabilityDegradation {
  */
 export interface RuntimeCapabilities {
   steer: SteerSupport
+  /** 回退支持:native 原地截断 / fork 分支 / unsupported。见 {@link RewindSupport}。 */
+  rewind: RewindSupport
   modelSwitch: ModelSwitchSupport
   execution: ExecutionCapabilities
   /** Boolean-gated features; absent key = unknown/unsupported. */

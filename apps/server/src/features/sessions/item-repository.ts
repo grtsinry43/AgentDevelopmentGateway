@@ -13,6 +13,9 @@ export class SessionItemRepository {
   private readonly upsertItem
   private readonly selectMaxSequence
   private readonly selectBefore
+  private readonly selectSequenceOf
+  private readonly selectMessagesAfter
+  private readonly selectItemById
 
   constructor(private readonly database: GatewayDatabase) {
     this.upsertItem = this.database.prepare(
@@ -28,6 +31,16 @@ export class SessionItemRepository {
       `SELECT item_json FROM session_items
        WHERE session_id = ? AND sequence < ?
        ORDER BY sequence DESC LIMIT ?`
+    )
+    this.selectSequenceOf = this.database.prepare(
+      `SELECT sequence FROM session_items WHERE session_id = ? AND item_id = ?`
+    )
+    this.selectItemById = this.database.prepare(
+      `SELECT item_json FROM session_items WHERE session_id = ? AND item_id = ?`
+    )
+    this.selectMessagesAfter = this.database.prepare(
+      `SELECT COUNT(*) AS count FROM session_items
+       WHERE session_id = ? AND sequence > ? AND kind = 'message'`
     )
   }
 
@@ -56,6 +69,31 @@ export class SessionItemRepository {
     return row.max_sequence ?? 0
   }
 
+  /** 取某个 item 的 sequence(找不到返回 undefined)。 */
+  sequenceOf(sessionId: string, itemId: string): number | undefined {
+    const row = z
+      .strictObject({ sequence: z.number().optional() })
+      .parse(this.selectSequenceOf.get(sessionId, itemId) ?? {})
+    return row.sequence
+  }
+
+  /** 按 item id 取成品块。 */
+  findById(sessionId: string, itemId: string): SessionItem | undefined {
+    const row = z
+      .strictObject({ item_json: z.string() })
+      .safeParse(this.selectItemById.get(sessionId, itemId) ?? {})
+    if (!row.success) return undefined
+    return JSON.parse(row.data.item_json) as SessionItem
+  }
+
+  /** 统计 `sequence > after` 的 message 块数量(回退预览用)。 */
+  countMessagesAfter(sessionId: string, after: number): number {
+    const row = z
+      .strictObject({ count: z.number() })
+      .parse(this.selectMessagesAfter.get(sessionId, after) ?? { count: 0 })
+    return row.count
+  }
+
   /** 取 `sequence < before` 的最多 limit 条成品块(升序)。 */
   listBefore(sessionId: string, before: number, limit: number): SessionItem[] {
     return this.selectBefore
@@ -66,5 +104,12 @@ export class SessionItemRepository {
 
   discardSession(sessionId: SessionId): void {
     this.database.prepare('DELETE FROM session_items WHERE session_id = ?').run(sessionId)
+  }
+
+  /** 原生回退:删除 `sequence > after` 的物化块。 */
+  truncateAfter(sessionId: SessionId, after: number): void {
+    this.database
+      .prepare('DELETE FROM session_items WHERE session_id = ? AND sequence > ?')
+      .run(sessionId, after)
   }
 }

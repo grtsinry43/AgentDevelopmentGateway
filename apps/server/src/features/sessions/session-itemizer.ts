@@ -61,4 +61,9 @@ export class SessionItemizer {
     this.sessions.delete(sessionId)
     this.items.discardSession(sessionId)
   }
+
+  /** 原生回退后重置内存物化状态:下次访问从截断后的 durable 日志重新回放。 */
+  reset(sessionId: string): void {
+    this.sessions.delete(sessionId)
+  }
 }

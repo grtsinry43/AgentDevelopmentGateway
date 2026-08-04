@@ -787,6 +787,86 @@ test('skips runtime environment SessionContext and records degradation when unsu
   assert.deepEqual(created.connection.capabilities.degradations, created.capabilities.degradations)
 })
 
+test('rewinds via fork when the adapter only declares fork support', async () => {
+  const codex = new FakeRuntimeAdapter('codex')
+  const manager = new RuntimeSessionManager(new AdapterRegistry([codex]))
+
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'codex',
+  })
+
+  const preview = await manager.rewindSession({
+    sessionId: created.session.id,
+    target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'client-1' },
+    mode: 'preview',
+  })
+  assert.equal(preview.strategy, 'fork')
+  assert.equal(preview.fileDiff.length, 0)
+  assert.equal(codex.rewindPoints.length, 0)
+
+  const applied = await manager.rewindSession({
+    sessionId: created.session.id,
+    target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'client-1' },
+    mode: 'apply',
+  })
+  assert.equal(applied.strategy, 'fork')
+  assert.ok(applied.forkSessionId)
+  assert.equal(codex.rewindPoints[0]?.clientMessageId, 'client-1')
+  assert.deepEqual(codex.forkInputs.at(-1)?.forkPoint, {
+    by: 'message',
+    messageUuid: 'client-1',
+  })
+  const forked = manager.getSession(applied.forkSessionId!)
+  assert.equal(forked.session.forkedFromSessionId, created.session.id)
+  await manager.disposeSession(forked.session.id)
+  await manager.disposeSession(created.session.id)
+})
+
+test('rewinds via native in-place when the adapter declares native support', async () => {
+  const claude = new FakeRuntimeAdapter('claude-code')
+  claude.descriptor.capabilities.rewind = 'native'
+  let rewindCalls = 0
+  claude.rewindSession = async () => {
+    rewindCalls += 1
+    return {
+      strategy: 'native',
+      removedMessageCount: 0,
+      fileDiff: [],
+      available: { native: true, fork: false },
+      filesReverted: true,
+    }
+  }
+  const manager = new RuntimeSessionManager(new AdapterRegistry([claude]))
+
+  const created = await manager.createSession({
+    projectId: 'project-1',
+    host: localHost,
+    projectPath: '/workspace/project',
+    adapterId: 'claude-code',
+  })
+
+  const preview = await manager.rewindSession({
+    sessionId: created.session.id,
+    target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'client-1' },
+    mode: 'preview',
+  })
+  assert.equal(preview.strategy, 'native')
+  assert.equal(rewindCalls, 1)
+
+  const applied = await manager.rewindSession({
+    sessionId: created.session.id,
+    target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'client-1' },
+    mode: 'apply',
+  })
+  assert.equal(applied.strategy, 'native')
+  assert.equal(applied.filesReverted, true)
+  assert.equal(rewindCalls, 2)
+  await manager.disposeSession(created.session.id)
+})
+
 async function waitForEvents(
   manager: RuntimeSessionManager,
   sessionId: ReturnType<typeof asSessionId>,

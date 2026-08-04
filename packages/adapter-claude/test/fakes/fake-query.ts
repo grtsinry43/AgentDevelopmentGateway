@@ -12,6 +12,8 @@ export class FakeClaudeQuery implements ClaudeQuery {
     effortLevel?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
   }> = []
   readonly permissionModes: PermissionMode[] = []
+  readonly rewindCalls: Array<{ userMessageId: string; dryRun?: boolean }> = []
+  readonly rewindResults: Array<import('@anthropic-ai/claude-agent-sdk').RewindFilesResult> = []
   interruptCount = 0
   closed = false
 
@@ -65,6 +67,16 @@ export class FakeClaudeQuery implements ClaudeQuery {
   setPermissionMode(mode: PermissionMode): Promise<unknown> {
     this.permissionModes.push(mode)
     return Promise.resolve(undefined)
+  }
+
+  rewindFiles(
+    userMessageId: string,
+    options?: { dryRun?: boolean },
+  ): Promise<import('@anthropic-ai/claude-agent-sdk').RewindFilesResult> {
+    this.rewindCalls.push({ userMessageId, dryRun: options?.dryRun })
+    return Promise.resolve(
+      this.rewindResults.shift() ?? { canRewind: false, error: 'not staged' },
+    )
   }
 
   close(): void {

@@ -3,6 +3,7 @@ import type { SDKSystemMessage } from '@anthropic-ai/claude-agent-sdk'
 
 export const CLAUDE_BASE_CAPABILITIES: RuntimeCapabilities = {
   steer: 'queue-fallback',
+  rewind: 'native',
   modelSwitch: 'in-session',
   execution: {
     workModes: ['build', 'plan'],

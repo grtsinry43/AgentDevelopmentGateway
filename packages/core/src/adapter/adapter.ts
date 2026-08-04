@@ -17,7 +17,11 @@ import type {
   AdapterSendResult,
   SendOptions,
   UserInput,
+  RewindSessionInput,
+  RewindSessionResult,
+  RewindTarget,
 } from './io.js'
+import type { ResumeCursor } from './io.js'
 import type { ListCommandsInput, SlashCommand } from './commands.js'
 import type {
   RuntimeConnectOptions,
@@ -88,6 +92,20 @@ export interface RuntimeAdapter {
   listModels?(input: ListModelsInput): Promise<ModelCatalog>
   /** 拉取 slash 命令/技能目录(统一模型,抹平三家差异)。与 `features['command.catalog']` 配对。 */
   listCommands?(input: ListCommandsInput): Promise<SlashCommand[]>
+  /**
+   * 原生 in-place 回退(截断对话到切点 + 还原文件)。可选方法 —— 只覆盖原生路径;
+   * fork 回退复用 `forkSession`。与 `capabilities.rewind === 'native'` 配对。
+   */
+  rewindSession?(input: RewindSessionInput): Promise<RewindSessionResult>
+  /**
+   * 把 Gateway 回退目标解析成 provider 原生 fork 切点(Codex turn id / OpenCode messageID),
+   * 供 runtime 走 fork 回退路径。与 `capabilities.rewind === 'fork'` 配对。
+   */
+  resolveRewindForkPoint?(input: {
+    sessionId: SessionId
+    projectPath: string
+    target: RewindTarget
+  }): Promise<ResumeCursor>
   setModel?(sessionId: SessionId, model: ModelSelection): Promise<void>
   /** Persist a user-set title to the provider runtime; pairs with `features['session.rename']`. */
   renameSession?(sessionId: SessionId, title: string): Promise<void>

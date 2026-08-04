@@ -276,6 +276,133 @@ test('disposes a session cleanly after its Query pump fails', async () => {
   assert.throws(() => adapter.events(sessionId), /Unknown Claude session/)
 })
 
+test('rewinds files natively by resolving the target user message uuid', async () => {
+  const fake = new FakeClaudeQuery()
+  const adapter = new ClaudeAdapter(() => fake)
+  const connection = await connect(adapter)
+  const sessionId = asSessionId('rewind-session')
+  const creating = adapter.createSession({ sessionId, projectPath: '/workspace/project', connection })
+  fake.resolveInitialization()
+  await creating
+  const events = adapter.events(sessionId)[Symbol.asyncIterator]()
+  await nextEventOfType(events, 'session.created')
+  await nextEventOfType(events, 'session.status_changed')
+
+  await adapter.send(sessionId, { clientMessageId: 'first', text: 'first' }, {
+    turnId: asTurnId('rewind-turn'),
+    kind: 'start-turn',
+  })
+  // provider echo 用户消息:泵关联 clientMessageId → uuid
+  fake.emit({
+    type: 'user',
+    uuid: 'provider-user-uuid',
+    session_id: '',
+    message: { role: 'user', content: 'first' },
+  } as unknown as SDKMessage)
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve))
+
+  fake.rewindResults.push({
+    canRewind: true,
+    filesChanged: ['src/a.ts', 'src/b.ts'],
+    insertions: 5,
+    deletions: 3,
+  })
+  const preview = await adapter.rewindSession({
+    sessionId,
+    projectPath: '/workspace/project',
+    target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'first' },
+    mode: 'preview',
+  })
+  assert.equal(preview.strategy, 'native')
+  assert.deepEqual(fake.rewindCalls.at(-1), { userMessageId: 'provider-user-uuid', dryRun: true })
+  assert.equal(preview.fileDiff.length, 2)
+  assert.equal(preview.filesReverted, undefined)
+
+  fake.rewindResults.push({
+    canRewind: true,
+    filesChanged: ['src/a.ts'],
+    insertions: 5,
+    deletions: 3,
+  })
+  const applied = await adapter.rewindSession({
+    sessionId,
+    projectPath: '/workspace/project',
+    target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'first' },
+    mode: 'apply',
+  })
+  assert.equal(applied.filesReverted, true)
+  assert.deepEqual(fake.rewindCalls.at(-1), { userMessageId: 'provider-user-uuid', dryRun: false })
+  await adapter.disposeSession(sessionId)
+})
+
+test('rewind resolves the target uuid from SDK session messages when the live index misses', async () => {
+  const fake = new FakeClaudeQuery()
+  const adapter = new ClaudeAdapter(
+    () => fake,
+    async () => [
+      {
+        type: 'user',
+        uuid: 'provider-uuid-from-pull',
+        session_id: 's',
+        message: { role: 'user', content: 'pull me' },
+        parent_tool_use_id: null,
+        parent_agent_id: null,
+      },
+    ],
+  )
+  const connection = await connect(adapter)
+  const sessionId = asSessionId('rewind-pull-session')
+  const creating = adapter.createSession({ sessionId, projectPath: '/workspace/project', connection })
+  fake.resolveInitialization()
+  await creating
+  const events = adapter.events(sessionId)[Symbol.asyncIterator]()
+  await nextEventOfType(events, 'session.created')
+  await nextEventOfType(events, 'session.status_changed')
+
+  fake.rewindResults.push({
+    canRewind: true,
+    filesChanged: ['src/c.ts'],
+    insertions: 1,
+    deletions: 0,
+  })
+  const preview = await adapter.rewindSession({
+    sessionId,
+    projectPath: '/workspace/project',
+    target: { by: 'message', messageUuid: 'input-1', text: 'pull me' },
+    mode: 'preview',
+  })
+  assert.equal(preview.strategy, 'native')
+  assert.deepEqual(fake.rewindCalls.at(-1), {
+    userMessageId: 'provider-uuid-from-pull',
+    dryRun: true,
+  })
+  await adapter.disposeSession(sessionId)
+})
+
+test('rewind throws a clean error when the target uuid cannot be resolved', async () => {
+  const fake = new FakeClaudeQuery()
+  const adapter = new ClaudeAdapter(() => fake, async () => [])
+  const connection = await connect(adapter)
+  const sessionId = asSessionId('rewind-unresolved-session')
+  const creating = adapter.createSession({ sessionId, projectPath: '/workspace/project', connection })
+  fake.resolveInitialization()
+  await creating
+  const events = adapter.events(sessionId)[Symbol.asyncIterator]()
+  await nextEventOfType(events, 'session.created')
+  await nextEventOfType(events, 'session.status_changed')
+
+  await assert.rejects(
+    adapter.rewindSession({
+      sessionId,
+      projectPath: '/workspace/project',
+      target: { by: 'message', messageUuid: 'input-1', text: 'nope' },
+      mode: 'preview',
+    }),
+    /cannot resolve rewind target/,
+  )
+  await adapter.disposeSession(sessionId)
+})
+
 async function connect(adapter: ClaudeAdapter): Promise<RuntimeConnection> {
   return adapter.connect({ context: { hostId: 'local' } })
 }

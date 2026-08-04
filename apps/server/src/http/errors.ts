@@ -93,7 +93,8 @@ function mapAdapterError(error: AdapterError): GatewayHttpError {
     case 'gateway.capability.unsupported':
       return new GatewayHttpError(422, 'CAPABILITY_UNSUPPORTED', error.message)
     default:
-      return new GatewayHttpError(502, 'RUNTIME_START_FAILED', 'Runtime session failed to start')
+      // 未特判的 adapter 错误:透出真实 message,别用笼统的「Runtime session failed to start」误导排查。
+      return new GatewayHttpError(502, 'RUNTIME_START_FAILED', error.message)
   }
 }
 

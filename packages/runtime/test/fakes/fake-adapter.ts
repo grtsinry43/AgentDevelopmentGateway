@@ -30,6 +30,10 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly createInputs: CreateSessionInput[] = []
   readonly resumeInputs: ResumeSessionInput[] = []
   readonly forkInputs: ForkSessionInput[] = []
+  readonly rewindPoints: import('@agent-gateway/core').RewindTarget[] = []
+  rewindSession?: (
+    input: import('@agent-gateway/core').RewindSessionInput,
+  ) => Promise<import('@agent-gateway/core').RewindSessionResult>
   readonly disposeCalls: SessionId[] = []
   readonly disposeFailures = new Set<SessionId>()
   readonly sendInputs: Array<{ sessionId: SessionId; input: UserInput; options: SendOptions }> = []
@@ -64,6 +68,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
       protocolVersion: 'test',
       capabilities: {
         steer: 'queue-fallback',
+        rewind: 'fork',
         modelSwitch: 'in-session',
         execution: {
           workModes: ['build', 'plan'],
@@ -108,6 +113,18 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   forkSession(input: ForkSessionInput): Promise<RuntimeSessionHandle> {
     this.forkInputs.push(input)
     return this.openSession(input.sessionId, `${this.descriptor.id}-fork-${input.runtimeSessionId}`)
+  }
+
+  resolveRewindForkPoint(input: {
+    sessionId: SessionId
+    projectPath: string
+    target: import('@agent-gateway/core').RewindTarget
+  }): Promise<import('@agent-gateway/core').ResumeCursor> {
+    this.rewindPoints.push(input.target)
+    return Promise.resolve({
+      by: 'message',
+      messageUuid: input.target.clientMessageId ?? input.target.messageUuid,
+    })
   }
 
   private openSession(sessionId: SessionId, runtimeSessionId: string): Promise<RuntimeSessionHandle> {

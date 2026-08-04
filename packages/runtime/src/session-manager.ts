@@ -33,6 +33,9 @@ import {
   type TaskState,
   type SubagentRun,
   type UserInput,
+  type ResumeCursor,
+  type RewindSessionResult,
+  type RewindSupport,
 } from '@agent-gateway/core'
 import { AdapterRegistry } from './adapter-registry.js'
 import { RuntimeConnectionManager } from './connection-manager.js'
@@ -45,6 +48,7 @@ import type {
   ListRuntimeCommandsInput,
   RuntimeSlashCommands,
   ResumeRuntimeSessionInput,
+  RewindRuntimeSessionInput,
   RuntimeAdapterAvailability,
   RuntimeControlOptions,
   RuntimeControlReceipt,
@@ -505,6 +509,94 @@ export class RuntimeSessionManager {
     }
   }
 
+  /**
+   * 回退编排:原生(native in-place)优先,fork 作为备份(或 preferFork 强制)。
+   *
+   *  - preview:原生走 adapter.rewindSession(dry-run 预览文件 diff),fork 直接返回策略;
+   *    removedMessageCount 由 server 端 itemizer 计算(见 RewindSessionResult)。
+   *  - apply:native → adapter 原地截断;fork → 解析 provider 切点后复用 this.forkSession
+   *    建新 Gateway 会话(带新 id),返回 forkSessionId。
+   */
+  async rewindSession(input: RewindRuntimeSessionInput): Promise<RewindSessionResult> {
+    const managed = this.requireSession(input.sessionId)
+    const support: RewindSupport =
+      managed.connection.capabilities.rewind ?? 'unsupported'
+    if (support === 'unsupported') throw unsupported('session rewind')
+
+    const hasNative =
+      support === 'native' && typeof managed.adapter.rewindSession === 'function'
+    const hasFork =
+      (support === 'fork' || support === 'native') &&
+      typeof managed.adapter.resolveRewindForkPoint === 'function' &&
+      typeof managed.adapter.forkSession === 'function'
+    const available: { native: boolean; fork: boolean } = {
+      native: hasNative,
+      fork: hasFork,
+    }
+
+    const native = !input.preferFork && hasNative
+    const fork = input.preferFork || (support === 'fork' && hasFork)
+
+    if (!native && !fork) throw unsupported('session rewind')
+
+    const rewindNative = managed.adapter.rewindSession
+
+    if (input.mode === 'preview') {
+      if (native && rewindNative) {
+        const result = await rewindNative.call(managed.adapter, {
+          sessionId: input.sessionId,
+          projectPath: managed.projectPath,
+          target: input.target,
+          mode: 'preview',
+        })
+        return {
+          strategy: 'native',
+          removedMessageCount: 0,
+          fileDiff: result.fileDiff,
+          available,
+        }
+      }
+      return { strategy: 'fork', removedMessageCount: 0, fileDiff: [], available }
+    }
+
+    if (native && rewindNative) {
+      const result = await rewindNative.call(managed.adapter, {
+        sessionId: input.sessionId,
+        projectPath: managed.projectPath,
+        target: input.target,
+        mode: 'apply',
+      })
+      return {
+        strategy: 'native',
+        removedMessageCount: 0,
+        fileDiff: result.fileDiff,
+        available,
+        filesReverted: result.filesReverted,
+      }
+    }
+
+    if (managed.adapter.resolveRewindForkPoint && managed.adapter.forkSession) {
+      const cursor: ResumeCursor = await managed.adapter.resolveRewindForkPoint({
+        sessionId: input.sessionId,
+        projectPath: managed.projectPath,
+        target: input.target,
+      })
+      const forked = await this.forkSession({
+        sourceSessionId: input.sessionId,
+        forkPoint: cursor,
+      })
+      return {
+        strategy: 'fork',
+        removedMessageCount: 0,
+        fileDiff: [],
+        available,
+        forkSessionId: forked.session.id,
+      }
+    }
+
+    throw unsupported('session rewind')
+  }
+
   getSession(sessionId: SessionId): RuntimeSessionSnapshot {
     return snapshot(this.requireSession(sessionId))
   }
@@ -599,12 +691,26 @@ export class RuntimeSessionManager {
       await managed.adapter.interrupt(sessionId, interruptOptions)
     })
   }
-
   async resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void> {
     return this.enqueue(sessionId, async (managed) => {
       if (!managed.pendingInteractions.has(resolution.id)) return
       await managed.adapter.resolveInteraction(sessionId, resolution)
     })
+  }
+
+  /**
+   * 原生回退落地后截断会话:内存事件流拉回到目标 sequence,清掉切点之后的事件;
+   * durable 日志由 server 侧同步截断。taskState/subagent/inputQueue 是事件投影,
+   * 下次物化/重建会从截断后的日志重新推导。
+   */
+  truncateSession(sessionId: SessionId, afterSequence: number): void {
+    const managed = this.requireSession(sessionId)
+    managed.events.truncate(afterSequence)
+    managed.session = {
+      ...managed.session,
+      lastEventSequence: afterSequence,
+      updatedAt: Date.now(),
+    }
   }
 
   /** Durably admits user input before delivering it to the session's immutable adapter. */

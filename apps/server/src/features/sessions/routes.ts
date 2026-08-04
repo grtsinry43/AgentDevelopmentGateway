@@ -10,6 +10,8 @@ import {
   forkSessionRequestSchema,
   inputAdmissionReceiptSchema,
   interruptSessionRequestSchema,
+  rewindSessionRequestSchema,
+  rewindSessionResultSchema,
   modelCatalogSchema,
   slashCommandsSchema,
   projectSessionsParamsSchema,
@@ -84,6 +86,18 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       await options.sessions.interrupt(request.params.sessionId, request.body)
       reply.code(204)
     }
+  )
+
+  server.post(
+    '/sessions/:sessionId/rewind',
+    {
+      schema: {
+        params: sessionParamsSchema,
+        body: rewindSessionRequestSchema,
+        response: { 200: rewindSessionResultSchema, ...sessionErrorResponses }
+      }
+    },
+    async (request) => options.sessions.rewind(request.params.sessionId, request.body)
   )
 
   server.post(

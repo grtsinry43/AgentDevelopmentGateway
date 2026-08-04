@@ -22,6 +22,9 @@ import {
   type SlashCommand,
   type ProviderRuntimeConfig,
   type ResumeSessionInput,
+  type RewindSessionInput,
+  type RewindSessionResult,
+  type RewindFileDiff,
   type RuntimeAdapter,
   type RuntimeAdapterDescriptor,
   type RuntimeCapabilities,
@@ -68,6 +71,7 @@ const execFileAsync = promisify(execFile)
 
 const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   steer: 'native',
+  rewind: 'native',
   modelSwitch: 'in-session',
   execution: {
     workModes: ['build'],
@@ -80,7 +84,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   },
   features: {
     'session.resume': true,
-    'session.fork': false,
+    'session.fork': true,
     'model.catalog': true,
     'command.catalog': true,
     'output.partial_text': true,
@@ -94,7 +98,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
     'context.session_injection': false,
     'context.turn_injection': false,
     'context.compaction': true,
-    'changes.revert': false,
+    'changes.revert': true,
     'extension.skills': false,
     'session.rename': true,
   },
@@ -130,8 +134,8 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
     },
     {
       capability: 'session.fork',
-      status: 'unsupported',
-      reason: 'OpenCode v2 has no session fork route',
+      status: 'experimental',
+      reason: 'OpenCode v2 has a fork route (POST /session/:id/fork) but no fork source fidelity tests yet',
     },
     {
       capability: 'attachment.inline_data',
@@ -446,6 +450,78 @@ export class OpenCodeAdapter implements RuntimeAdapter {
       payload: { status: 'interrupted' },
       ...(turnId ? { turnId } : {}),
     })
+  }
+
+  /**
+   * 原生回退(OpenCode `revert`):目标用户消息的 messageID 是 `msg_<clientMessageId>`。
+   * preview 用 `/session/:id/diff?messageID=` 拿文件 diff(非破坏);apply 用
+   * `POST /session/:id/revert` 还原文件并暂存对话回退(下次 prompt 时 cleanup 截断)。
+   */
+  async rewindSession(input: RewindSessionInput): Promise<RewindSessionResult> {
+    const session = this.getSession(input.sessionId)
+    if (input.target.by !== 'message') {
+      throw adapterError('protocol', 'OpenCode rewind requires a message target')
+    }
+    const messageId = input.target.clientMessageId
+      ? toNativeMessageId(input.target.clientMessageId)
+      : undefined
+    if (!messageId) {
+      throw adapterError(
+        'protocol',
+        `OpenCode cannot resolve rewind target ${input.target.messageUuid}`,
+      )
+    }
+
+    if (input.mode === 'preview') {
+      const fileDiff: RewindFileDiff[] = await this.rewindPreviewDiff(session, messageId)
+      return { strategy: 'native', removedMessageCount: 0, fileDiff, available: { native: true, fork: false } }
+    }
+
+    await session.connection.client.void(
+      `/session/${encodeURIComponent(session.runtimeSessionId)}/revert`,
+      {
+        method: 'POST',
+        query: { directory: session.projectPath },
+        body: { messageID: messageId },
+      },
+    )
+    return {
+      strategy: 'native',
+      removedMessageCount: 0,
+      fileDiff: [],
+      available: { native: true, fork: false },
+      filesReverted: true,
+    }
+  }
+
+  /** `/session/:id/diff` → 自目标消息以来的文件变更(每个文件带 +/- 计数)。 */
+  private async rewindPreviewDiff(session: SessionState, messageId: string): Promise<RewindFileDiff[]> {
+    const response = await session.connection.client.json(
+      `/session/${encodeURIComponent(session.runtimeSessionId)}/diff`,
+      {
+        query: { directory: session.projectPath, messageID: messageId },
+      },
+    )
+    const root = recordValue(response)
+    const diffs = Array.isArray(response) ? response : root?.data ?? root?.diff
+    if (!Array.isArray(diffs)) return []
+    const fileDiff: RewindFileDiff[] = []
+    for (const value of diffs) {
+      const entry = recordValue(value)
+      const file = stringValue(entry?.file)
+      if (!file) continue
+      const patch = stringValue(entry?.patch)
+      let insertions = 0
+      let deletions = 0
+      if (patch) {
+        for (const line of patch.split('\n')) {
+          if (line.startsWith('+') && !line.startsWith('+++')) insertions += 1
+          else if (line.startsWith('-') && !line.startsWith('---')) deletions += 1
+        }
+      }
+      fileDiff.push({ file, insertions, deletions })
+    }
+    return fileDiff
   }
 
   async resolveInteraction(

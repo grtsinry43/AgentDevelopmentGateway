@@ -13,14 +13,18 @@ import {
 } from './fixtures/opencode-v2.js'
 import { collectUntil, createV2Harness, waitForRequest } from './support/v2-harness.js'
 
-test('advertises the OpenCode v2 transport without fork capability', async () => {
+test('advertises the OpenCode v2 transport with fork and native rewind', async () => {
   const adapter = new OpenCodeAdapter()
   const capabilities = await adapter.getCapabilities()
 
   assert.equal(adapter.descriptor.protocolVersion, 'http-sse-v2')
   assert.equal(capabilities.features['session.resume'], true)
-  assert.equal(capabilities.features['session.fork'], false)
-  assert.equal(adapter.descriptor.capabilities.features['session.fork'], false)
+  // v2 has POST /session/:id/fork (reference-verified), so fork is advertised.
+  assert.equal(capabilities.features['session.fork'], true)
+  assert.equal(adapter.descriptor.capabilities.features['session.fork'], true)
+  // revert/cleanup gives native in-place rewind.
+  assert.equal(capabilities.rewind, 'native')
+  assert.equal(capabilities.features['changes.revert'], true)
 })
 
 test('fixtures use official session routes plus v2 session.next envelopes', () => {
@@ -648,6 +652,74 @@ test('switches models through v2 and advertises only implemented capabilities', 
   assert.equal(capabilities.features['context.turn_injection'], false)
     assert.equal('forkSession' in harness.adapter, false)
     assert.equal('configureExecution' in harness.adapter, false)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('reverts natively by resolving the target user message id from clientMessageId', async () => {
+  const harness = await createV2Harness()
+  const sessionId = asSessionId('gateway-v2-rewind')
+  try {
+    const handle = await harness.adapter.createSession({
+      sessionId,
+      projectPath: harness.directory,
+      connection: harness.connection,
+      model: { model: 'openai/gpt-test' },
+    })
+    assert.equal(handle.runtimeSessionId, nativeSessionId)
+    await waitForRequest(harness, (r) => r.method === 'POST' && r.path === expectedV2Paths.create)
+
+    const clientMessageId = '6689c1d1-aff3-417a-b941-b5d6460a7782'
+    const preview = await harness.adapter.rewindSession({
+      sessionId,
+      projectPath: harness.directory,
+      target: { by: 'message', messageUuid: 'input-1', clientMessageId },
+      mode: 'preview',
+    })
+    assert.equal(preview.strategy, 'native')
+    assert.deepEqual(preview.available, { native: true, fork: false })
+    assert.equal(preview.fileDiff.length, 1)
+    assert.equal(preview.fileDiff[0]?.file, 'README.md')
+    const diffRequest = await waitForRequest(harness, (r) => r.method === 'GET' && r.path.endsWith('/diff'))
+    assert.ok(diffRequest.search.includes(`messageID=msg_${clientMessageId}`))
+
+    const applied = await harness.adapter.rewindSession({
+      sessionId,
+      projectPath: harness.directory,
+      target: { by: 'message', messageUuid: 'input-1', clientMessageId },
+      mode: 'apply',
+    })
+    assert.equal(applied.filesReverted, true)
+    const revertRequest = await waitForRequest(
+      harness,
+      (r) => r.method === 'POST' && r.path.endsWith('/revert'),
+    )
+    assert.deepEqual(revertRequest.body, { messageID: `msg_${clientMessageId}` })
+  } finally {
+    await harness.close()
+  }
+})
+
+test('throws when an OpenCode rewind target has no clientMessageId', async () => {
+  const harness = await createV2Harness()
+  const sessionId = asSessionId('gateway-v2-rewind-unresolved')
+  try {
+    await harness.adapter.createSession({
+      sessionId,
+      projectPath: harness.directory,
+      connection: harness.connection,
+    })
+    await waitForRequest(harness, (r) => r.method === 'POST' && r.path === expectedV2Paths.create)
+    await assert.rejects(
+      harness.adapter.rewindSession({
+        sessionId,
+        projectPath: harness.directory,
+        target: { by: 'message', messageUuid: 'input-1' },
+        mode: 'preview',
+      }),
+      /cannot resolve rewind target/,
+    )
   } finally {
     await harness.close()
   }

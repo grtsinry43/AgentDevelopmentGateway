@@ -80,6 +80,81 @@ test('keeps Gateway turn ids authoritative while addressing Codex by native turn
   }
 })
 
+test('resolves a rewind fork point from the live turn index', async () => {
+  const { adapter, connection, directory } = await makeConnection()
+  try {
+    const sessionId = asSessionId('rewind-index-session')
+    await adapter.createSession({ sessionId, projectPath: directory, connection })
+    const events = adapter.events(sessionId)[Symbol.asyncIterator]()
+    await events.next()
+    await events.next()
+    await adapter.send(
+      sessionId,
+      { clientMessageId: 'client-1', text: 'fix bug' },
+      { turnId: asTurnId('gateway-turn'), kind: 'start-turn' },
+    )
+    const cursor = await adapter.resolveRewindForkPoint({
+      sessionId,
+      projectPath: directory,
+      target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'client-1' },
+    })
+    assert.deepEqual(cursor, { by: 'message', messageUuid: 'native-turn' })
+  } finally {
+    await adapter.dispose()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('resolves a rewind fork point from thread/read when the live index is empty', async () => {
+  const { adapter, connection, directory } = await makeConnection()
+  try {
+    const sessionId = asSessionId('rewind-read-session')
+    await adapter.createSession({ sessionId, projectPath: directory, connection })
+    const events = adapter.events(sessionId)[Symbol.asyncIterator]()
+    await events.next()
+    await events.next()
+    // 未 send,providerTurns 索引为空 → 兜底 thread/read 按 clientId 匹配。
+    const byClientId = await adapter.resolveRewindForkPoint({
+      sessionId,
+      projectPath: directory,
+      target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'client-1' },
+    })
+    assert.deepEqual(byClientId, { by: 'message', messageUuid: 'native-turn' })
+    // 按文本匹配。
+    const byText = await adapter.resolveRewindForkPoint({
+      sessionId,
+      projectPath: directory,
+      target: { by: 'message', messageUuid: 'input-1', text: 'fix bug' },
+    })
+    assert.deepEqual(byText, { by: 'message', messageUuid: 'native-turn' })
+  } finally {
+    await adapter.dispose()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('throws when a rewind fork point cannot be resolved', async () => {
+  const { adapter, connection, directory } = await makeConnection()
+  try {
+    const sessionId = asSessionId('rewind-unresolved-session')
+    await adapter.createSession({ sessionId, projectPath: directory, connection })
+    const events = adapter.events(sessionId)[Symbol.asyncIterator]()
+    await events.next()
+    await events.next()
+    await assert.rejects(
+      adapter.resolveRewindForkPoint({
+        sessionId,
+        projectPath: directory,
+        target: { by: 'message', messageUuid: 'input-1', clientMessageId: 'unknown-client' },
+      }),
+      /cannot resolve rewind target/,
+    )
+  } finally {
+    await adapter.dispose()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 const fakeAppServer = `#!/usr/bin/env node
 const readline = require('node:readline')
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
@@ -120,6 +195,16 @@ lines.on('line', (line) => {
   } else if (message.method === 'turn/interrupt') {
     if (message.params.turnId !== 'native-turn') process.exit(2)
     send({ jsonrpc: '2.0', id: message.id, result: {} })
+  } else if (message.method === 'thread/read') {
+    send({ jsonrpc: '2.0', id: message.id, result: {
+      thread: { id: 'native-thread', turns: [{
+        id: 'native-turn',
+        status: 'completed',
+        items: [
+          { type: 'userMessage', id: 'item-1', clientId: 'client-1', content: [{ type: 'text', text: 'fix bug' }] }
+        ]
+      }] }
+    } })
   }
 })
 `

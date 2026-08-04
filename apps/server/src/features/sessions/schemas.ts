@@ -10,6 +10,8 @@ import {
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
+  rewindSessionRequestSchema,
+  rewindSessionResultSchema,
   resolveInteractionRequestSchema,
   resumeSessionRequestSchema,
   sendSessionInputRequestSchema,
@@ -26,6 +28,8 @@ import {
   sessionSchema,
   type EventsHistoryResponse,
   type SessionItemsResponse,
+  type RewindSessionRequest,
+  type RewindSessionResultWire,
   type CreateSessionRequest,
   type CreateSessionResponse,
   type GatewaySession,
@@ -59,6 +63,8 @@ export {
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
+  rewindSessionRequestSchema,
+  rewindSessionResultSchema,
   resolveInteractionRequestSchema,
   resumeSessionRequestSchema,
   sendSessionInputRequestSchema,
@@ -76,6 +82,9 @@ export {
   type EventsHistoryResponse,
   type SessionItemsResponse
 }
+
+export type RewindSessionBody = RewindSessionRequest
+export type RewindSessionResult = RewindSessionResultWire
 
 export const projectSessionsParamsSchema = z.strictObject({ projectId: idSchema })
 export const sessionParamsSchema = z.strictObject({ sessionId: idSchema })

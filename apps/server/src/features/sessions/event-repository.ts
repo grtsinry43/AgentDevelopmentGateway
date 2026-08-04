@@ -96,6 +96,13 @@ export class SessionEventRepository implements RuntimeEventSink {
     this.database.prepare('DELETE FROM session_events WHERE session_id = ?').run(sessionId)
   }
 
+  /** 原生回退:删除 `sequence > after` 的持久化事件。 */
+  truncateAfter(sessionId: SessionId, after: number): void {
+    this.database
+      .prepare('DELETE FROM session_events WHERE session_id = ? AND sequence > ?')
+      .run(sessionId, after)
+  }
+
   discardOrphans(): number {
     return this.database
       .prepare(

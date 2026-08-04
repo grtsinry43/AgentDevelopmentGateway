@@ -29,6 +29,9 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   interruptCount = 0
   sendError?: unknown
   autoComplete = true
+  rewindSession?: (
+    input: import('@agent-gateway/core').RewindSessionInput,
+  ) => Promise<import('@agent-gateway/core').RewindSessionResult>
   private readonly streams = new Map<SessionId, FakeEventStream>()
 
   constructor(
@@ -44,6 +47,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
       protocolVersion: 'test',
       capabilities: {
         steer: 'queue-fallback',
+        rewind: 'fork',
         modelSwitch: 'in-session',
         execution: {
           workModes: ['build', 'plan'],

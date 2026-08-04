@@ -97,6 +97,15 @@ export interface ForkRuntimeSessionInput {
   execution?: SessionExecutionSettings
 }
 
+/** Rewind request passed to the runtime. `target` is a Gateway message position. */
+export interface RewindRuntimeSessionInput {
+  sessionId: SessionId
+  target: import('@agent-gateway/core').RewindTarget
+  mode: 'preview' | 'apply'
+  /** 强制走 fork 分支而不是原生原地截断(默认 false = 原生优先)。 */
+  preferFork?: boolean
+}
+
 /** Synchronous durability boundary. append must finish before an event becomes observable. */
 export interface RuntimeEventSink {
   append(event: RuntimeEvent): void

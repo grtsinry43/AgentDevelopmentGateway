@@ -56,6 +56,20 @@ export class RuntimeSessionEventStream {
     this.wakeAll()
   }
 
+  /**
+   * 截断到 `afterSequence`:丢弃更高 sequence 的缓冲事件并把游标拉回,后续 append
+   * 从该点继续。用于原生回退(native rewind)后让实时流与截断后的 durable 日志一致。
+   */
+  truncate(afterSequence: number): void {
+    if (this.terminal) return
+    if (afterSequence >= this.sequence) return
+    const kept = this.history.filter((event) => event.sequence <= afterSequence)
+    this.history.length = 0
+    this.history.push(...kept)
+    this.sequence = afterSequence
+    this.wakeAll()
+  }
+
   fail(error: unknown): void {
     if (this.terminal) return
     this.terminal = { kind: 'failed', error }

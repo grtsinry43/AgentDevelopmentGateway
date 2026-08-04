@@ -256,6 +256,7 @@ export const terminalServerMessageSchema = z.discriminatedUnion('type', [
 
 export const runtimeCapabilitiesSchema = z.strictObject({
   steer: z.enum(['native', 'queue-fallback', 'unsupported']),
+  rewind: z.enum(['native', 'fork', 'unsupported']).default('unsupported'),
   modelSwitch: z.enum(['in-session', 'restart-session', 'unsupported']),
   execution: z.strictObject({
     workModes: z.array(z.enum(['build', 'plan'])),
@@ -768,6 +769,36 @@ export const interruptSessionRequestSchema = z.strictObject({
   expectedTurnId: gatewayIdSchema.optional(),
   cancelQueued: z.boolean().optional(),
 })
+export const rewindTargetSchema = z.strictObject({
+  by: z.literal('message'),
+  messageUuid: z.string().min(1),
+  partId: z.string().optional(),
+  clientMessageId: z.string().optional(),
+  text: z.string().optional(),
+})
+export const rewindFileDiffSchema = z.strictObject({
+  file: z.string().min(1),
+  insertions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+})
+export const rewindSessionRequestSchema = z.strictObject({
+  target: rewindTargetSchema,
+  mode: z.enum(['preview', 'apply']),
+  preferFork: z.boolean().optional(),
+})
+export const rewindSessionResultSchema = z.strictObject({
+  strategy: z.enum(['native', 'fork']),
+  removedMessageCount: z.number().int().nonnegative(),
+  fileDiff: z.array(rewindFileDiffSchema),
+  available: z.strictObject({
+    native: z.boolean(),
+    fork: z.boolean(),
+  }),
+  filesReverted: z.boolean().optional(),
+  forkSessionId: gatewayIdSchema.optional(),
+})
+export type RewindSessionRequest = z.infer<typeof rewindSessionRequestSchema>
+export type RewindSessionResultWire = z.infer<typeof rewindSessionResultSchema>
 export const resolveInteractionRequestSchema = z.strictObject({
   resolution: interactionResolutionSchema,
 })

@@ -22,6 +22,8 @@ import {
   type ListCommandsInput,
   type ModelCatalog,
   type ModelSelection,
+  type ResumeCursor,
+  type RewindTarget,
   type SlashCommand,
   type ProviderRuntimeConfig,
   type ResumeSessionInput,
@@ -77,6 +79,7 @@ const execFileAsync = promisify(execFile)
 
 const CODEX_CAPABILITIES: RuntimeCapabilities = {
   steer: 'native',
+  rewind: 'fork',
   modelSwitch: 'in-session',
   execution: {
     workModes: ['build', 'plan'],
@@ -154,6 +157,8 @@ interface SessionState extends NotificationSession {
   model?: ModelSelection
   execution: SessionExecutionSettings
   pendingInteractions: Map<InteractionId, PendingInteraction>
+  /** Gateway clientMessageId → provider turn id(rewind fork 解析用)。 */
+  providerTurns: Map<string, string>
   disposed: boolean
 }
 
@@ -329,6 +334,52 @@ export class CodexAdapter implements RuntimeAdapter {
     )
   }
 
+  /**
+   * 把 Gateway 回退目标解析成 Codex fork 切点:先查本 session 的 providerTurns 索引
+   * (clientMessageId → native turn id);resume 后索引为空,兜底 `thread/read` 按
+   * userMessage 的 clientId(= 传入的 clientUserMessageId)匹配所在 turn,作为 lastTurnId。
+   */
+  async resolveRewindForkPoint(input: {
+    sessionId: SessionId
+    projectPath: string
+    target: RewindTarget
+  }): Promise<ResumeCursor> {
+    const session = this.getSession(input.sessionId)
+    const clientMessageId = input.target.clientMessageId
+    const indexed = clientMessageId ? session.providerTurns.get(clientMessageId) : undefined
+    if (indexed) return { by: 'message', messageUuid: indexed }
+
+    const read = recordOf(
+      await session.connection.client.request('thread/read', {
+        threadId: session.threadId,
+        includeTurns: true,
+      }),
+    )
+    // ThreadReadResponse 是 { thread: { turns } };兼容平铺的 { turns }。
+    const thread = recordOf(read?.thread)
+    const turns = Array.isArray(thread?.turns) ? thread.turns : Array.isArray(read?.turns) ? read.turns : []
+    for (const value of turns) {
+      const turn = recordOf(value)
+      const items = Array.isArray(turn?.items) ? turn.items : []
+      for (const valueItem of items) {
+        const item = recordOf(valueItem)
+        if (stringValue(item?.type) !== 'userMessage') continue
+        const itemClientId = stringValue(item?.clientId)
+        const matched =
+          (clientMessageId !== undefined && itemClientId === clientMessageId) ||
+          (input.target.text !== undefined &&
+            codexUserMessageText(item?.content) === input.target.text.trim())
+        if (!matched) continue
+        const turnId = stringValue(turn?.id)
+        if (turnId) return { by: 'message', messageUuid: turnId }
+      }
+    }
+    throw protocolError(
+      `Codex cannot resolve rewind target ${input.target.messageUuid} to a turn`,
+      'codex.rewind.turn_unresolved',
+    )
+  }
+
   async send(sessionId: SessionId, input: UserInput, options: SendOptions): Promise<void> {
     const session = this.getSession(sessionId)
     if (input.admitOnly) {
@@ -363,6 +414,9 @@ export class CodexAdapter implements RuntimeAdapter {
       })
       if (session.activeTurnId === options.turnId) {
         session.nativeActiveTurnId = readNativeTurnId(result)
+        if (session.nativeActiveTurnId) {
+          session.providerTurns.set(input.clientMessageId, session.nativeActiveTurnId)
+        }
       }
     } catch (error) {
       session.activeTurnId = undefined
@@ -629,6 +683,7 @@ export class CodexAdapter implements RuntimeAdapter {
       execution: cloneSessionExecutionSettings(execution),
       startedItems: new Set(),
       pendingInteractions: new Map(),
+      providerTurns: new Map(),
       disposed: false,
     }
     this.sessions.set(id, session)
@@ -1002,6 +1057,23 @@ async function executableVersion(path: string): Promise<string | undefined> {
 
 function cloneCapabilities(value: RuntimeCapabilities): RuntimeCapabilities {
   return structuredClone(value)
+}
+
+/** 把未知值窄化成 record,非对象返回 undefined。 */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+/** 取 userMessage item 的纯文本(拼接 text 型 UserInput)。 */
+function codexUserMessageText(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((entry) => {
+      const record = recordOf(entry)
+      return record && stringValue(record.type) === 'text' ? stringValue(record.text) ?? '' : ''
+    })
+    .join('\n')
+    .trim()
 }
 
 /**

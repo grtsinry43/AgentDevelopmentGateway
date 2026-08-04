@@ -30,11 +30,16 @@ import {
   type SessionExecutionState,
   type TurnId,
   type UserInput,
+  type RewindSessionInput,
+  type RewindSessionResult,
+  type RewindFileDiff,
+  type RewindTarget,
 } from '@agent-gateway/core'
 import {
   query as createClaudeQuery,
   renameSession as claudeRenameSession,
   getSessionInfo as claudeGetSessionInfo,
+  getSessionMessages as claudeGetSessionMessages,
   createSdkMcpServer,
   tool as defineMcpTool,
   type ModelInfo,
@@ -62,10 +67,16 @@ export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
     effortLevel?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
   }): Promise<unknown>
   setPermissionMode(mode: import('@anthropic-ai/claude-agent-sdk').PermissionMode): Promise<unknown>
+  rewindFiles(
+    userMessageId: string,
+    options?: { dryRun?: boolean },
+  ): Promise<import('@anthropic-ai/claude-agent-sdk').RewindFilesResult>
   close(): void
 }
 
 export type ClaudeQueryFactory = (parameters: Parameters<typeof createClaudeQuery>[0]) => ClaudeQuery
+
+export type ClaudeSessionMessagesFetcher = typeof claudeGetSessionMessages
 
 interface ClaudeConnectionState {
   connection: RuntimeConnection
@@ -90,6 +101,12 @@ interface ClaudeSessionState {
   lastTurnId?: TurnId
   /** Last provider-generated title we published, to dedupe `title_changed` events. */
   providerTitle?: string
+  /** 已发送的用户输入(等待 provider echo 关联 uuid):clientMessageId → text。 */
+  pendingUserInputs: { clientMessageId: string; text: string }[]
+  /** clientMessageId → provider 用户消息 uuid(rewindFiles 定位用)。 */
+  providerUserMessages: Map<string, string>
+  /** 文本 → provider 用户消息 uuid:live 与 resume 重放都会填,resume 后兜底解析。 */
+  userMessageUuidsByText: Map<string, string>
   disposed: boolean
   failure?: unknown
   pump: Promise<void>
@@ -109,7 +126,10 @@ export class ClaudeAdapter implements RuntimeAdapter {
   private readonly connections = new Map<string, ClaudeConnectionState>()
   private readonly sessions = new Map<SessionId, ClaudeSessionState>()
 
-  constructor(private readonly queryFactory: ClaudeQueryFactory = createClaudeQuery) {}
+  constructor(
+    private readonly queryFactory: ClaudeQueryFactory = createClaudeQuery,
+    private readonly fetchSessionMessages: ClaudeSessionMessagesFetcher = claudeGetSessionMessages,
+  ) {}
 
   detect(context: RuntimeHostContext): Promise<RuntimeInstallation[]> {
     void context
@@ -201,6 +221,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
 
     session.activeTurnId = options.turnId
     session.lastTurnId = options.turnId
+    session.pendingUserInputs.push({ clientMessageId: input.clientMessageId, text: input.text })
     try {
       session.input.push({
         type: 'user',
@@ -250,6 +271,69 @@ export class ClaudeAdapter implements RuntimeAdapter {
   resolveInteraction(sessionId: SessionId, resolution: InteractionResolution): Promise<void> {
     this.getSession(sessionId).bridge.resolve(resolution)
     return Promise.resolve()
+  }
+
+  /**
+   * 原生回退(CC `/rewind` 的文件侧):解析目标用户消息的 provider uuid,调
+   * `Query.rewindFiles`。preview 走 dryRun 返回文件 diff;apply 真正还原文件。
+   * uuid 解析:内存索引(live echo / resume 重放)优先,兜底 `getSessionMessages` 按文本拉取。
+   */
+  async rewindSession(input: RewindSessionInput): Promise<RewindSessionResult> {
+    const session = this.getSession(input.sessionId)
+    if (input.target.by !== 'message') {
+      throw adapterError('protocol', 'Claude rewind requires a message target')
+    }
+    const userMessageId = await this.resolveRewindUserMessageId(session, input.target)
+    if (!userMessageId) {
+      throw adapterError('protocol', `Claude cannot resolve rewind target ${input.target.messageUuid}`)
+    }
+    const result = await session.query.rewindFiles(userMessageId, {
+      dryRun: input.mode === 'preview',
+    })
+    if (!result.canRewind) {
+      throw adapterError('protocol', result.error ?? 'Claude cannot rewind to this point')
+    }
+    const files = result.filesChanged ?? []
+    const fileDiff: RewindFileDiff[] = files.map((file) => ({
+      file,
+      insertions: result.insertions ?? 0,
+      deletions: result.deletions ?? 0,
+    }))
+    return {
+      strategy: 'native',
+      removedMessageCount: 0,
+      fileDiff,
+      available: { native: true, fork: false },
+      ...(input.mode === 'apply' ? { filesReverted: true } : {}),
+    }
+  }
+
+  /** 解析目标用户消息的 provider uuid:内存索引优先,SDK 会话消息按文本兜底。 */
+  private async resolveRewindUserMessageId(
+    session: ClaudeSessionState,
+    target: RewindTarget,
+  ): Promise<string | undefined> {
+    if (target.clientMessageId) {
+      const indexed = session.providerUserMessages.get(target.clientMessageId)
+      if (indexed) return indexed
+    }
+    if (target.text) {
+      const byText = session.userMessageUuidsByText.get(target.text.trim())
+      if (byText) return byText
+      try {
+        const messages = await this.fetchSessionMessages(session.runtimeSessionId, {
+          dir: session.projectPath,
+        })
+        for (const message of messages) {
+          if (message.type !== 'user') continue
+          const text = claudeSessionMessageText(message.message)
+          if (text.trim() === target.text.trim()) return message.uuid
+        }
+      } catch {
+        // 拉不到会话消息时继续走下面的失败路径。
+      }
+    }
+    return undefined
   }
 
   async listModels(input: ListModelsInput): Promise<ModelCatalog> {
@@ -425,6 +509,8 @@ export class ClaudeAdapter implements RuntimeAdapter {
         env: claudeQueryEnv(connection.context.env, input.providerConfig),
         canUseTool: bridge.canUseTool,
         permissionMode: resolvedExecution.permissionMode,
+        // File checkpointing powers `/rewind`: without it Query.rewindFiles has nothing to restore.
+        enableFileCheckpointing: true,
         // The SDK gate must be enabled when the Query is created so a later, explicit
         // unrestricted+allow update can enter bypass mode without restarting the session.
         // resolveClaudeExecution is the only place that can actually select bypassPermissions.
@@ -513,6 +599,9 @@ export class ClaudeAdapter implements RuntimeAdapter {
         effective: cloneSessionExecutionSettings(resolvedExecution.effective),
         limitations: resolvedExecution.limitations.map((limitation) => ({ ...limitation })),
       },
+      pendingUserInputs: [],
+      providerUserMessages: new Map(),
+      userMessageUuidsByText: new Map(),
       disposed: false,
       pump: Promise.resolve(),
     }
@@ -581,6 +670,20 @@ export class ClaudeAdapter implements RuntimeAdapter {
             nativeRef: { eventId: message.uuid, eventType: `result.${message.subtype}` },
           })
           continue
+        }
+
+        // 关联 provider 用户消息 uuid:provider echo 用户消息时按文本对上已发送的输入,
+        // 记录 clientMessageId → uuid;同时维护文本 → uuid(resume 重放也能重建),供回退兜底。
+        if (message.type === 'user' && message.uuid) {
+          const echoedText = claudeUserMessageText(message)
+          if (echoedText !== undefined) {
+            session.userMessageUuidsByText.set(echoedText.trim(), message.uuid)
+            const match = session.pendingUserInputs.findIndex(
+              (pending) => pending.text.trim() === echoedText.trim(),
+            )
+            const pending = match >= 0 ? session.pendingUserInputs.splice(match, 1)[0] : undefined
+            if (pending) session.providerUserMessages.set(pending.clientMessageId, message.uuid)
+          }
         }
 
         const mapped = session.mapper.map(message, { turnId: session.activeTurnId ?? session.lastTurnId })
@@ -747,6 +850,36 @@ function executionResult(state: SessionExecutionState): ExecutionConfigurationRe
     effective: cloneSessionExecutionSettings(state.effective),
     limitations: state.limitations.map((limitation) => ({ ...limitation })),
   }
+}
+
+/** 取 provider 用户消息的纯文本(用于和已发送输入对上关联 uuid)。 */
+function claudeUserMessageText(message: SDKUserMessage): string | undefined {
+  const content = message.message?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => (typeof block === 'string' ? block : 'text' in block ? block.text : ''))
+      .join('\n')
+  }
+  return undefined
+}
+
+/** 从 `getSessionMessages` 的原始 message 里取文本块(SessionMessage.message 为 unknown)。 */
+function claudeSessionMessageText(message: unknown): string {
+  if (typeof message === 'string') return message
+  if (typeof message !== 'object' || message === null) return ''
+  const record = message as Record<string, unknown>
+  const content = record.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => {
+      if (typeof block === 'string') return block
+      if (typeof block !== 'object' || block === null) return ''
+      const entry = block as Record<string, unknown>
+      return typeof entry.text === 'string' ? entry.text : ''
+    })
+    .join('\n')
 }
 
 /** Query subprocess env with provider credential/relay overrides merged on top. */
