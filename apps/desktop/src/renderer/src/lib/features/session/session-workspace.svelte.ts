@@ -36,6 +36,7 @@ import {
 	replaceQueuedInput,
 	resolveSessionInteraction,
 	resumeSession,
+	interruptSession,
 	sendSessionInput,
 	sendQueuedInputNow as sendQueuedInputNowApi,
 	setSessionExecutionSettings,
@@ -596,6 +597,81 @@ class SessionWorkspace {
 		}
 	}
 
+	/**
+	 * 确保当前选中会话在 Server 进程内活跃:非活跃(历史/已归档)先 resume
+	 * (走 IPC 注入 providerConfig),回退/操作前调用。返回是否可用。
+	 */
+	async ensureSelectedSessionLive(): Promise<boolean> {
+		const selected = this.selectedSession;
+		if (!selected) return false;
+		try {
+			let session = selected;
+			if (this.streamState !== 'connected') {
+				session = await getSession(selected.id);
+				this.#upsertSession(session);
+			}
+			if (!isLiveSessionStatus(session.status)) {
+				const adapter = this.adapters.find((entry) => entry.adapterId === session.adapterId);
+				const installationPath =
+					adapter?.installations.length === 1 ? adapter.installations[0]?.path : undefined;
+				const resumed = await resumeSession(session.id, {
+					...(installationPath ? { installationPath } : {})
+				});
+				this.#upsertSession(resumed);
+			}
+			return true;
+		} catch (error) {
+			this.error = errorMessage(error);
+			return false;
+		}
+	}
+
+	/** 原生回退后重建当前会话视图:拉新快照 + 物化尾 + 重置投影/游标 + 重新 watch。 */
+	async rebuildAfterRewind(): Promise<void> {
+		const sessionId = this.selectedSessionId;
+		if (!sessionId) return;
+		try {
+			await unwatchSession(sessionId).catch(() => undefined);
+			const session = await getSession(sessionId);
+			this.#upsertSession(session);
+			this.projection = emptyConversationProjection(
+				session.taskState,
+				session.subagentRuns,
+				session.inputQueue
+			);
+			this.items = [];
+			this.liveState = createSessionItemState();
+			this.liveRevision += 1;
+			this.hasMoreOlder = false;
+			this.oldestSequence = 0;
+			this.streamState = 'connecting';
+			const tail = await sessionItems(sessionId, undefined, 100);
+			this.items = tail.items;
+			this.hasMoreOlder = tail.hasMore;
+			this.oldestSequence = tail.oldestSequence;
+			this.liveCursor = session.lastEventSequence;
+			await watchSession(sessionId, session.lastEventSequence);
+		} catch (error) {
+			this.error = errorMessage(error);
+		}
+	}
+
+	/**
+	 * 停止当前会话正在进行的回合 —— 前端统一的中断入口(双击 Esc 的落地动作)。
+	 * 三家 provider 的差异已在 adapter 侧抹平:这里只传 sessionId,由 adapter 解析活动回合。
+	 */
+	async stopActiveTurn(): Promise<boolean> {
+		const session = this.selectedSession;
+		if (!session || !isTurnActive(session.status)) return false;
+		try {
+			await interruptSession(session.id);
+			return true;
+		} catch (error) {
+			this.error = errorMessage(error);
+			return false;
+		}
+	}
+
 	/** 上滚翻页:取更早的物化块前插。虚拟列表触顶时由界面调用。 */
 	async loadOlder(): Promise<void> {
 		const sessionId = this.selectedSessionId;
@@ -610,6 +686,22 @@ class SessionWorkspace {
 			this.error = errorMessage(error);
 		} finally {
 			this.loadingOlder = false;
+		}
+	}
+
+	/** 原生回退后重拉当前会话尾部(切点之后的消息已由 provider/服务端截断)。 */
+	async refreshItems(): Promise<void> {
+		const sessionId = this.selectedSessionId;
+		if (!sessionId) return;
+		try {
+			const tail = await sessionItems(sessionId, undefined, 100);
+			this.items = tail.items;
+			this.hasMoreOlder = tail.hasMore;
+			this.oldestSequence = tail.oldestSequence;
+			this.liveState = createSessionItemState();
+			this.liveRevision += 1;
+		} catch (error) {
+			this.error = errorMessage(error);
 		}
 	}
 
@@ -1074,6 +1166,11 @@ function matchesFilter(session: GatewaySession, filter: SessionFilter): boolean 
 
 function isLiveSessionStatus(status: GatewaySession['status']): boolean {
 	return status === 'starting' || status === 'idle' || status === 'running' || status === 'waiting';
+}
+
+/** 有回合在跑:可以被中断。idle/starting 时 interrupt 在 adapter 侧是安全的 no-op。 */
+function isTurnActive(status: GatewaySession['status']): boolean {
+	return status === 'running' || status === 'waiting';
 }
 
 function errorMessage(error: unknown): string {

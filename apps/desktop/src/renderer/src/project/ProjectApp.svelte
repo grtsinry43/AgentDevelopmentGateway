@@ -29,11 +29,13 @@
 	import GitPanel from '$lib/features/git/components/GitPanel.svelte';
 	import { GitWorkspace } from '$lib/features/git/git-workspace.svelte';
 	import { sessionWorkspace } from '$lib/features/session/session-workspace.svelte';
+	import { rewind } from '$lib/features/session/rewind.svelte';
 	import DockStack from '$lib/ui/layout/DockStack.svelte';
 	import ResizeHandle from '$lib/ui/layout/ResizeHandle.svelte';
 	import StatusBar from '$lib/ui/layout/StatusBar.svelte';
 	import TitleBar from '$lib/ui/layout/TitleBar.svelte';
 	import Button from '$lib/ui/primitives/Button.svelte';
+	import Kbd from '$lib/ui/primitives/Kbd.svelte';
 	import Dialog from '$lib/ui/primitives/Dialog.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import NotificationCenter from '$lib/ui/notifications/NotificationCenter.svelte';
@@ -146,6 +148,57 @@
 	/** 操作失败弹窗:appError.error 置位即打开,关闭即清除。 */
 	let appErrorDialogOpen = $state(false);
 
+	/**
+	 * 双击 Esc 双意图:
+	 *   - 运行中(running/waiting) → 停止当前回合
+	 *   - 静止(非运行,有对话历史) → 打开回退视图
+	 * 首次 Esc 布防并提示「再按一次」,窗口内再按才落地。
+	 */
+	const ESC_HINT_MS = 2500;
+	let escArmed = $state(false);
+	let escIntent = $state<'stop' | 'rewind'>('stop');
+	let escDisarmTimer: ReturnType<typeof setTimeout> | undefined;
+	function disarmEsc(): void {
+		escArmed = false;
+		clearTimeout(escDisarmTimer);
+	}
+	/** 按当前会话状态决定本次 Esc 的意图;无可回退内容时返回 null(不布防)。 */
+	function resolveEscIntent(): 'stop' | 'rewind' | null {
+		const status = sessionWorkspace.selectedSession?.status;
+		if (status === 'running' || status === 'waiting') return 'stop';
+		const hasHistory = sessionWorkspace.items.some(
+			(item) => item.itemKind === 'message' && item.role === 'user'
+		);
+		return hasHistory ? 'rewind' : null;
+	}
+	function onDoubleEscape(): void {
+		if (escArmed) {
+			const intent = escIntent;
+			disarmEsc();
+			if (intent === 'stop') void sessionWorkspace.stopActiveTurn();
+			else rewind.open();
+		} else {
+			const intent = resolveEscIntent();
+			if (!intent) return;
+			escIntent = intent;
+			escArmed = true;
+			clearTimeout(escDisarmTimer);
+			escDisarmTimer = setTimeout(disarmEsc, ESC_HINT_MS);
+		}
+	}
+	// 会话回合状态变化时刷新 keymap 提示条(停止↔回退标签切换),撤防条件变化。
+	$effect(() => {
+		const status = sessionWorkspace.selectedSession?.status;
+		const active = status === 'running' || status === 'waiting';
+		const hasHistory = sessionWorkspace.items.some(
+			(item) => item.itemKind === 'message' && item.role === 'user'
+		);
+		if (escArmed && escIntent === 'stop' && !active) disarmEsc();
+		if (escArmed && escIntent === 'rewind' && (active || !hasHistory)) disarmEsc();
+		keymap.tick();
+	});
+	onDestroy(disarmEsc);
+
 	/** 当前会话声明的 runtime capabilities；面板只按能力门控。 */
 	const capabilities = $derived(sessionWorkspace.features);
 	/** 常驻面板始终上 rail；contextual 仅在有内容或已占槽时显示。 */
@@ -177,11 +230,38 @@
 		keymap.pushScope('project', [
 			{ keys: 'mod+b', label: '侧栏', run: () => layout.toggleLeft() },
 			{ keys: 'mod+alt+b', label: '右侧面板', run: () => layout.toggleRight() },
+			// 双击 Esc:运行中=停止当前回合;静止有历史=进入回退视图。
+			{
+				keys: 'escape',
+				label: '停止 (连按)',
+				when: () => {
+					const status = sessionWorkspace.selectedSession?.status;
+					return status === 'running' || status === 'waiting';
+				},
+				run: onDoubleEscape
+			},
+			{
+				keys: 'escape',
+				label: '回退 (连按)',
+				when: () => {
+					const status = sessionWorkspace.selectedSession?.status;
+					const active = status === 'running' || status === 'waiting';
+					const hasHistory = sessionWorkspace.items.some(
+						(item) => item.itemKind === 'message' && item.role === 'user'
+					);
+					return !active && hasHistory;
+				},
+				run: onDoubleEscape
+			},
 			// 性能监视 HUD(dev 打点)
-			{ keys: 'mod+alt+p', label: '性能监视', run: () => {
-				console.log('[perf] ⌥⌘P 触发,enabled 将翻转为', !perfMonitor.enabled);
-				perfMonitor.toggle();
-			} },
+			{
+				keys: 'mod+alt+p',
+				label: '性能监视',
+				run: () => {
+					console.log('[perf] ⌥⌘P 触发,enabled 将翻转为', !perfMonitor.enabled);
+					perfMonitor.toggle();
+				}
+			},
 			// ⌘⇧1..4 切左侧 tab
 			...visibleLeftTabs.map((tab, index) => ({
 				keys: `mod+shift+${index + 1}`,
@@ -257,8 +337,27 @@
 		{/if}
 
 		<!-- 中间主区:Session 投影只展示用户文本、Agent 文本与状态边界。 -->
-		<main class="flex min-h-0 min-w-0 flex-1 flex-col">
+		<main class="relative flex min-h-0 min-w-0 flex-1 flex-col">
 			<ConversationPane workspace={sessionWorkspace} />
+
+			<!-- 双击 Esc 布防提示:相对编辑器顶部居中,向上浮起。非交互浮层。 -->
+			{#if escArmed}
+				<div
+					class="pointer-events-none absolute top-0 left-1/2 z-40 -translate-x-1/2 -translate-y-2"
+				>
+					<div
+						class="text-text-normal flex items-center gap-2 rounded-default border border-subtle bg-surface-raised px-2.5 py-1 text-xs shadow-float"
+						style="animation: pop-in 0.12s ease-out"
+					>
+						<Icon name={escIntent === 'stop' ? 'stop' : 'undo'} size={12} />
+						{#if escIntent === 'stop'}
+							<span>再按一次 <Kbd keys="escape" /> 停止当前回合</span>
+						{:else}
+							<span>再按一次 <Kbd keys="escape" /> 进入回退</span>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</main>
 
 		<!-- 右侧工具内容（可折叠）；图标条始终在最右 -->

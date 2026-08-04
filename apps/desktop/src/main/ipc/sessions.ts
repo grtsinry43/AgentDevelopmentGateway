@@ -5,6 +5,7 @@ import {
   forkSessionRequestSchema,
   gatewayIdSchema,
   interruptSessionRequestSchema,
+  rewindSessionRequestSchema,
   listModelsQuerySchema,
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
@@ -154,6 +155,17 @@ export function registerSessionHandlers(): void {
       return client.interruptSession(
         gatewayIdSchema.parse(rawSessionId),
         interruptSessionRequestSchema.parse(rawInput)
+      )
+    }
+  )
+
+  ipcMain.handle(
+    IPC.sessionsRewind,
+    async (event, rawSessionId: unknown, rawInput: unknown) => {
+      const { client } = await resolveForSender(event.sender)
+      return client.rewindSession(
+        gatewayIdSchema.parse(rawSessionId),
+        rewindSessionRequestSchema.parse(rawInput)
       )
     }
   )

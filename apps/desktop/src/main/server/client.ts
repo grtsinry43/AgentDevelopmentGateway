@@ -22,6 +22,8 @@ import {
   reorderQueuedInputsRequestSchema,
   replaceQueuedInputRequestSchema,
   interruptSessionRequestSchema,
+  rewindSessionRequestSchema,
+  rewindSessionResultSchema,
   projectListResponseSchema,
   projectSchema,
   runtimeEventWireSchema,
@@ -67,6 +69,8 @@ import {
   type ReorderQueuedInputsRequest,
   type ReplaceQueuedInputRequest,
   type InterruptSessionRequest,
+  type RewindSessionRequest,
+  type RewindSessionResultWire,
   type ResolveInteractionRequest,
   type ResumeSessionRequest,
   type RuntimeControlReceipt,
@@ -395,6 +399,14 @@ export class GatewayServerClient {
       method: 'POST',
       body: interruptSessionRequestSchema.parse(input)
     })
+  }
+
+  rewindSession(sessionId: string, input: RewindSessionRequest): Promise<RewindSessionResultWire> {
+    return this.request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/rewind`,
+      rewindSessionResultSchema,
+      { method: 'POST', body: rewindSessionRequestSchema.parse(input) }
+    )
   }
 
   resolveInteraction(

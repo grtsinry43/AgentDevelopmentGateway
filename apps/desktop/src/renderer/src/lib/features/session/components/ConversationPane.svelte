@@ -19,6 +19,8 @@
 	import AgentWorkingIndicator from './AgentWorkingIndicator.svelte';
 	import ConversationTranscript from './ConversationTranscript.svelte';
 	import SessionComposer from './SessionComposer.svelte';
+	import RewindView from './RewindView.svelte';
+	import { rewind } from '../rewind.svelte';
 
 	interface Props {
 		workspace: SessionWorkspaceState;
@@ -29,6 +31,13 @@
 	let transcript: HTMLDivElement | undefined = $state();
 	let pinnedToBottom = $state(true);
 	let composerHeight = $state(160);
+
+	// 回退时间线绑定当前激活会话:切换会话时关闭。注意不能读 rewind.isOpen
+	// ($effect 会追踪它,一打开就被自己关掉),只比较 openSessionId。
+	$effect(() => {
+		const id = workspace.selectedSessionId;
+		if (rewind.openSessionId && rewind.openSessionId !== id) rewind.close();
+	});
 
 	/** 对话右键菜单:选中文本后 复制 / 引用到输入框。 */
 	let selectionMenu = $state<{ x: number; y: number; text: string } | undefined>(undefined);
@@ -293,44 +302,52 @@
 			<SessionComposer {workspace} />
 		{/key}
 	{:else}
-		<div
-			bind:this={transcript}
-			class="scroll-thin min-h-0 flex-1 overflow-y-auto"
-			role="region"
-			aria-label="会话内容"
-			onscroll={updateScrollPin}
-			oncontextmenu={handleContextMenu}
-		>
-			{#if workspace.timeline.length === 0}
-				{#if workspace.streamState === 'connecting'}
-					<div class="flex h-full items-center justify-center">
-						<p class="shimmer-text text-base font-bold tracking-wide">
-							Agent Development Gateway
-						</p>
-					</div>
-				{:else}
-					<EmptyState
-						title="这个会话还没有内容"
-						description="发送消息后，文本、思考与工具调用会按实际事件顺序显示在这里。"
-						class="h-full"
-					>
-						{#snippet icon()}
-							<Icon name="message" size={20} />
-						{/snippet}
-					</EmptyState>
-				{/if}
-			{:else}
-				<div class="mx-auto w-full max-w-3xl px-5 py-4">
-					<ConversationTranscript
-						items={workspace.timeline}
-						{workspace}
-						onCopy={copyMessage}
-						{copiedId}
-						getScrollElement={() => transcript}
-					/>
-					{#if showWorkingIndicator}
-						<AgentWorkingIndicator />
+		<div class="relative min-h-0 flex-1">
+			<!-- transcript 始终挂载:回退视图只是覆盖其上,退出后消息立即可见,虚拟列表不重建。 -->
+			<div
+				bind:this={transcript}
+				class="scroll-thin absolute inset-0 overflow-y-auto"
+				role="region"
+				aria-label="会话内容"
+				onscroll={updateScrollPin}
+				oncontextmenu={handleContextMenu}
+			>
+				{#if workspace.timeline.length === 0}
+					{#if workspace.streamState === 'connecting'}
+						<div class="flex h-full items-center justify-center">
+							<p class="shimmer-text text-base font-bold tracking-wide">
+								Agent Development Gateway
+							</p>
+						</div>
+					{:else}
+						<EmptyState
+							title="这个会话还没有内容"
+							description="发送消息后，文本、思考与工具调用会按实际事件顺序显示在这里。"
+							class="h-full"
+						>
+							{#snippet icon()}
+								<Icon name="message" size={20} />
+							{/snippet}
+						</EmptyState>
 					{/if}
+				{:else}
+					<div class="mx-auto w-full max-w-3xl px-5 py-4">
+						<ConversationTranscript
+							items={workspace.timeline}
+							{workspace}
+							onCopy={copyMessage}
+							{copiedId}
+							getScrollElement={() => transcript}
+						/>
+						{#if showWorkingIndicator}
+							<AgentWorkingIndicator />
+						{/if}
+					</div>
+				{/if}
+			</div>
+			{#if rewind.isOpen}
+				<div class="absolute inset-0 z-10">
+					<RewindView />
 				</div>
 			{/if}
 		</div>

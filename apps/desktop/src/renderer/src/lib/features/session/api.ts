@@ -15,6 +15,8 @@ import type {
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
+	RewindSessionRequest,
+	RewindSessionResultWire,
 	ListModelsQuery,
 	ResolveInteractionRequest,
 	ResumeSessionRequest,
@@ -104,6 +106,13 @@ export function interruptSession(
 	input: InterruptSessionRequest = {}
 ): Promise<void> {
 	return desktop.sessions.interrupt(sessionId, input);
+}
+
+export function rewindSession(
+	sessionId: string,
+	input: RewindSessionRequest
+): Promise<RewindSessionResultWire> {
+	return desktop.sessions.rewind(sessionId, input);
 }
 
 export function resolveSessionInteraction(

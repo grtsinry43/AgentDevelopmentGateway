@@ -18,6 +18,7 @@ import type {
   GatewayAdapterId,
   GitChangeArea,
   InterruptSessionRequest,
+  RewindSessionRequest,
   ListModelsQuery,
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
@@ -161,6 +162,8 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.sessionsQueueSendNow, sessionId, inputId),
     interrupt: (sessionId: string, input: InterruptSessionRequest = {}) =>
       ipcRenderer.invoke(IPC.sessionsInterrupt, sessionId, input),
+    rewind: (sessionId: string, input: RewindSessionRequest) =>
+      ipcRenderer.invoke(IPC.sessionsRewind, sessionId, input),
     resolveInteraction: (
       sessionId: string,
       interactionId: string,

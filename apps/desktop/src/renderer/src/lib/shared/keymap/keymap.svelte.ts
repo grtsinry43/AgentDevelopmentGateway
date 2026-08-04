@@ -117,6 +117,14 @@ class KeymapRegistry {
 	}
 
 	/**
+	 * 外部失效钩子:绑定 `when` 依赖栈外的响应式条件(如会话回合状态)时,
+	 * 调用方在条件变化后调一次,让 `visibleBindings` / `hasModal` 重算。
+	 */
+	tick(): void {
+		this.#bump();
+	}
+
+	/**
 	 * 压入一个作用域。返回弹出函数。
 	 *
 	 * 典型用法(在组件初始化期间):

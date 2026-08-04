@@ -33,6 +33,8 @@ import type {
 	ReorderQueuedInputsRequest,
 	ReplaceQueuedInputRequest,
 	InterruptSessionRequest,
+	RewindSessionRequest,
+	RewindSessionResultWire,
 	ListModelsQuery,
 	ResolveInteractionRequest,
 	ResumeSessionRequest,
@@ -138,6 +140,7 @@ export const IPC = {
 	sessionsQueueSendNow: 'sessions:queueSendNow',
 	sessionsGet: 'sessions:get',
 	sessionsInterrupt: 'sessions:interrupt',
+	sessionsRewind: 'sessions:rewind',
 	sessionsResolveInteraction: 'sessions:resolveInteraction',
 	sessionsClose: 'sessions:close',
 	sessionsResume: 'sessions:resume',
@@ -570,6 +573,7 @@ export interface DesktopBridge {
 		cancelQueuedInput(sessionId: string, inputId: string): Promise<void>;
 		sendQueuedInputNow(sessionId: string, inputId: string): Promise<void>;
 		interrupt(sessionId: string, input?: InterruptSessionRequest): Promise<void>;
+		rewind(sessionId: string, input: RewindSessionRequest): Promise<RewindSessionResultWire>;
 		resolveInteraction(
 			sessionId: string,
 			interactionId: string,
