@@ -9,6 +9,7 @@
 	import { EditorView, keymap } from '@codemirror/view';
 	import { autocompletion, completionStatus } from '@codemirror/autocomplete';
 	import { fileAttachment } from './file-attachment';
+	import { slashCommandDecoration } from './slash-command-decoration';
 	import type { ExecutionPreset, SessionWorkspaceState } from '../session-workspace.svelte';
 	import { listCommands, listSessionCommands } from '../api';
 	import { setSlashCommands, slashCommandSource } from './slash-command-source';
@@ -199,6 +200,7 @@
 		),
 		autocompletion({ override: [slashCommandSource], icons: false, defaultKeymap: true }),
 		fileAttachment(),
+		slashCommandDecoration(),
 		EditorView.theme({
 			'&': { height: '100%' },
 			'.cm-gutters': { display: 'none' },
@@ -245,14 +247,12 @@
 				display: 'flex',
 				alignItems: 'center',
 				gap: '10px',
-				// 命令/技能菜单用浅绿底纹与正文区分。
-				backgroundColor: 'rgba(20, 184, 166, 0.06)',
-				'&:hover': { backgroundColor: 'rgba(20, 184, 166, 0.12)' }
+				'&:hover': { backgroundColor: 'var(--surface-hover)' }
 			},
 			'.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-				backgroundColor: 'rgba(20, 184, 166, 0.16)',
+				backgroundColor: 'var(--surface-active)',
 				color: 'inherit',
-				'&:hover': { backgroundColor: 'rgba(20, 184, 166, 0.16)' }
+				'&:hover': { backgroundColor: 'var(--surface-active)' }
 			},
 			'.cm-tooltip-autocomplete .cm-completionLabel': {
 				color: 'var(--status-running)',
