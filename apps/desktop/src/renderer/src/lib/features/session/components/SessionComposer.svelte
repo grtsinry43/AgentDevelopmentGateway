@@ -8,6 +8,7 @@
 	import { Prec, type Extension } from '@codemirror/state';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { autocompletion, completionStatus } from '@codemirror/autocomplete';
+	import { fileAttachment } from './file-attachment';
 	import type { ExecutionPreset, SessionWorkspaceState } from '../session-workspace.svelte';
 	import { listCommands, listSessionCommands } from '../api';
 	import { setSlashCommands, slashCommandSource } from './slash-command-source';
@@ -196,6 +197,7 @@
 			])
 		),
 		autocompletion({ override: [slashCommandSource], icons: false, defaultKeymap: true }),
+		fileAttachment(),
 		EditorView.theme({
 			'&': { height: '100%' },
 			'.cm-gutters': { display: 'none' },

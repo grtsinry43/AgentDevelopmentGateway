@@ -613,6 +613,8 @@ export interface DesktopBridge {
 		updateWatch(projectKey: string, directories: string[]): Promise<void>;
 		unwatch(projectKey: string): Promise<void>;
 		retry(projectKey: string): Promise<void>;
+		/** Electron `webUtils.getPathForFile`:把拖入/粘贴的 File 解析成磁盘路径。 */
+		pathOf(file: File): string;
 	};
 
 	git: {

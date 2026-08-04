@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   PUSH_CHANNEL,
@@ -82,7 +82,7 @@ const bridge: DesktopBridge = {
   },
 
   system: {
-    openExternal: (url) => ipcRenderer.invoke(IPC.systemOpenExternal, url)
+    openExternal: (url: string) => ipcRenderer.invoke(IPC.systemOpenExternal, url)
   },
 
   projects: {
@@ -203,7 +203,8 @@ const bridge: DesktopBridge = {
     updateWatch: (projectKey: string, directories: string[]) =>
       ipcRenderer.invoke(IPC.filesUpdateWatch, projectKey, directories),
     unwatch: (projectKey: string) => ipcRenderer.invoke(IPC.filesUnwatch, projectKey),
-    retry: (projectKey: string) => ipcRenderer.invoke(IPC.filesRetry, projectKey)
+    retry: (projectKey: string) => ipcRenderer.invoke(IPC.filesRetry, projectKey),
+    pathOf: (file: File) => webUtils.getPathForFile(file)
   },
 
   git: {
