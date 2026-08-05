@@ -259,12 +259,21 @@ export class ClaudeAdapter implements RuntimeAdapter {
         `Claude active turn is ${session.activeTurnId ?? 'none'}, not expected ${options.expectedTurnId}`,
       )
     }
+    const interruptedTurnId = session.activeTurnId
+    if (!interruptedTurnId) return // 幂等:没有活跃回合就不需要中断
     session.bridge.cancelAll('aborted', 'Turn interrupted')
     await session.query.interrupt()
+    // 回合已停:清掉 activeTurnId,同一 query 可直接开新回合(无需 resume)。
+    session.activeTurnId = undefined
+    this.publish(session, {
+      type: 'turn.completed',
+      payload: { turnId: interruptedTurnId, status: 'interrupted' },
+      turnId: interruptedTurnId,
+    })
     this.publish(session, {
       type: 'session.status_changed',
       payload: { status: 'interrupted' },
-      turnId: session.activeTurnId,
+      turnId: interruptedTurnId,
     })
   }
 
@@ -527,23 +536,30 @@ export class ClaudeAdapter implements RuntimeAdapter {
             tools: [
               defineMcpTool(
                 'preview',
-                'Open a local web server in the Agent Development Gateway preview panel. Call this after starting a localhost web server (e.g. `npm run dev`, `python3 -m http.server 8000`) so the user can see it. Pass the port the server listens on; the preview is opened at http://localhost:<port>.',
-                { port: z.number().int().positive() },
-                async ({ port }) => {
+                'Open a local web server in the Agent Development Gateway preview panel. Call this after starting a localhost web server (e.g. `npm run dev`, `python3 -m http.server 8000`) so the user can see it. Pass the port the server listens on, and the path the page is served at when it is not the root (for example Vite/Next apps often serve at `/` — then omit it; if the entry is `/docs` or `/app`, pass that). The preview is opened at http://localhost:<port><path>.',
+                {
+                  port: z.number().int().positive(),
+                  path: z
+                    .string()
+                    .optional()
+                    .describe('Path on the dev server, starting with `/`, omitted for the root.'),
+                },
+                async ({ port, path }) => {
                   const current = sessionReference.current
                   if (!current) throw new Error('Gateway session is not ready')
                   this.publish(current, {
                     type: 'runtime.extension',
                     payload: {
                       feature: 'gateway.preview.open',
-                      payload: { port },
+                      payload: { port, ...(path ? { path } : {}) },
                     },
                   })
+                  const location = path ? `http://localhost:${port}${path}` : `http://localhost:${port}`
                   return {
                     content: [
                       {
                         type: 'text' as const,
-                        text: `Preview opened for http://localhost:${port}`,
+                        text: `Preview opened for ${location}`,
                       },
                     ],
                   }

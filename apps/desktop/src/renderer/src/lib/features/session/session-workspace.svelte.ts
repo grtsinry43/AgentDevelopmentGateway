@@ -57,7 +57,7 @@ import {
 	type ConversationToolCall
 } from './projection';
 
-export type SessionFilter = 'all' | 'active' | 'waiting' | 'ended';
+export type SessionFilter = 'all' | 'active' | 'waiting' | 'ended' | 'archived';
 export type ExecutionPreset = 'standard' | 'read-only' | 'full-access';
 
 interface PendingModelSelection {
@@ -72,7 +72,7 @@ const MAX_LOAD_ATTEMPTS = 5;
 const TITLE_SYNC_MS = 900;
 /** 实时尾巴投影的事件类型(其余进 projection 维护会话级状态)。 */
 const ITEM_EVENT_TYPES = new Set([
-	'input.admitted',
+	'input.dispatched',
 	'content.text.started',
 	'content.text.delta',
 	'content.text.completed',
@@ -295,8 +295,10 @@ class SessionWorkspace {
 			this.loadRetryAttempt = 0;
 			this.serverError = undefined;
 			this.#applySessions(sessions);
-			if (!this.selectedSessionId && sessions.length > 0) {
-				const latest = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+			if (!this.selectedSessionId && sessions.some((session) => session.status !== 'closed')) {
+				const latest = [...sessions]
+					.filter((session) => session.status !== 'closed')
+					.sort((a, b) => b.updatedAt - a.updatedAt)[0];
 				if (latest) await this.select(latest.id);
 			} else if (!this.selectedSessionId) {
 				const adapter = adapters.find(
@@ -548,24 +550,12 @@ class SessionWorkspace {
 		this.sending = true;
 		this.error = undefined;
 		try {
-			let session = selected;
+			// 先确保会话真正 live(按 Server 的 live 标记,而非持久化状态),再发送。
+			if (!(await this.ensureSelectedSessionLive())) return false;
 			if (this.streamState !== 'connected') {
-				session = await getSession(selected.id);
-				this.#upsertSession(session);
+				await watchSession(selected.id, this.liveCursor);
 			}
-			if (!isLiveSessionStatus(session.status)) {
-				const adapter = this.adapters.find((entry) => entry.adapterId === session.adapterId);
-				const installationPath =
-					adapter?.installations.length === 1 ? adapter.installations[0]?.path : undefined;
-				const resumed = await resumeSession(session.id, {
-					...(installationPath ? { installationPath } : {})
-				});
-				this.#upsertSession(resumed);
-			}
-			if (this.streamState !== 'connected') {
-				await watchSession(session.id, this.liveCursor);
-			}
-			await sendSessionInput(session.id, {
+			await sendSessionInput(selected.id, {
 				input: { clientMessageId: crypto.randomUUID(), text }
 			});
 			return true;
@@ -587,30 +577,82 @@ class SessionWorkspace {
 		this.composerDraft = base ? `${base}\n\n${block}\n\n` : `${block}\n\n`;
 	}
 
-	/** 归档(关闭)一个会话;会话保留并标记为已结束。 */
+	/** 把工作区文件引用(`agent-gateway://path`)追加到输入框。 */
+	referenceFile(path: string): void {
+		const reference = `agent-gateway://${path}`;
+		const base = this.composerDraft.replace(/\s+$/, '');
+		this.composerDraft = base ? `${base}\n\n${reference}` : reference;
+	}
+
+	/** 归档(关闭)一个会话;会话保留、标记为已结束,并从当前对话视图退出。 */
 	async archiveSession(sessionId: string): Promise<void> {
 		try {
+			// 非活跃会话也能归档:Server 侧对没有 provider 会话的会话直接持久化为 closed。
 			await closeSession(sessionId, {});
-			void this.load();
+			if (this.selectedSessionId === sessionId) this.#deselectSession();
+			await this.load();
 		} catch (error) {
 			this.error = errorMessage(error);
 		}
 	}
 
+	/** 恢复(重新激活)一个已归档会话,并选中回到对话视图。 */
+	async unarchiveSession(sessionId: string): Promise<void> {
+		try {
+			const existing = this.sessions.find((session) => session.id === sessionId);
+			const adapter = this.adapters.find(
+				(entry) => entry.adapterId === existing?.adapterId
+			);
+			const installationPath =
+				adapter?.installations.length === 1 ? adapter.installations[0]?.path : undefined;
+			const resumed = await resumeSession(sessionId, {
+				...(installationPath ? { installationPath } : {})
+			});
+			this.#upsertSession(resumed);
+			this.filter = 'all';
+			await this.load();
+			await this.select(sessionId);
+		} catch (error) {
+			this.error = errorMessage(error);
+		}
+	}
+
+	/** 退出当前对话视图(取消选中、清空会话投影),保持新会话草稿为空态。 */
+	#deselectSession(): void {
+		this.#selectionGeneration += 1;
+		const previous = this.selectedSessionId;
+		this.selectedSessionId = undefined;
+		this.selectedSubagentRunId = undefined;
+		this.projection = emptyConversationProjection();
+		this.items = [];
+		this.liveState = createSessionItemState();
+		this.liveRevision += 1;
+		this.hasMoreOlder = false;
+		this.oldestSequence = 0;
+		this.#clearReplay();
+		this.streamState = 'idle';
+		this.streamMessage = undefined;
+		this.streamRetryAttempt = 0;
+		this.error = undefined;
+		if (previous) void unwatchSession(previous).catch(() => undefined);
+	}
+
 	/**
-	 * 确保当前选中会话在 Server 进程内活跃:非活跃(历史/已归档)先 resume
-	 * (走 IPC 注入 providerConfig),回退/操作前调用。返回是否可用。
+	 * 确保当前选中会话真正在 Server 运行时里 live:总是拉最新快照,按 Server 的
+	 * `live` 标记(而非持久化 status)判断是否需要 resume。持久化的 interrupted/idle
+	 * 并不等于 live —— Server 重启后会话不在运行时里,直接操作会报 SESSION_NOT_ACTIVE。
 	 */
 	async ensureSelectedSessionLive(): Promise<boolean> {
 		const selected = this.selectedSession;
 		if (!selected) return false;
 		try {
-			let session = selected;
-			if (this.streamState !== 'connected') {
-				session = await getSession(selected.id);
-				this.#upsertSession(session);
+			const session = await getSession(selected.id);
+			this.#upsertSession(session);
+			if (session.status === 'closed') {
+				this.error = '该会话已归档，请在会话菜单中选择「恢复会话」后再继续。';
+				return false;
 			}
-			if (!isLiveSessionStatus(session.status)) {
+			if (!session.live) {
 				const adapter = this.adapters.find((entry) => entry.adapterId === session.adapterId);
 				const installationPath =
 					adapter?.installations.length === 1 ? adapter.installations[0]?.path : undefined;
@@ -663,6 +705,7 @@ class SessionWorkspace {
 	async stopActiveTurn(): Promise<boolean> {
 		const session = this.selectedSession;
 		if (!session || !isTurnActive(session.status)) return false;
+		if (!(await this.ensureSelectedSessionLive())) return false;
 		try {
 			await interruptSession(session.id);
 			return true;
@@ -736,6 +779,7 @@ class SessionWorkspace {
 		const session = this.selectedSession;
 		const entry = this.inputQueue.find((candidate) => candidate.id === inputId);
 		if (!session || !entry || this.queueBusyId) return false;
+		if (!(await this.ensureSelectedSessionLive())) return false;
 		this.queueBusyId = inputId;
 		this.error = undefined;
 		try {
@@ -762,6 +806,7 @@ class SessionWorkspace {
 		const index = ids.indexOf(inputId);
 		const target = index + offset;
 		if (index < 0 || target < 0 || target >= ids.length) return;
+		if (!(await this.ensureSelectedSessionLive())) return;
 		[ids[index], ids[target]] = [ids[target]!, ids[index]!];
 		this.queueBusyId = inputId;
 		try {
@@ -839,6 +884,7 @@ class SessionWorkspace {
 	async resolveInteraction(resolution: InteractionResolutionWire): Promise<boolean> {
 		const session = this.selectedSession;
 		if (!session || this.resolvingInteractionId) return false;
+		if (!(await this.ensureSelectedSessionLive())) return false;
 		this.resolvingInteractionId = resolution.id;
 		this.error = undefined;
 		try {
@@ -873,6 +919,8 @@ class SessionWorkspace {
 	): Promise<RuntimeControlReceipt | undefined> {
 		const session = this.selectedSession;
 		if (!session || this.controlling) return undefined;
+		// 模型/工作模式/执行设置等控制操作也要求会话 live,否则非活跃会话报 SESSION_NOT_ACTIVE。
+		if (!(await this.ensureSelectedSessionLive())) return undefined;
 		this.controlling = true;
 		this.error = undefined;
 		try {
@@ -902,6 +950,8 @@ class SessionWorkspace {
 	): Promise<void> {
 		const session = this.selectedSession;
 		if (!session || this.queueBusyId) return;
+		// 队列操作针对非活跃会话(如重新打开后)会报 SESSION_NOT_ACTIVE:先确保会话 live。
+		if (!(await this.ensureSelectedSessionLive())) return;
 		this.queueBusyId = inputId;
 		this.error = undefined;
 		try {
@@ -1057,19 +1107,21 @@ class SessionWorkspace {
 
 	/** 分发扩展事件(Feature Registry 之外的小型 hook;未知 feature 忽略)。 */
 	#handleExtensionEvent(event: RuntimeEventWire): void {
-		const payload = event.payload as { feature?: string; payload?: { port?: number } } | undefined;
+		const payload = event.payload as
+			| { feature?: string; payload?: { port?: number; path?: string } }
+			| undefined;
 		if (payload?.feature === 'gateway.preview.open') {
 			const port = payload.payload?.port;
 			if (typeof port === 'number' && Number.isInteger(port) && port > 0) {
-				void this.#openPreview(port);
+				void this.#openPreview(port, payload.payload?.path);
 			}
 		}
 	}
 
 	/** 经主进程把 agent 报告的端口解析成客户端可访问地址(远程走 SSH 中转)。 */
-	async #openPreview(port: number): Promise<void> {
+	async #openPreview(port: number, path?: string): Promise<void> {
 		try {
-			const entry = await desktop.preview.open(port);
+			const entry = await desktop.preview.open(port, path);
 			webPreview.open(entry);
 		} catch (error) {
 			console.error('[preview] 打开预览失败:', error);
@@ -1158,14 +1210,15 @@ function executionPreset(
 }
 
 function matchesFilter(session: GatewaySession, filter: SessionFilter): boolean {
-	if (filter === 'all') return true;
+	if (filter === 'all') return session.status !== 'closed';
+	if (filter === 'archived') return session.status === 'closed';
 	if (filter === 'waiting') return session.status === 'waiting';
-	if (filter === 'ended') return session.status === 'error' || session.status === 'closed';
+	if (filter === 'ended') return session.status === 'error';
 	return ['starting', 'idle', 'running', 'interrupted'].includes(session.status);
 }
 
 function isLiveSessionStatus(status: GatewaySession['status']): boolean {
-	return status === 'starting' || status === 'idle' || status === 'running' || status === 'waiting';
+	return status === 'starting' || status === 'idle' || status === 'running' || status === 'waiting' || status === 'interrupted';
 }
 
 /** 有回合在跑:可以被中断。idle/starting 时 interrupt 在 adapter 侧是安全的 no-op。 */

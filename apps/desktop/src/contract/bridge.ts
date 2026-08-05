@@ -50,7 +50,10 @@ import type {
 	TerminalDescriptor,
 	TerminalServerMessage,
 	WorkspaceDirectoryResponse,
-	WorkspaceFileContentResponse
+	WorkspaceFileContentResponse,
+	WorkspaceFileCreateRequest,
+	WorkspaceFileKind,
+	WorkspaceFileMoveRequest
 } from '@agent-gateway/shared';
 
 /**
@@ -161,6 +164,13 @@ export const IPC = {
 	filesUpdateWatch: 'files:updateWatch',
 	filesUnwatch: 'files:unwatch',
 	filesRetry: 'files:retry',
+	filesCreate: 'files:create',
+	filesRename: 'files:rename',
+	filesDelete: 'files:delete',
+	filesWrite: 'files:write',
+	filesCopy: 'files:copy',
+	filesCopyPath: 'files:copyPath',
+	filesReveal: 'files:reveal',
 	gitCapabilities: 'git:capabilities',
 	gitStatus: 'git:status',
 	gitDiff: 'git:diff',
@@ -520,7 +530,7 @@ export interface DesktopBridge {
 
 	/** Web 预览:把 agent 报告的端口解析成客户端可访问的本地 URL(远程走 SSH 中转)。 */
 	preview: {
-		open(port: number): Promise<{ url: string; host: string; port: number }>;
+		open(port: number, path?: string): Promise<{ url: string; host: string; port: number }>;
 	};
 
 	/** 远程连接状态与操作(仅 hostType = ssh 的工程有意义)。 */
@@ -618,6 +628,24 @@ export interface DesktopBridge {
 		updateWatch(projectKey: string, directories: string[]): Promise<void>;
 		unwatch(projectKey: string): Promise<void>;
 		retry(projectKey: string): Promise<void>;
+		create(projectKey: string, input: WorkspaceFileCreateRequest): Promise<void>;
+		rename(projectKey: string, input: WorkspaceFileMoveRequest): Promise<void>;
+		delete(projectKey: string, path: string): Promise<void>;
+		/** 写回工作区文件文本内容(不超过预览上限)。 */
+		write(projectKey: string, path: string, content: string): Promise<void>;
+		/** 复制(duplicate)工作区文件/目录。 */
+		copy(projectKey: string, input: WorkspaceFileMoveRequest): Promise<void>;
+		/** 把工作区路径文本写入系统剪贴板(`absolute` 拼接宿主绝对路径,`relative` 用原样)。 */
+		copyPath(
+			projectKey: string,
+			path: string,
+			mode: 'absolute' | 'relative'
+		): Promise<void>;
+		/**
+		 * 本地:在系统文件管理器中显示,返回 null。
+		 * 远程:下载到本地镜像目录(不打开文件管理器),返回下载后的本地路径。
+		 */
+		reveal(projectKey: string, path: string, kind: WorkspaceFileKind): Promise<string | null>;
 		/** Electron `webUtils.getPathForFile`:把拖入/粘贴的 File 解析成磁盘路径。 */
 		pathOf(file: File): string;
 	};

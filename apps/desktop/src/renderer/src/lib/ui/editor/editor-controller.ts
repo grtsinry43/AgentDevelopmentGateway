@@ -7,8 +7,63 @@ import {
 	type Extension
 } from '@codemirror/state';
 import { EditorView, placeholder, type ViewUpdate } from '@codemirror/view';
-import { basicSetup } from 'codemirror';
+import {
+	defaultKeymap,
+	history,
+	historyKeymap
+} from '@codemirror/commands';
+import { closeBrackets, autocompletion, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
+import { highlightSelectionMatches } from '@codemirror/search';
+import { lintKeymap } from '@codemirror/lint';
+import {
+	bracketMatching,
+	foldGutter,
+	foldKeymap,
+	indentOnInput,
+	syntaxHighlighting,
+	defaultHighlightStyle
+} from '@codemirror/language';
+import {
+	crosshairCursor,
+	drawSelection,
+	dropCursor,
+	highlightSpecialChars,
+	keymap,
+	lineNumbers,
+	rectangularSelection
+} from '@codemirror/view';
 import { gatewayEditorTheme } from './editor-theme';
+
+/**
+ * 基础编辑器装配:等于 `codemirror` 的 `basicSetup`,但**去掉** `highlightActiveLine`
+ * 与 `highlightActiveLineGutter`。活动行高亮改为按实例注入(见 CodeEditor),
+ * 避免多个编辑器共用同一份 document 样式表时互相覆盖。
+ */
+const baseEditorSetup: Extension = [
+	lineNumbers(),
+	highlightSpecialChars(),
+	history(),
+	foldGutter(),
+	drawSelection(),
+	dropCursor(),
+	EditorState.allowMultipleSelections.of(true),
+	indentOnInput(),
+	syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+	bracketMatching(),
+	closeBrackets(),
+	autocompletion(),
+	rectangularSelection(),
+	crosshairCursor(),
+	highlightSelectionMatches(),
+	keymap.of([
+		...closeBracketsKeymap,
+		...defaultKeymap,
+		...historyKeymap,
+		...foldKeymap,
+		...completionKeymap,
+		...lintKeymap
+	])
+]
 
 export type EditorChangeHandler = (document: string, update: ViewUpdate) => void;
 export type EditorUpdateHandler = (update: ViewUpdate) => void;
@@ -73,7 +128,7 @@ export class EditorController {
 		const state = EditorState.create({
 			doc: this.#document,
 			extensions: [
-				basicSetup,
+				baseEditorSetup,
 				gatewayEditorTheme,
 				EditorView.lineWrapping,
 				this.#readOnlyCompartment.of(readOnlyExtensions(this.#readOnly)),

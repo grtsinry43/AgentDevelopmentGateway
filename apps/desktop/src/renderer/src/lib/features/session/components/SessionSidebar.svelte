@@ -66,12 +66,17 @@
 				icon: 'pencil',
 				run: () => beginRename(menu!.sessionId, session?.title ?? '')
 			},
-			{
-				label: menu.closed ? '已归档' : '归档',
-				icon: 'file-text',
-				disabled: menu.closed,
-				run: () => void workspace.archiveSession(menu!.sessionId)
-			}
+			menu.closed
+				? {
+						label: '恢复会话',
+						icon: 'refresh',
+						run: () => void workspace.unarchiveSession(menu!.sessionId)
+					}
+				: {
+						label: '归档',
+						icon: 'file-text',
+						run: () => void workspace.archiveSession(menu!.sessionId)
+					}
 		];
 	});
 
@@ -79,7 +84,8 @@
 		{ id: 'all', label: '全部' },
 		{ id: 'active', label: '进行中' },
 		{ id: 'waiting', label: '等待' },
-		{ id: 'ended', label: '已结束' }
+		{ id: 'ended', label: '已结束' },
+		{ id: 'archived', label: '已归档' }
 	];
 </script>
 

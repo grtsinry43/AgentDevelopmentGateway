@@ -148,6 +148,10 @@ class RewindWorkspace {
 			await sessionWorkspace.rebuildAfterRewind();
 			sessionWorkspace.composerDraft = point.text;
 		} catch (error) {
+			// 原生 apply 即使文件回退失败,服务端也已截断对话 —— 先重建视图再报错。
+			if (this.behavior !== 'fork' && sessionWorkspace.selectedSessionId === sessionId) {
+				await sessionWorkspace.rebuildAfterRewind().catch(() => undefined);
+			}
 			this.error = error instanceof Error ? error.message : '回退失败';
 		} finally {
 			this.busy = false;

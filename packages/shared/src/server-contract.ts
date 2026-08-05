@@ -111,6 +111,26 @@ export const workspaceFileSubscriptionParamsSchema = z.strictObject({
 export const workspaceFileSubscriptionSchema = z.strictObject({
   directories: z.array(workspaceRelativePathSchema).max(2_048),
 })
+export const workspaceFileCreateRequestSchema = z.strictObject({
+  path: workspaceRelativePathSchema.refine((path) => path.length > 0, {
+    message: 'Workspace file path cannot be empty',
+  }),
+  kind: z.enum(['file', 'directory']),
+})
+export const workspaceFileWriteRequestSchema = z.strictObject({
+  path: workspaceRelativePathSchema.refine((path) => path.length > 0, {
+    message: 'Workspace file path cannot be empty',
+  }),
+  content: z.string().max(512 * 1024),
+})
+export const workspaceFileMoveRequestSchema = z.strictObject({
+  from: workspaceRelativePathSchema.refine((path) => path.length > 0, {
+    message: 'Workspace file path cannot be empty',
+  }),
+  to: workspaceRelativePathSchema.refine((path) => path.length > 0, {
+    message: 'Workspace file path cannot be empty',
+  }),
+})
 export const workspaceFileEventSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('workspace.files.resync'),
@@ -708,6 +728,8 @@ export const sessionSchema = z.strictObject({
   taskState: taskStateSchema,
   subagentRuns: z.array(subagentRunSchema),
   inputQueue: z.array(inputQueueEntrySchema),
+  /** 会话是否正加载在 Server 运行时里(live)。持久化的 interrupted/idle 不等于 live。 */
+  live: z.boolean(),
   status: sessionStatusSchema,
   title: z.string().optional(),
   lastEventSequence: z.number().int().nonnegative(),
@@ -897,6 +919,9 @@ export type WorkspaceFileKind = z.infer<typeof workspaceFileKindSchema>
 export type WorkspaceFileNode = z.infer<typeof workspaceFileNodeSchema>
 export type WorkspaceDirectoryResponse = z.infer<typeof workspaceDirectoryResponseSchema>
 export type WorkspaceFileContentResponse = z.infer<typeof workspaceFileContentResponseSchema>
+export type WorkspaceFileCreateRequest = z.infer<typeof workspaceFileCreateRequestSchema>
+export type WorkspaceFileWriteRequest = z.infer<typeof workspaceFileWriteRequestSchema>
+export type WorkspaceFileMoveRequest = z.infer<typeof workspaceFileMoveRequestSchema>
 export type WorkspaceFileSubscription = z.infer<typeof workspaceFileSubscriptionSchema>
 export type WorkspaceFileEvent = z.infer<typeof workspaceFileEventSchema>
 export type GitChangeArea = z.infer<typeof gitChangeAreaSchema>

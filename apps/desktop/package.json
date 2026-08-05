@@ -16,14 +16,20 @@
 		"@agent-gateway/core": "workspace:*",
 		"@agent-gateway/shared": "workspace:*",
 		"@codemirror/autocomplete": "^6.20.3",
+		"@codemirror/commands": "^6.10.4",
 		"@codemirror/lang-markdown": "^6.5.1",
 		"@codemirror/language": "^6.12.4",
+		"@codemirror/language-data": "^6.5.2",
+		"@codemirror/lint": "^6.9.7",
+		"@codemirror/search": "^6.7.1",
 		"@codemirror/state": "^6.7.1",
 		"@codemirror/view": "^6.43.7",
 		"@fontsource-variable/google-sans": "^5.3.1",
 		"@fontsource-variable/noto-sans-sc": "^5.3.0",
 		"@fontsource-variable/noto-serif-sc": "^5.3.0",
 		"@fontsource-variable/victor-mono": "^5.3.0",
+		"@iconify-json/vscode-icons": "^1.2.68",
+		"@iconify/svelte": "^5.2.2",
 		"@lezer/highlight": "^1.2.3",
 		"@lezer/markdown": "^1.7.2",
 		"@tanstack/svelte-query": "^6.1.38",
@@ -34,6 +40,7 @@
 		"@zag-js/tree-view": "^1.43.0",
 		"bits-ui": "^2.18.1",
 		"codemirror": "^6.0.2",
+		"extract-zip": "^2.0.1",
 		"highlight.js": "^11.11.1",
 		"ofetch": "^1.5.1",
 		"svatoms": "^0.2.0",
@@ -61,7 +68,10 @@
 		"directories": {
 			"output": "release"
 		},
-		"files": ["out/**", "package.json"],
+		"files": [
+			"out/**",
+			"package.json"
+		],
 		"extraResources": [
 			{
 				"from": "../server/out/bundle/server.mjs",
@@ -78,11 +88,17 @@
 			{
 				"from": "../server/out/package",
 				"to": "server-packages",
-				"filter": ["*.tar.gz", "*.sha256", "manifest.json"]
+				"filter": [
+					"*.tar.gz",
+					"*.sha256",
+					"manifest.json"
+				]
 			}
 		],
 		"mac": {
-			"target": ["dmg"],
+			"target": [
+				"dmg"
+			],
 			"category": "public.app-category.developer-tools",
 			"icon": "build/icon.icns",
 			"identity": null

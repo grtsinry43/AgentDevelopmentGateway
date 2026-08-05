@@ -32,7 +32,7 @@ describe('session itemizer', () => {
   it('concatenates a user message and assistant text with deltas into blocks', () => {
     const state = feed(
       createSessionItemState(),
-      event('input.admitted', { entry: { input: { text: '你好' } } }),
+      event('input.dispatched', { entry: { input: { text: '你好' } } }),
       event('content.text.started', { blockId: 'b1' }),
       event('content.text.delta', { blockId: 'b1', delta: '你' }),
       event('content.text.delta', { blockId: 'b1', delta: '好' }),
@@ -96,12 +96,12 @@ describe('session itemizer', () => {
   it('keeps a subagent in place when its status updates (no drift to the bottom)', () => {
     const state = feed(
       createSessionItemState(),
-      event('input.admitted', { entry: { input: { text: 'before' } } }),
+      event('input.dispatched', { entry: { input: { text: 'before' } } }),
       event('subagent.started', { run: { id: 's1', status: 'running' } }),
       event('subagent.updated', { run: { id: 's1', status: 'running', updated: 'once' } }),
       event('subagent.updated', { run: { id: 's1', status: 'running', updated: 'twice' } }),
       event('subagent.completed', { run: { id: 's1', status: 'completed' } }),
-      event('input.admitted', { entry: { input: { text: 'after' } } }),
+      event('input.dispatched', { entry: { input: { text: 'after' } } }),
     )
     const timeline = sessionTimeline(state)
     assert.equal(timeline.length, 3)
@@ -121,11 +121,11 @@ describe('session itemizer', () => {
 
   it('survives re-materialization: replayed subagent events re-finalize the same item', () => {
     const events = [
-      event('input.admitted', { entry: { input: { text: 'before' } } }),
+      event('input.dispatched', { entry: { input: { text: 'before' } } }),
       event('subagent.started', { run: { id: 's1', status: 'running' } }),
       event('subagent.updated', { run: { id: 's1', status: 'running', updated: 'once' } }),
       event('subagent.completed', { run: { id: 's1', status: 'completed' } }),
-      event('input.admitted', { entry: { input: { text: 'after' } } }),
+      event('input.dispatched', { entry: { input: { text: 'after' } } }),
     ]
     const first = feed(createSessionItemState(), ...events)
     // 模拟重放:全新 state 从同一批 durable 事件重建(会话切换后回来)。
@@ -193,7 +193,7 @@ describe('session itemizer', () => {
       sessionId: 'ses-1',
       adapterId: 'claude-code',
       timestamp: 1000,
-      type: 'input.admitted',
+      type: 'input.dispatched',
       payload: { entry: { input: { text: 'a' } } },
     }
     const dup: RuntimeEventWire = { ...first, id: 2 }

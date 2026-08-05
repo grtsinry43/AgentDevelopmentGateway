@@ -1,4 +1,7 @@
-import { Readable } from 'node:stream'
+import { createReadStream } from 'node:fs'
+import { basename } from 'node:path'
+import { PassThrough, Readable } from 'node:stream'
+import { ZipArchive } from 'archiver'
 import type { WorkspaceFileEvent } from '@agent-gateway/shared'
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import type { WorkspaceFileService } from './service.js'
@@ -7,7 +10,10 @@ import {
   workspaceDirectoryResponseSchema,
   workspaceFileContentQuerySchema,
   workspaceFileContentResponseSchema,
+  workspaceFileCreateRequestSchema,
   workspaceFileErrorResponses,
+  workspaceFileMoveRequestSchema,
+  workspaceFileWriteRequestSchema,
   workspaceFilesParamsSchema,
   workspaceFileSubscriptionParamsSchema,
   workspaceFileSubscriptionSchema
@@ -47,6 +53,109 @@ export const workspaceFileRoutes: FastifyPluginAsyncZod<WorkspaceFileRoutesOptio
       }
     },
     async (request) => options.files.read(request.params.projectId, request.query.path)
+  )
+
+  server.post(
+    '/projects/:projectId/files',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        body: workspaceFileCreateRequestSchema,
+        response: { ...workspaceFileErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.files.create(request.params.projectId, request.body)
+      reply.code(204)
+    }
+  )
+
+  server.put(
+    '/projects/:projectId/files/content',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        body: workspaceFileWriteRequestSchema,
+        response: { ...workspaceFileErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.files.write(request.params.projectId, request.body)
+      reply.code(204)
+    }
+  )
+
+  server.post(
+    '/projects/:projectId/files/copy',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        body: workspaceFileMoveRequestSchema,
+        response: { ...workspaceFileErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.files.copy(request.params.projectId, request.body)
+      reply.code(204)
+    }
+  )
+
+  server.patch(
+    '/projects/:projectId/files',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        body: workspaceFileMoveRequestSchema,
+        response: { ...workspaceFileErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.files.move(request.params.projectId, request.body)
+      reply.code(204)
+    }
+  )
+
+  server.delete(
+    '/projects/:projectId/files',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        querystring: workspaceFileContentQuerySchema,
+        response: { ...workspaceFileErrorResponses }
+      }
+    },
+    async (request, reply) => {
+      await options.files.remove(request.params.projectId, request.query.path)
+      reply.code(204)
+    }
+  )
+
+  server.get(
+    '/projects/:projectId/files/download',
+    {
+      schema: {
+        params: workspaceFilesParamsSchema,
+        querystring: workspaceDirectoryQuerySchema
+      }
+    },
+    async (request, reply) => {
+      const location = await options.files.downloadLocation(
+        request.params.projectId,
+        request.query.path
+      )
+      if (location.kind === 'directory') {
+        const archive = new ZipArchive({ zlib: { level: 6 } })
+        const stream = new PassThrough()
+        archive.on('error', (error) => stream.destroy(error))
+        archive.pipe(stream)
+        void archive.directory(location.absolutePath, false).finalize()
+        return reply.type('application/zip').send(stream)
+      }
+      return reply
+        .header('content-disposition', `attachment; filename="${basename(location.relativePath)}"`)
+        .type('application/octet-stream')
+        .send(createReadStream(location.absolutePath))
+    }
   )
 
   server.put(

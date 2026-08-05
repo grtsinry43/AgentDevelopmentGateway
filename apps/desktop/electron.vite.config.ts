@@ -1,9 +1,41 @@
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'electron-vite'
+import type { Plugin } from 'vite'
 
 const rendererRoot = resolve(import.meta.dirname, 'src/renderer')
+
+const GATEWAY_ERROR_OVERLAY_ID = 'virtual:gateway-dev-error-overlay'
+const GATEWAY_ERROR_OVERLAY_RESOLVED = `\0${GATEWAY_ERROR_OVERLAY_ID}`
+
+/**
+ * 自定义 Vite dev 错误浮窗:在 @vite/client 之前注册同名 `vite-error-overlay`
+ * 自定义元素,替换默认的红框。见 vite/dev-error-overlay.mjs。
+ */
+function gatewayDevErrorOverlay(): Plugin {
+	const source = readFileSync(resolve(import.meta.dirname, 'vite/dev-error-overlay.mjs'), 'utf8')
+	return {
+		name: 'gateway-dev-error-overlay',
+		apply: 'serve',
+		resolveId(id) {
+			if (id === GATEWAY_ERROR_OVERLAY_ID) return GATEWAY_ERROR_OVERLAY_RESOLVED
+		},
+		load(id) {
+			if (id === GATEWAY_ERROR_OVERLAY_RESOLVED) return source
+		},
+		transformIndexHtml() {
+			return [
+				{
+					tag: 'script',
+					attrs: { type: 'module', src: `/@id/${GATEWAY_ERROR_OVERLAY_ID}` },
+					injectTo: 'head-prepend'
+				}
+			]
+		}
+	}
+}
 
 export default defineConfig({
   main: {
@@ -28,7 +60,7 @@ export default defineConfig({
         $contract: resolve(import.meta.dirname, 'src/contract')
       }
     },
-    plugins: [tailwindcss(), svelte()],
+    plugins: [tailwindcss(), svelte(), gatewayDevErrorOverlay()],
     build: {
       rollupOptions: {
         // 一个窗口 = 一个入口。Launcher 与 Project 是主窗口;新建工程向导、

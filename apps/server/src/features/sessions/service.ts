@@ -42,7 +42,7 @@ import type { SessionItemRepository } from './item-repository.js'
 import type { SessionItemizer } from './session-itemizer.js'
 import { SessionRepository, type StoredSession } from './repository.js'
 
-const liveStatuses = new Set<AgentSession['status']>(['starting', 'idle', 'running', 'waiting'])
+const liveStatuses = new Set<AgentSession['status']>(['starting', 'idle', 'running', 'waiting', 'interrupted'])
 
 export class SessionService {
   private readonly observers = new Map<SessionId, Promise<void>>()
@@ -108,7 +108,8 @@ export class SessionService {
             subagentRuns: current.subagentRuns,
             inputQueue: current.inputQueue
           },
-          current.pendingInteractions
+          current.pendingInteractions,
+          true
         ),
         receipt
       }
@@ -192,30 +193,63 @@ export class SessionService {
             ...(item.text ? { text: item.text } : {}),
           }
         : body.target
-    const result = await this.runtime.rewindSession({
-      sessionId,
-      target,
-      mode: body.mode,
-      preferFork: body.preferFork,
-    })
+
+    // 原生回退资格看能力声明,不依赖 adapter 调用是否成功 —— 文件还原失败不能挡住对话截断。
+    const liveCapabilities = this.runtime.getSession(sessionId).connection.capabilities
+    const nativeRewind =
+      !body.preferFork &&
+      liveCapabilities.rewind === 'native' &&
+      this.runtime.getSession(sessionId).session.id === sessionId
+
+    let result: RewindSessionResult
+    let adapterError: unknown
+    try {
+      result = await this.runtime.rewindSession({
+        sessionId,
+        target,
+        mode: body.mode,
+        preferFork: body.preferFork,
+      })
+    } catch (error) {
+      // apply + 原生:文件回退失败也先把对话截断,再抛错让调用方看到真实原因。
+      if (!(body.mode === 'apply' && nativeRewind && targetSequence !== undefined)) throw error
+      adapterError = error
+      result = {
+        strategy: 'native',
+        removedMessageCount: 0,
+        fileDiff: [],
+        available: { native: true, fork: false },
+      }
+    }
+
     // 原生 apply:真正截断会话记录(内存事件流 + durable 事件 + 物化块),否则对话视图不变。
+    // 截断到「该消息 input.admitted」之前(选中消息本身也移除,回退到它发送之前,文本回填输入框)。
+    // 用户消息在 input.dispatched 才物化,若按 dispatched 截断,早先的 input.admitted 会残留在
+    // durable 日志里,resume 重建队列时把已发送的输入当成 pending 幽灵条目。
     if (body.mode === 'apply' && result.strategy === 'native' && targetSequence !== undefined) {
-      this.runtime.truncateSession(sessionId, targetSequence)
-      this.eventsRepository.truncateAfter(sessionId, targetSequence)
-      this.itemsRepository.truncateAfter(sessionId, targetSequence)
+      const admittedSequence =
+        item?.itemKind === 'message' && item.clientMessageId
+          ? this.findAdmittedSequence(id, item.clientMessageId)
+          : undefined
+      const keepThrough = Math.max(0, (admittedSequence ?? targetSequence) - 1)
+      this.runtime.truncateSession(sessionId, keepThrough)
+      this.eventsRepository.truncateAfter(sessionId, keepThrough)
+      this.itemsRepository.truncateAfter(sessionId, keepThrough)
       this.itemizer.reset(sessionId)
       const snapshot = this.runtime.getSession(sessionId)
       this.persistSnapshot(snapshot)
     }
-    return {
+    const outcome = {
       ...result,
       removedMessageCount:
         result.removedMessageCount > 0
           ? result.removedMessageCount
           : targetSequence === undefined
             ? 0
-            : this.itemsRepository.countMessagesAfter(sessionId, targetSequence),
+            : this.itemsRepository.countMessagesAfter(sessionId, Math.max(0, targetSequence - 1)),
     }
+    if (adapterError !== undefined) throw adapterError
+    return outcome
   }
 
   async resolveInteraction(
@@ -234,12 +268,54 @@ export class SessionService {
     await this.runtime.resolveInteraction(sessionId, brandResolution(body.resolution))
   }
 
+  /** 用户消息在 `input.dispatched` 才物化;回退时按 `input.admitted` 的序列截断,避免 admitted 残留成幽灵队列条目。 */
+  private findAdmittedSequence(sessionId: string, clientMessageId: string): number | undefined {
+    for (const event of this.eventsRepository.listAfter(sessionId, 0)) {
+      if (
+        (event.type === 'input.admitted' || event.type === 'input.dispatched') &&
+        event.payload.entry.input.clientMessageId === clientMessageId
+      ) {
+        return event.payload.entry.admittedSequence
+      }
+    }
+    return undefined
+  }
+
   async close(id: string, body: CloseSessionBody): Promise<SessionControlResult> {
-    const sessionId = this.requireActive(id)
-    const receipt = await this.runtime.closeSession(sessionId, body)
-    const snapshot = this.runtime.getSession(sessionId)
-    this.persistSnapshot(snapshot)
-    return receipt
+    const sessionId = asSessionId(id)
+    const stored = this.requireStored(id)
+    if (this.isActive(sessionId)) {
+      const receipt = await this.runtime.closeSession(sessionId, body)
+      const snapshot = this.runtime.getSession(sessionId)
+      this.persistSnapshot(snapshot)
+      return receipt
+    }
+    // 非活跃会话没有 provider 会话要 dispose,直接持久化为 closed(归档不需要 resume)。
+    const nextSequence = this.eventsRepository.maxSequence(sessionId) + 1
+    const now = Date.now()
+    this.eventsRepository.append({
+      id: nextSequence,
+      sequence: nextSequence,
+      sessionId,
+      adapterId: stored.session.adapterId,
+      timestamp: now,
+      type: 'session.status_changed',
+      payload: { status: 'closed' },
+    })
+    const closed: AgentSession = {
+      ...stored.session,
+      status: 'closed',
+      updatedAt: now,
+      lastEventSequence: Math.max(stored.session.lastEventSequence, nextSequence),
+    }
+    this.repository.updateSnapshot(
+      closed,
+      stored.capabilities,
+      stored.taskState,
+      stored.subagentRuns,
+      stored.inputQueue
+    )
+    return { controlRevision: stored.session.controlRevision }
   }
 
   async resume(id: string, body: ResumeSessionBody): Promise<SessionResponse> {
@@ -312,7 +388,7 @@ export class SessionService {
     try {
       this.repository.create(stored)
       this.observe(snapshot.session.id)
-      return toResponse(stored, snapshot.pendingInteractions)
+      return toResponse(stored, snapshot.pendingInteractions, true)
     } catch (error) {
       await this.runtime.disposeSession(snapshot.session.id).catch(() => undefined)
       this.repository.delete(snapshot.session.id)
@@ -545,7 +621,9 @@ export class SessionService {
       throw new GatewayHttpError(404, 'PROJECT_NOT_FOUND', 'Project was not found')
     }
     this.refreshRuntimeSnapshots(projectId)
-    return this.repository.listByProject(projectId).map((stored) => toResponse(stored))
+    return this.repository
+      .listByProject(projectId)
+      .map((stored) => toResponse(stored, undefined, this.isActive(stored.session.id)))
   }
 
   get(id: string): SessionResponse {
@@ -554,7 +632,7 @@ export class SessionService {
     if (live) this.persistSnapshot(live)
     const stored = this.repository.findById(id)
     if (!stored) throw new GatewayHttpError(404, 'SESSION_NOT_FOUND', 'Session was not found')
-    return toResponse(stored, live?.pendingInteractions)
+    return toResponse(stored, live?.pendingInteractions, this.isActive(stored.session.id))
   }
 
   async shutdown(): Promise<void> {
@@ -686,7 +764,8 @@ function titleFromInput(text: string): string {
 
 function toResponse(
   stored: StoredSession,
-  pendingInteractions: InteractionRequest[] = []
+  pendingInteractions: InteractionRequest[] = [],
+  live = false
 ): SessionResponse {
   const { session } = stored
   return {
@@ -694,6 +773,7 @@ function toResponse(
     projectId: session.projectId,
     hostId: session.hostId,
     adapterId: session.adapterId,
+    live,
     ...(session.runtimeSessionId ? { runtimeSessionId: session.runtimeSessionId } : {}),
     ...(session.providerProfileId ? { providerProfileId: session.providerProfileId } : {}),
     ...(session.model

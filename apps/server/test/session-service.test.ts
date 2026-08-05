@@ -95,7 +95,7 @@ test('itemsWindow tail page keeps the newest materialized item', async (t) => {
   })
   const sessionId = created.session.id
 
-  // 追加超过 limit 的成品消息(每条 input.admitted = 一条 message item)。
+  // 追加超过 limit 的成品消息(每条 input.dispatched = 一条 message item)。
   // 序号必须高于 itemizer 的 lastSequence(live-only 增量事件序号可能高于 durable max)。
   const limit = 10
   const extra = limit + 3
@@ -109,7 +109,7 @@ test('itemsWindow tail page keeps the newest materialized item', async (t) => {
       sessionId,
       adapterId: 'claude-code',
       timestamp: now + seq,
-      type: 'input.admitted',
+      type: 'input.dispatched',
       payload: {
         entry: {
           id: `c-${i}`,

@@ -28,7 +28,10 @@ import type {
   SetExecutionSettingsRequest,
   SetSessionModelRequest,
   SetSessionTitleRequest,
-  SetWorkModeRequest
+  SetWorkModeRequest,
+  WorkspaceFileCreateRequest,
+  WorkspaceFileKind,
+  WorkspaceFileMoveRequest
 } from '@agent-gateway/shared'
 
 /**
@@ -115,7 +118,7 @@ const bridge: DesktopBridge = {
   },
 
   preview: {
-    open: (port: number) => ipcRenderer.invoke(IPC.previewOpen, port)
+    open: (port: number, path?: string) => ipcRenderer.invoke(IPC.previewOpen, port, path)
   },
 
   remote: {
@@ -206,6 +209,20 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.filesUpdateWatch, projectKey, directories),
     unwatch: (projectKey: string) => ipcRenderer.invoke(IPC.filesUnwatch, projectKey),
     retry: (projectKey: string) => ipcRenderer.invoke(IPC.filesRetry, projectKey),
+    create: (projectKey: string, input: WorkspaceFileCreateRequest) =>
+      ipcRenderer.invoke(IPC.filesCreate, projectKey, input),
+    rename: (projectKey: string, input: WorkspaceFileMoveRequest) =>
+      ipcRenderer.invoke(IPC.filesRename, projectKey, input),
+    delete: (projectKey: string, path: string) =>
+      ipcRenderer.invoke(IPC.filesDelete, projectKey, path),
+    write: (projectKey: string, path: string, content: string) =>
+      ipcRenderer.invoke(IPC.filesWrite, projectKey, path, content),
+    copy: (projectKey: string, input: WorkspaceFileMoveRequest) =>
+      ipcRenderer.invoke(IPC.filesCopy, projectKey, input),
+    copyPath: (projectKey: string, path: string, mode: 'absolute' | 'relative') =>
+      ipcRenderer.invoke(IPC.filesCopyPath, projectKey, path, mode),
+    reveal: (projectKey: string, path: string, kind: WorkspaceFileKind) =>
+      ipcRenderer.invoke(IPC.filesReveal, projectKey, path, kind),
     pathOf: (file: File) => webUtils.getPathForFile(file)
   },
 

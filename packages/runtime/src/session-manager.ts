@@ -924,8 +924,7 @@ export class RuntimeSessionManager {
       managed.inputQueue.length === 0 ||
       managed.disposing ||
       managed.session.status === 'closed' ||
-      managed.session.status === 'error' ||
-      managed.session.status === 'interrupted'
+      managed.session.status === 'error'
     ) {
       return
     }

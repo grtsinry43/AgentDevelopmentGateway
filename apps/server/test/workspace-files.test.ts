@@ -32,7 +32,7 @@ test('lists project files through a canonical workspace-relative contract', asyn
     serverInfo
       .json<{ capabilities: string[] }>()
       .capabilities.filter((capability) => capability.startsWith('workspace.files.')),
-    ['workspace.files.list', 'workspace.files.read', 'workspace.files.watch']
+    ['workspace.files.list', 'workspace.files.read', 'workspace.files.write', 'workspace.files.watch', 'workspace.files.create', 'workspace.files.rename', 'workspace.files.delete', 'workspace.files.copy', 'workspace.files.download']
   )
 
   const created = await server.inject({

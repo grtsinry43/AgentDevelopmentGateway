@@ -123,7 +123,10 @@ export function applySessionItemEvent(state: SessionItemState, event: RuntimeEve
 	state.lastSequence = event.sequence;
 
 	switch (event.type) {
-		case 'input.admitted': {
+		// 用户消息只在「真正交给 provider/SDK」时才物化(input.dispatched),而不是
+		// 入队时(input.admitted):排队中的输入不立刻出现在对话里,取消/未派发的输入
+		// 也不会在回放/回填时留下幽灵消息。
+		case 'input.dispatched': {
 			const text = admittedText(event.payload);
 			if (text === undefined) return [];
 			const item: SessionItemMessage = {

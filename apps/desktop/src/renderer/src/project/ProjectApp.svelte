@@ -45,6 +45,15 @@
 
 	const projectIdentity = requireProjectIdentity();
 	const projectKey = projectIdentity.projectKey;
+	// 窗口标题带项目名(project.html 的 <title> 会覆盖 BrowserWindow title,这里补回,
+	// 多窗口/任务切换时靠它区分)。按 AGENTS.md 约定展示为 `path @ host`。
+	{
+		const projectName =
+			projectIdentity.projectPath.split('/').filter(Boolean).at(-1) ?? projectIdentity.projectPath;
+		document.title = projectIdentity.hostLabel
+			? `${projectName} @ ${projectIdentity.hostLabel}`
+			: projectName;
+	}
 	// 展示主机:远程 = hostname,本地 = 无;hostId(服务端 UUID)不展示。
 	const hostLabel = $derived(projectIdentity.hostLabel ?? '');
 	/** 状态栏 chip 本地显示「Local」。 */

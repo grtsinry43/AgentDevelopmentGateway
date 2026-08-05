@@ -124,7 +124,9 @@ export function projectRuntimeEvent(
 
 	const base = { ...current, lastSequence: event.sequence };
 	switch (event.type) {
-		case 'input.admitted': {
+		// 用户消息在 input.dispatched(真正交给 SDK)才入对话;input.admitted 只代表入队,
+		// 排队中/取消/未派发的输入不应出现在对话里。
+		case 'input.dispatched': {
 			const text = admittedText(event.payload);
 			if (text === undefined) return defer(base, event);
 			return {

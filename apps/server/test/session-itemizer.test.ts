@@ -42,7 +42,7 @@ test('materializes finalized conversation blocks into session_items', () => {
   const database = openGatewayDatabase(':memory:')
   const { items, sink } = make(database)
   const sessionId = asSessionId(randomUUID())
-  sink.append(event(sessionId, 'input.admitted', { entry: { input: { text: '你好' } } }))
+  sink.append(event(sessionId, 'input.dispatched', { entry: { input: { text: '你好' } } }))
   sink.append(event(sessionId, 'content.text.started', { blockId: 'b1' }))
   sink.append(event(sessionId, 'content.text.delta', { blockId: 'b1', delta: '你' }))
   sink.append(event(sessionId, 'content.text.completed', { blockId: 'b1', text: '你好！' }))

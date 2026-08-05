@@ -453,6 +453,7 @@
 				: '继续说明接下来要做什么…'}
 			readOnly={workspace.sending || (creating && workspace.availableAdapters.length === 0)}
 			extensions={composerExtensions}
+			highlightActiveLine={false}
 			class="h-full"
 		/>
 	</div>

@@ -1,10 +1,13 @@
 import type { Dirent } from 'node:fs'
-import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, posix, relative, sep, win32 } from 'node:path'
 import type {
   WorkspaceDirectoryResponse,
   WorkspaceFileContentResponse,
+  WorkspaceFileCreateRequest,
   WorkspaceFileKind,
+  WorkspaceFileMoveRequest,
+  WorkspaceFileWriteRequest,
 } from '@agent-gateway/shared'
 import { GatewayHttpError } from '../../http/errors.js'
 import type { ProjectService } from '../projects/service.js'
@@ -52,6 +55,141 @@ export class WorkspaceFileService {
 
     nodes.sort(compareNodes)
     return { path: location.relativePath, entries: nodes }
+  }
+
+  async create(projectId: string, input: WorkspaceFileCreateRequest): Promise<void> {
+    const location = await this.resolveCreateTarget(projectId, input.path)
+    try {
+      if (input.kind === 'directory') {
+        await mkdir(location.absolutePath)
+      } else {
+        await writeFile(location.absolutePath, '', { flag: 'wx' })
+      }
+    } catch (error) {
+      throw mapFileError(error, false)
+    }
+  }
+
+  async write(projectId: string, input: WorkspaceFileWriteRequest): Promise<void> {
+    const location = await this.fileLocation(projectId, input.path)
+    if (Buffer.byteLength(input.content, 'utf8') > MAX_PREVIEW_BYTES) {
+      throw new GatewayHttpError(
+        422,
+        'FILE_TOO_LARGE',
+        `File exceeds the ${MAX_PREVIEW_BYTES} byte write limit`
+      )
+    }
+    try {
+      await writeFile(location.absolutePath, input.content, 'utf8')
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+  }
+
+  async move(projectId: string, input: WorkspaceFileMoveRequest): Promise<void> {
+    const source = await this.resolveLocation(projectId, input.from)
+    const target = await this.resolveCreateTarget(projectId, input.to)
+    if (source.relativePath === target.relativePath) return
+    if (target.relativePath.startsWith(`${source.relativePath}/`)) {
+      throw new GatewayHttpError(
+        422,
+        'INVALID_MOVE_TARGET',
+        'Cannot move a path into its own subtree'
+      )
+    }
+    let sourceStats
+    try {
+      sourceStats = await lstat(source.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (sourceStats.isSymbolicLink()) {
+      throw new GatewayHttpError(422, 'INVALID_MOVE_TARGET', 'Symbolic links cannot be moved')
+    }
+    let targetStats
+    try {
+      targetStats = await lstat(target.absolutePath)
+    } catch (error) {
+      if (!hasCode(error, 'ENOENT')) throw mapFileError(error, false)
+    }
+    if (targetStats) {
+      throw new GatewayHttpError(409, 'PATH_EXISTS', 'Workspace path already exists')
+    }
+    try {
+      await rename(source.absolutePath, target.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, false)
+    }
+  }
+
+  async remove(projectId: string, inputPath: string): Promise<void> {
+    const location = await this.resolveLocation(projectId, inputPath)
+    try {
+      await rm(location.absolutePath, { recursive: true, force: false })
+    } catch (error) {
+      throw mapFileError(error, false)
+    }
+  }
+
+  async copy(projectId: string, input: WorkspaceFileMoveRequest): Promise<void> {
+    const source = await this.resolveLocation(projectId, input.from)
+    const target = await this.resolveCreateTarget(projectId, input.to)
+    if (source.relativePath === target.relativePath) return
+    if (target.relativePath.startsWith(`${source.relativePath}/`)) {
+      throw new GatewayHttpError(
+        422,
+        'INVALID_MOVE_TARGET',
+        'Cannot copy a path into its own subtree'
+      )
+    }
+    let sourceStats
+    try {
+      sourceStats = await lstat(source.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (sourceStats.isSymbolicLink()) {
+      throw new GatewayHttpError(422, 'INVALID_MOVE_TARGET', 'Symbolic links cannot be copied')
+    }
+    let targetStats
+    try {
+      targetStats = await lstat(target.absolutePath)
+    } catch (error) {
+      if (!hasCode(error, 'ENOENT')) throw mapFileError(error, false)
+    }
+    if (targetStats) {
+      throw new GatewayHttpError(409, 'PATH_EXISTS', 'Workspace path already exists')
+    }
+    try {
+      await cp(source.absolutePath, target.absolutePath, {
+        recursive: true,
+        errorOnExist: true,
+        force: false
+      })
+    } catch (error) {
+      throw mapFileError(error, false)
+    }
+  }
+
+  /** 下载位置:文件返回源流位置,目录返回待打包位置。 */
+  async downloadLocation(
+    projectId: string,
+    inputPath: string
+  ): Promise<WorkspaceDirectoryLocation & { kind: WorkspaceFileKind }> {
+    const location = await this.resolveLocation(projectId, inputPath)
+    let stats
+    try {
+      stats = await lstat(location.absolutePath)
+    } catch (error) {
+      throw mapFileError(error, true)
+    }
+    if (stats.isSymbolicLink()) {
+      throw new GatewayHttpError(422, 'INVALID_WORKSPACE_PATH', 'Symbolic links cannot be downloaded')
+    }
+    if (!stats.isFile() && !stats.isDirectory()) {
+      throw new GatewayHttpError(422, 'NOT_A_FILE', 'Workspace path is not downloadable')
+    }
+    return { ...location, kind: stats.isDirectory() ? 'directory' : 'file' }
   }
 
   async read(projectId: string, inputPath: string): Promise<WorkspaceFileContentResponse> {
@@ -132,9 +270,29 @@ export class WorkspaceFileService {
     projectId: string,
     inputPath: string
   ): Promise<WorkspaceDirectoryLocation> {
+    return this.resolvePathSegments(projectId, inputPath, true)
+  }
+
+  /** 目标路径不存在也要能解析(创建/移动目标):最后一段可不存,父目录必须存在。 */
+  private async resolveCreateTarget(
+    projectId: string,
+    inputPath: string
+  ): Promise<WorkspaceDirectoryLocation> {
+    return this.resolvePathSegments(projectId, inputPath, false)
+  }
+
+  private async resolvePathSegments(
+    projectId: string,
+    inputPath: string,
+    requireLeaf: boolean
+  ): Promise<WorkspaceDirectoryLocation> {
     const project = this.projects.require(projectId)
     const relativePath = normalizeWorkspacePath(inputPath)
     const segments = relativePath ? relativePath.split('/') : []
+    if (!requireLeaf && segments.length === 0) {
+      throw new GatewayHttpError(400, 'INVALID_WORKSPACE_PATH', 'Workspace path cannot be empty')
+    }
+    const walkedSegments = requireLeaf ? segments : segments.slice(0, -1)
 
     let root: string
     try {
@@ -149,7 +307,7 @@ export class WorkspaceFileService {
     }
 
     let current = root
-    for (const segment of segments) {
+    for (const segment of walkedSegments) {
       current = join(current, segment)
       let stats
       try {
@@ -166,16 +324,23 @@ export class WorkspaceFileService {
       }
     }
 
-    const escaped = relative(root, current)
-    if (escaped === '..' || escaped.startsWith(`..${sep}`) || isAbsolute(escaped)) {
-      throw new GatewayHttpError(
-        400,
-        'INVALID_WORKSPACE_PATH',
-        'Workspace path escapes the project root'
-      )
+    if (requireLeaf) {
+      const escaped = relative(root, current)
+      if (escaped === '..' || escaped.startsWith(`..${sep}`) || isAbsolute(escaped)) {
+        throw new GatewayHttpError(
+          400,
+          'INVALID_WORKSPACE_PATH',
+          'Workspace path escapes the project root'
+        )
+      }
+      return { absolutePath: current, relativePath }
     }
 
-    return { absolutePath: current, relativePath }
+    const leaf = segments.at(-1)
+    if (leaf === undefined) {
+      throw new GatewayHttpError(400, 'INVALID_WORKSPACE_PATH', 'Workspace path cannot be empty')
+    }
+    return { absolutePath: join(current, leaf), relativePath }
   }
 }
 
@@ -233,8 +398,17 @@ function mapFileError(error: unknown, childPath: boolean): GatewayHttpError {
       childPath ? 'Workspace path was not found' : 'Project path is unavailable'
     )
   }
+  if (hasCode(error, 'EEXIST')) {
+    return new GatewayHttpError(409, 'PATH_EXISTS', 'Workspace path already exists')
+  }
+  if (hasCode(error, 'EISDIR')) {
+    return new GatewayHttpError(422, 'NOT_A_FILE', 'Workspace path is a directory')
+  }
   if (hasCode(error, 'ENOTDIR')) {
     return new GatewayHttpError(422, 'NOT_A_DIRECTORY', 'Workspace path is not a directory')
+  }
+  if (hasCode(error, 'ENOTEMPTY') || hasCode(error, 'EXDEV')) {
+    return new GatewayHttpError(422, 'INVALID_MOVE_TARGET', 'Workspace path cannot be moved')
   }
   if (hasCode(error, 'EACCES') || hasCode(error, 'EPERM')) {
     return new GatewayHttpError(422, 'PROJECT_UNAVAILABLE', 'Workspace path is not accessible')

@@ -41,6 +41,9 @@ import {
   sessionSchema,
   workspaceDirectoryResponseSchema,
   workspaceFileContentResponseSchema,
+  workspaceFileCreateRequestSchema,
+  workspaceFileMoveRequestSchema,
+  workspaceFileWriteRequestSchema,
   workspaceFileEventSchema,
   workspaceFileSubscriptionSchema,
   createTerminalRequestSchema,
@@ -82,6 +85,9 @@ import {
   type SetWorkModeRequest,
   type WorkspaceDirectoryResponse,
   type WorkspaceFileContentResponse,
+  type WorkspaceFileCreateRequest,
+  type WorkspaceFileMoveRequest,
+  type WorkspaceFileWriteRequest,
   type WorkspaceFileEvent,
   eventsHistoryResponseSchema,
   type EventsHistoryResponse,
@@ -215,6 +221,49 @@ export class GatewayServerClient {
     return this.request(
       `/api/v1/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(path)}`,
       workspaceFileContentResponseSchema
+    )
+  }
+
+  createWorkspaceFile(projectId: string, input: WorkspaceFileCreateRequest): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files`,
+      { method: 'POST', body: workspaceFileCreateRequestSchema.parse(input) }
+    )
+  }
+
+  writeWorkspaceFile(projectId: string, input: WorkspaceFileWriteRequest): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files/content`,
+      { method: 'PUT', body: workspaceFileWriteRequestSchema.parse(input) }
+    )
+  }
+
+  moveWorkspaceFile(projectId: string, input: WorkspaceFileMoveRequest): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files`,
+      { method: 'PATCH', body: workspaceFileMoveRequestSchema.parse(input) }
+    )
+  }
+
+  copyWorkspaceFile(projectId: string, input: WorkspaceFileMoveRequest): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files/copy`,
+      { method: 'POST', body: workspaceFileMoveRequestSchema.parse(input) }
+    )
+  }
+
+  deleteWorkspaceFile(projectId: string, path: string): Promise<void> {
+    return this.requestVoid(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  /** 下载单个文件或目录 zip:返回原始响应以便主进程落盘/解包。 */
+  downloadWorkspaceFile(projectId: string, path: string): Promise<Response> {
+    return net.fetch(
+      `${this.baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/files/download?path=${encodeURIComponent(path)}`,
+      { headers: this.webSocketHeaders() }
     )
   }
 

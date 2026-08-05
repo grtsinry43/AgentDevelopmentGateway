@@ -2,8 +2,9 @@
 	import type { Snippet } from 'svelte';
 	import { filePreview } from '$lib/features/files/file-preview.svelte';
 	import { parseAgentGatewayFileHref } from '$lib/features/files/agent-gateway-uri';
+	import { fileIconKindForName } from '$lib/features/files/file-icons';
 	import { openExternalUrl } from '$lib/shared/system/open-external';
-	import Icon from '$lib/ui/icons/Icon.svelte';
+	import FileIcon from '$lib/ui/icons/FileIcon.svelte';
 
 	interface Props {
 		href?: string;
@@ -14,6 +15,9 @@
 	let { href = '', title, children }: Props = $props();
 
 	const gatewayRef = $derived(parseAgentGatewayFileHref(href));
+	const fileKind = $derived(
+		gatewayRef ? fileIconKindForName(gatewayRef.path) : undefined
+	);
 
 	const externalUrl = $derived.by(() => {
 		if (gatewayRef) return undefined;
@@ -47,7 +51,7 @@
 		{title}
 		onclick={handleClick}
 	>
-		<Icon name="file-text" size={12} class="shrink-0" />
+		<FileIcon kind={fileKind} size={12} class="shrink-0" />
 		<span class="min-w-0 truncate font-semibold">
 			{#if children}{@render children()}{/if}
 		</span>

@@ -3,8 +3,11 @@ import {
   workspaceDirectoryResponseSchema,
   workspaceFileContentQuerySchema,
   workspaceFileContentResponseSchema,
+  workspaceFileCreateRequestSchema,
+  workspaceFileMoveRequestSchema,
   workspaceFileSubscriptionParamsSchema,
-  workspaceFileSubscriptionSchema
+  workspaceFileSubscriptionSchema,
+  workspaceFileWriteRequestSchema
 } from '@agent-gateway/shared'
 import { z } from 'zod'
 import { errorResponseSchema, idParamsSchema } from '../../http/schemas.js'
@@ -14,8 +17,11 @@ export {
   workspaceDirectoryResponseSchema,
   workspaceFileContentQuerySchema,
   workspaceFileContentResponseSchema,
+  workspaceFileCreateRequestSchema,
+  workspaceFileMoveRequestSchema,
   workspaceFileSubscriptionParamsSchema,
-  workspaceFileSubscriptionSchema
+  workspaceFileSubscriptionSchema,
+  workspaceFileWriteRequestSchema
 }
 
 export const workspaceFilesParamsSchema = z.strictObject({ projectId: idParamsSchema.shape.id })
@@ -23,6 +29,7 @@ export const workspaceFilesParamsSchema = z.strictObject({ projectId: idParamsSc
 export const workspaceFileErrorResponses = {
   400: errorResponseSchema,
   404: errorResponseSchema,
+  409: errorResponseSchema,
   422: errorResponseSchema,
   500: errorResponseSchema
 }
