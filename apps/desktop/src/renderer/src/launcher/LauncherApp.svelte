@@ -22,6 +22,8 @@
 	import PerspectiveFloor from '$lib/ui/common/PerspectiveFloor.svelte';
 	import KeyHintBar from '$lib/ui/common/KeyHintBar.svelte';
 	import OpeningProjectOverlay from '$lib/ui/common/OpeningProjectOverlay.svelte';
+	import WindowControls from '$lib/ui/layout/WindowControls.svelte';
+	import WindowMenuTrigger from '$lib/ui/layout/WindowMenuTrigger.svelte';
 	import Icon from '$lib/ui/icons/Icon.svelte';
 	import { desktop, systemInfo } from '$lib/shared/bridge/desktop';
 
@@ -173,7 +175,16 @@
 	</div>
 
 	<!-- 顶部拖拽区:frameless 窗口需要一块可拖动的区域。macOS 的红绿灯就在这里。 -->
-	<header class="drag-region shrink-0 px-7 pt-16 pb-6">
+	<header class="drag-region relative shrink-0 px-7 pt-16 pb-6">
+		<!--
+			非 macOS 无原生红绿灯:右上角自绘窗口控制(macOS 上组件自身不渲染)。
+			必须是 drag-region 的子元素(组件自带 no-drag)——绝对定位叠在拖拽区
+			外面会被 app-region 命中测试吞掉点击。Launcher maximizable: false,
+			所以只有最小化/关闭。
+		-->
+		<WindowControls showMaximize={false} class="absolute top-2 right-2" />
+		<!-- 左上角应用菜单触发(Linux 才渲染)。与右上角窗口控制对称。 -->
+		<WindowMenuTrigger class="absolute top-2 left-2" />
 		<div class="flex items-end justify-between gap-4">
 			<div class="no-drag">
 				<h1 class="text-display leading-none font-medium tracking-[-0.025em] text-strong">

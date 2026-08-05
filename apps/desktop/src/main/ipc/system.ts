@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { BrowserWindow, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import { IPC } from '../../contract/bridge.js'
 import { openHostManagerWindow } from '../windows/host-manager.js'
 import { openNewProjectWindow } from '../windows/new-project.js'
@@ -51,6 +51,14 @@ export function registerWindowHandlers(): void {
 
   ipcMain.handle(IPC.windowClose, (event) => {
     senderWindow(event)?.close()
+  })
+
+  // Linux frameless 窗口没有原生菜单栏,由左上角触发按钮在光标处弹出应用菜单
+  // (菜单含 View → 切换开发者工具,以及文件/主机/编辑等)。
+  ipcMain.handle(IPC.windowPopupMenu, (event) => {
+    const window = senderWindow(event)
+    if (!window) return
+    Menu.getApplicationMenu()?.popup({ window })
   })
 
   ipcMain.handle(IPC.windowOpenNewProject, (_event, rawHostType: unknown) => {

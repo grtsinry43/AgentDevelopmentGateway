@@ -8,6 +8,7 @@
  * 断开只收隧道与控制连接,绝不杀远程 server —— 与 docs/07 §4 的生命周期语义一致。
  */
 import type { ConnectionState } from '../../contract/hosts.js'
+import type { PortForwardWire } from '../../contract/bridge.js'
 import { provision, type ProvisionStage } from './provision.js'
 import {
   ensureMaster,
@@ -44,6 +45,12 @@ export interface ConnectionStateView {
   message?: string
 }
 
+/** 一条活动端口转发:本地 loopback 转发到远端 localhost 端口。 */
+interface ForwardEntry {
+  tunnel: TunnelHandle
+  origin: 'preview' | 'manual'
+}
+
 /** 经隧道请求 /health,判断远程 server 是否真的活着。loopback 转发,毫秒级。 */
 async function isConnectionAlive(connection: ActiveConnection): Promise<boolean> {
   try {
@@ -63,8 +70,8 @@ export class RemoteConnectionManager {
   private readonly infos = new Map<string, RemoteConnectionInfo>()
   private readonly states = new Map<string, ConnectionState>()
   private readonly stateMessages = new Map<string, string | undefined>()
-  /** Web 预览隧道(profileId:remotePort → 本地转发)。 */
-  private readonly previewTunnels = new Map<string, TunnelHandle>()
+  /** 活动端口转发(profileId:remotePort → 隧道)。预览与手动绑定共用。 */
+  private readonly forwards = new Map<string, ForwardEntry>()
 
   constructor(
     private readonly context: SshContext,
@@ -78,7 +85,8 @@ export class RemoteConnectionManager {
       profileId: string,
       state: ConnectionState,
       message?: string
-    ) => void
+    ) => void,
+    private readonly onForwardsChanged?: (profileId: string) => void
   ) {}
 
   /** 当前连接状态(不会触发连接)。未连接过的主机视为 disconnected。 */
@@ -141,37 +149,71 @@ export class RemoteConnectionManager {
     return rebuilt.info
   }
 
-  /** 断开本地隧道(不动远程 server)。 */
+  /** 断开本地隧道与端口转发(不动远程 server)。 */
   async release(profileId: string): Promise<void> {
     const task = this.connections.get(profileId)
     this.connections.delete(profileId)
     this.infos.delete(profileId)
     const connection = await task?.catch(() => undefined)
     connection?.tunnel.close()
-    this.closePreviewTunnels(profileId)
+    this.closeAllForwards(profileId)
     this.setState(profileId, 'disconnected')
   }
 
+  /** 某主机的全部活动转发(不会触发连接)。 */
+  listForwards(profileId: string): PortForwardWire[] {
+    const result: PortForwardWire[] = []
+    for (const [key, entry] of this.forwards) {
+      if (!key.startsWith(`${profileId}:`)) continue
+      result.push({
+        hostProfileId: profileId,
+        remotePort: Number(key.slice(profileId.length + 1)),
+        localPort: entry.tunnel.localPort,
+        origin: entry.origin
+      })
+    }
+    return result.sort((left, right) => left.remotePort - right.remotePort)
+  }
+
   /**
-   * Web 预览中转:把远端 localhost:<remotePort> 转发到本地,返回本地端口。
-   * 同一 (profileId, remotePort) 复用已有隧道;连接释放时统一关闭。
+   * 建立(或复用)远端 localhost:<remotePort> 的本地转发,返回本地端口。
+   * 同一 (profileId, remotePort) 复用已有隧道;新建/复用都不重复广播。
    */
-  async previewTunnel(profileId: string, endpoint: SshEndpoint, remotePort: number): Promise<number> {
+  async openForward(
+    profileId: string,
+    endpoint: SshEndpoint,
+    remotePort: number,
+    origin: 'preview' | 'manual'
+  ): Promise<number> {
     const key = `${profileId}:${remotePort}`
-    const existing = this.previewTunnels.get(key)
-    if (existing) return existing.localPort
+    const existing = this.forwards.get(key)
+    if (existing) return existing.tunnel.localPort
     await ensureMaster(this.context, endpoint)
     const tunnel = await startTunnel(this.context, endpoint, remotePort)
-    this.previewTunnels.set(key, tunnel)
+    this.forwards.set(key, { tunnel, origin })
+    this.onForwardsChanged?.(profileId)
     return tunnel.localPort
   }
 
-  private closePreviewTunnels(profileId: string): void {
-    for (const [key, tunnel] of [...this.previewTunnels]) {
+  /** 关闭一条转发。不存在则忽略。 */
+  closeForward(profileId: string, remotePort: number): void {
+    const key = `${profileId}:${remotePort}`
+    const entry = this.forwards.get(key)
+    if (!entry) return
+    this.forwards.delete(key)
+    entry.tunnel.close()
+    this.onForwardsChanged?.(profileId)
+  }
+
+  private closeAllForwards(profileId: string): void {
+    let changed = false
+    for (const [key, entry] of [...this.forwards]) {
       if (!key.startsWith(`${profileId}:`)) continue
-      this.previewTunnels.delete(key)
-      tunnel.close()
+      this.forwards.delete(key)
+      entry.tunnel.close()
+      changed = true
     }
+    if (changed) this.onForwardsChanged?.(profileId)
   }
 
   /** 应用退出:收掉全部隧道与 SSH 控制连接。 */
@@ -183,8 +225,8 @@ export class RemoteConnectionManager {
       const connection = await task.catch(() => undefined)
       connection?.tunnel.close()
     }
-    for (const tunnel of [...this.previewTunnels.values()]) tunnel.close()
-    this.previewTunnels.clear()
+    for (const entry of [...this.forwards.values()]) entry.tunnel.close()
+    this.forwards.clear()
     for (const endpoint of endpoints.values()) {
       await stopMaster(this.context, endpoint).catch(() => {})
     }

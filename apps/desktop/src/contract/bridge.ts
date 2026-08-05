@@ -117,6 +117,11 @@ export const IPC = {
 
 	previewOpen: 'preview:open',
 
+	/** 端口转发:列出 / 手动绑定 / 关闭(远程工程 SSH 本地转发)。 */
+	portsList: 'ports:list',
+	portsBind: 'ports:bind',
+	portsClose: 'ports:close',
+
 	remoteStatus: 'remote:status',
 	remoteReconnect: 'remote:reconnect',
 	remoteDisconnect: 'remote:disconnect',
@@ -199,6 +204,8 @@ export const IPC = {
 	windowMinimize: 'window:minimize',
 	windowToggleMaximize: 'window:toggleMaximize',
 	windowClose: 'window:close',
+	/** 在光标处弹出应用菜单(Linux frameless 窗口无原生菜单栏,靠左上角触发)。 */
+	windowPopupMenu: 'window:popupMenu',
 	windowOpenNewProject: 'window:openNewProject',
 	windowOpenHostManager: 'window:openHostManager',
 	windowOpenSettings: 'window:openSettings',
@@ -308,7 +315,9 @@ export type PushEvent =
 	| {
 			kind: 'remote.hostsProbed';
 			hosts: HostProbeResult[];
-	  };
+	  }
+	/** 某主机的端口转发集合变化(预览自动建 / 手动绑定 / 关闭)。 */
+	| { kind: 'ports.changed'; hostProfileId: string; forwards: PortForwardWire[] };
 
 export type PushEventKind = PushEvent['kind'];
 
@@ -441,6 +450,17 @@ export interface HostDetailData {
 	status?: ServerStatus;
 }
 
+/** 一条活动端口转发(SSH 本地转发:127.0.0.1:localPort → 远端 127.0.0.1:remotePort)。 */
+export interface PortForwardWire {
+	hostProfileId: string;
+	/** 远端服务端口。 */
+	remotePort: number;
+	/** 本地监听端口(客户端访问入口)。 */
+	localPort: number;
+	/** 来源:preview = agent 预览自动建;manual = 用户在端口面板手动绑定。 */
+	origin: 'preview' | 'manual';
+}
+
 /** 远程连接状态查询结果(标题栏主机 chip 的数据来源)。 */
 export interface RemoteStatus {
 	isRemote: boolean;
@@ -531,6 +551,18 @@ export interface DesktopBridge {
 	/** Web 预览:把 agent 报告的端口解析成客户端可访问的本地 URL(远程走 SSH 中转)。 */
 	preview: {
 		open(port: number, path?: string): Promise<{ url: string; host: string; port: number }>;
+	};
+
+	/** 端口转发(仅远程工程有意义;local 工程 list 返回空)。 */
+	ports: {
+		/** 当前工程主机的活动转发。local 工程 hostProfileId 为 undefined。 */
+		list(
+			projectKey: string
+		): Promise<{ hostProfileId: string | undefined; forwards: PortForwardWire[] }>;
+		/** 手动绑定远端端口 → 本地(自动分配本地端口),返回转发信息。 */
+		bind(projectKey: string, remotePort: number): Promise<PortForwardWire>;
+		/** 关闭一条转发。 */
+		close(projectKey: string, remotePort: number): Promise<void>;
 	};
 
 	/** 远程连接状态与操作(仅 hostType = ssh 的工程有意义)。 */
@@ -694,6 +726,8 @@ export interface DesktopBridge {
 		minimize(): Promise<void>;
 		toggleMaximize(): Promise<void>;
 		close(): Promise<void>;
+		/** 在光标处弹出应用菜单(菜单栏入口,含 View → 切换开发者工具)。 */
+		popupMenu(): Promise<void>;
 		/** 打开新建工程向导窗口。 */
 		openNewProject(initialHostType: 'local' | 'ssh'): Promise<void>;
 		/** 打开主机管理中心窗口。 */

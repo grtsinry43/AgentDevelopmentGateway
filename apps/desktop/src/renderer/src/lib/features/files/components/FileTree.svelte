@@ -569,7 +569,7 @@
 				class="relative min-w-max outline-none"
 				style:height={`${$virtualizerStore.getTotalSize()}px`}
 			>
-				{#each $virtualizerStore.getVirtualItems() as virtualRow (visibleNodes[virtualRow.index]?.node.path)}
+				{#each $virtualizerStore.getVirtualItems() as virtualRow (virtualRow.key)}
 					{@const visible = visibleNodes[virtualRow.index]}
 					{#if visible}
 						<div

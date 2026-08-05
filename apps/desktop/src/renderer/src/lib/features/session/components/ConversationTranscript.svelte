@@ -146,7 +146,10 @@
 		void $virtualizer.getVirtualItems();
 		const el = getScrollElement();
 		if (!el) return;
-		const onScroll = () => {
+		const onScroll = (event: Event) => {
+			// 只认用户真实滚动:scrollTop 赋值产生的是 untrusted scroll,若也走这里,
+			// 自动滚底/翻页锚点恢复会在短会话里被当成「用户滚到顶」误触触顶翻页,内容乱跳。
+			if (!event.isTrusted) return;
 			userScrolled = true;
 			maybeLoadOlder();
 		};

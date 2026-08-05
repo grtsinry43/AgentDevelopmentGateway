@@ -2,14 +2,14 @@
 	/**
 	 * 工程窗口标题栏。frameless 窗口靠它提供拖拽区。
 	 *
-	 * macOS 用原生红绿灯(titleBarStyle: hiddenInset),所以左侧留出 80px;
-	 * 其他平台需要自绘最小化/最大化/关闭按钮。
+	 * macOS 用原生红绿灯,所以左侧留出 76px;其他平台的窗口控制由
+	 * WindowControls 统一自绘(与 Launcher 等窗口共用同一实现)。
 	 */
 	import type { Snippet } from 'svelte';
 	import { cx } from '$lib/shared/utils/cx';
-	import { desktop, systemInfo } from '$lib/shared/bridge/desktop';
-	import Button from '$lib/ui/primitives/Button.svelte';
-	import Icon from '$lib/ui/icons/Icon.svelte';
+	import { systemInfo } from '$lib/shared/bridge/desktop';
+	import WindowControls from './WindowControls.svelte';
+	import WindowMenuTrigger from './WindowMenuTrigger.svelte';
 
 	interface Props {
 		/** 工程展示名。留空则只渲染 leading(给 JetBrains 式切换器让位)。 */
@@ -45,6 +45,9 @@
 		className
 	)}
 >
+	<!-- 非 macOS:左上角应用菜单触发(Linux 才渲染,自带 no-drag)。 -->
+	<WindowMenuTrigger />
+
 	{#if leading}
 		<div class="no-drag flex min-w-0 shrink-0 items-center">{@render leading()}</div>
 	{/if}
@@ -63,33 +66,7 @@
 			{@render actions()}
 		{/if}
 
-		{#if !isMac}
-			<!-- 非 macOS:自绘窗口控制。macOS 交给原生红绿灯。 -->
-			<Button
-				variant="icon"
-				size="sm"
-				title="最小化"
-				onclick={() => void desktop.window.minimize()}
-			>
-				{#snippet icon()}
-					<span class="block h-px w-2.5 bg-current"></span>
-				{/snippet}
-			</Button>
-			<Button
-				variant="icon"
-				size="sm"
-				title="最大化"
-				onclick={() => void desktop.window.toggleMaximize()}
-			>
-				{#snippet icon()}
-					<span class="block h-2 w-2 border border-current"></span>
-				{/snippet}
-			</Button>
-			<Button variant="icon" size="sm" title="关闭" onclick={() => void desktop.window.close()}>
-				{#snippet icon()}
-					<Icon name="close" size={11} />
-				{/snippet}
-			</Button>
-		{/if}
+		<!-- 非 macOS 的自绘窗口控制;macOS 上它不渲染,交给原生红绿灯。 -->
+		<WindowControls />
 	</div>
 </header>

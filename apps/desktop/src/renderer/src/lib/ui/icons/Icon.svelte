@@ -44,7 +44,8 @@
 		| 'eye'
 		| 'stop'
 		| 'undo'
-		| 'download';
+		| 'download'
+		| 'menu';
 
 	interface Props {
 		name: IconName;
@@ -152,7 +153,8 @@
 		eye: [
 			'M1.5 7.5s2.2-3.5 5.5-3.5 5.5 3.5 5.5 3.5-2.2 3.5-5.5 3.5S1.5 7.5 1.5 7.5Z',
 			'M8 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z'
-		]
+		],
+		menu: ['M3 4.5h10', 'M3 8h10', 'M3 11.5h10']
 	};
 
 	const d = $derived(paths[name] ?? []);

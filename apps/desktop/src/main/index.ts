@@ -29,8 +29,19 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   // 关掉最后一个工程窗口后回到 Launcher —— 否则应用还活着但没有任何入口。
+  // openLauncher 是异步的(先读窗口 bounds 再建窗),期间没有窗口;用 reopeningLauncher
+  // 抑制 window-all-closed 退出,否则 Launcher 永远拉不起来。标志在 project.ts 的
+  // closed 事件里同步置位(见 setOnLastProjectClosed),openLauncher 结束后复位。
+  let reopeningLauncher = false
   setOnLastProjectClosed(() => {
-    if (BrowserWindow.getAllWindows().length === 0) void openLauncher()
+    if (BrowserWindow.getAllWindows().length !== 0) return
+    if (reopeningLauncher) return
+    reopeningLauncher = true
+    void openLauncher()
+      .catch(() => {})
+      .finally(() => {
+        reopeningLauncher = false
+      })
   })
 
   app.whenReady().then(async () => {
@@ -46,7 +57,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (process.platform !== 'darwin' && !reopeningLauncher) app.quit()
   })
 
   // 退出时收掉 SSH 隧道与控制连接(远程 server 继续运行);本地 server 是应用拉起的,

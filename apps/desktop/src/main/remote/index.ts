@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path'
 import type { ServerStatus } from '@agent-gateway/shared'
 import { app } from 'electron'
 import { z } from 'zod'
-import type { HostDetailData, RemoteStatus } from '../../contract/bridge.js'
+import type { HostDetailData, PortForwardWire, RemoteStatus } from '../../contract/bridge.js'
 import type { HostProfile } from '../../contract/hosts.js'
 import { broadcast } from '../ipc/broadcast.js'
 import { getHostPassword, getHostProfile } from '../store/host-profiles.js'
@@ -101,6 +101,12 @@ function getManager(): RemoteConnectionManager {
           hostProfileId: profileId,
           state,
           ...(message ? { message } : {})
+        }),
+      (profileId) =>
+        broadcast({
+          kind: 'ports.changed',
+          hostProfileId: profileId,
+          forwards: manager?.listForwards(profileId) ?? []
         })
     )
   }
@@ -139,7 +145,27 @@ export async function openPreviewTunnel(hostProfileId: string, remotePort: numbe
   const profile = await getHostProfile(hostProfileId)
   if (!profile) throw new Error('主机配置不存在或已被删除')
   const endpoint = await endpointForProfile(profile)
-  return getManager().previewTunnel(profile.id, endpoint, remotePort)
+  return getManager().openForward(profile.id, endpoint, remotePort, 'preview')
+}
+
+/** 某主机的活动端口转发(不会触发连接)。 */
+export function listPortForwards(hostProfileId: string): PortForwardWire[] {
+  return getManager().listForwards(hostProfileId)
+}
+
+/** 手动绑定:远端端口 → 本地。返回转发信息(广播会推给所有窗口)。 */
+export async function bindPortForward(
+  profile: HostProfile,
+  remotePort: number
+): Promise<PortForwardWire> {
+  const endpoint = await endpointForProfile(profile)
+  const localPort = await getManager().openForward(profile.id, endpoint, remotePort, 'manual')
+  return { hostProfileId: profile.id, remotePort, localPort, origin: 'manual' }
+}
+
+/** 关闭一条转发(不存在则忽略)。 */
+export function closePortForward(profile: HostProfile, remotePort: number): void {
+  getManager().closeForward(profile.id, remotePort)
 }
 
 /**

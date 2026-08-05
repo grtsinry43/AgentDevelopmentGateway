@@ -103,12 +103,12 @@ export async function openProjectWindow(
   })
   window.on('closed', () => {
     windows.delete(project.key)
-    // 关掉最后一个工程窗口后应该回到 Launcher,否则 macOS 上应用还活着却没有任何入口。
-    // 用 setImmediate 让 BrowserWindow 的销毁先完成,再统计剩余窗口数。
-    // 替换窗口(This Window)期间抑制,避免闪出 Launcher。
-    setImmediate(() => {
-      if (countProjectWindows() === 0 && !suppressLastClosed) onLastClosed?.()
-    })
+    // 关掉最后一个工程窗口后应该回到 Launcher,否则应用还活着却没有任何入口。
+    // closed 事件时窗口已销毁并从 BrowserWindow 移除,所以同步统计/触发是可靠的;
+    // 同步调用让主进程能及时置起「回 Launcher」标志,抑制 window-all-closed 退出
+    // (原 setImmediate 太晚,window-all-closed 先到就直接 quit 了)。
+    // This Window 替换期间由 setSuppressLastClosed 抑制,避免闪出 Launcher。
+    if (countProjectWindows() === 0 && !suppressLastClosed) onLastClosed?.()
   })
 
   const entry = entryUrl('project')

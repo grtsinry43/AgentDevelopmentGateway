@@ -5,6 +5,7 @@
 	 */
 	import { getPanel } from '$lib/shared/registry/panels';
 	import { layout } from '$lib/features/workspace/layout.svelte';
+	import { requireProjectIdentity } from '$lib/shared/bridge/desktop';
 	import DockPanel from './DockPanel.svelte';
 	import ResizeHandle from './ResizeHandle.svelte';
 
@@ -15,7 +16,12 @@
 
 	let { focusedId }: Props = $props();
 
-	/** 已注册的面板 + 其定义。未注册的 type(比如旧布局残留)静默跳过。 */
+	const isRemote = requireProjectIdentity().hostType === 'ssh';
+
+	/**
+	 * 已注册的面板 + 其定义。未注册的 type(比如旧布局残留)静默跳过;
+	 * `requiresRemote` 的面板在本地工程上不渲染(与 rail 的可用性过滤一致)。
+	 */
 	const resolved = $derived(
 		layout.panels
 			.map((state) => ({ state, definition: getPanel(state.type) }))
@@ -27,6 +33,7 @@
 					definition: NonNullable<typeof entry.definition>;
 				} => Boolean(entry.definition)
 			)
+			.filter((entry) => !entry.definition.requiresRemote || isRemote)
 	);
 
 	let container = $state<HTMLElement | null>(null);

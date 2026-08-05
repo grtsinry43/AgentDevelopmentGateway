@@ -75,6 +75,8 @@ export function registerWorkspacePanels(): void {
 		title: '端口',
 		icon: 'server',
 		component: PortsPanel,
+		// 端口转发是 SSH 概念,本地工程没有转发,整面板不显示。
+		requiresRemote: true,
 		presence: 'persistent'
 	});
 

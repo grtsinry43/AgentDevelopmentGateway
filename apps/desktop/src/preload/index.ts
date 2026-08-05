@@ -121,6 +121,14 @@ const bridge: DesktopBridge = {
     open: (port: number, path?: string) => ipcRenderer.invoke(IPC.previewOpen, port, path)
   },
 
+  ports: {
+    list: (projectKey: string) => ipcRenderer.invoke(IPC.portsList, projectKey),
+    bind: (projectKey: string, remotePort: number) =>
+      ipcRenderer.invoke(IPC.portsBind, projectKey, remotePort),
+    close: (projectKey: string, remotePort: number) =>
+      ipcRenderer.invoke(IPC.portsClose, projectKey, remotePort)
+  },
+
   remote: {
     status: (projectKey: string) => ipcRenderer.invoke(IPC.remoteStatus, projectKey),
     reconnect: (projectKey: string) => ipcRenderer.invoke(IPC.remoteReconnect, projectKey),
@@ -278,6 +286,7 @@ const bridge: DesktopBridge = {
     minimize: () => ipcRenderer.invoke(IPC.windowMinimize),
     toggleMaximize: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
     close: () => ipcRenderer.invoke(IPC.windowClose),
+    popupMenu: () => ipcRenderer.invoke(IPC.windowPopupMenu),
     openNewProject: (initialHostType: 'local' | 'ssh') =>
       ipcRenderer.invoke(IPC.windowOpenNewProject, initialHostType),
     openHostManager: (hostProfileId: string) =>

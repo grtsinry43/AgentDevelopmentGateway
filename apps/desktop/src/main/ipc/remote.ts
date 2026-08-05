@@ -3,9 +3,12 @@ import { IPC, type RemoteStatus } from '../../contract/bridge.js'
 import type { HostProfile } from '../../contract/hosts.js'
 import { GatewayServerClient } from '../server/client.js'
 import {
+  bindPortForward,
+  closePortForward,
   disconnectRemote,
   ensureRemoteConnection,
   hostDetailForProfile,
+  listPortForwards,
   probeHosts,
   reconnectRemote,
   reinstallHost,
@@ -82,6 +85,27 @@ export function registerRemoteHandlers(): void {
     const client = new GatewayServerClient(connection.baseUrl, connection.token)
     return client.hostDirectory(rawPath)
   })
+
+  // ── 端口转发 ─────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC.portsList, async (_event, rawProjectKey: unknown) => {
+    const profile = await requireRemoteProfile(parseProjectKey(rawProjectKey))
+    if (!profile) return { hostProfileId: undefined, forwards: [] }
+    return { hostProfileId: profile.id, forwards: listPortForwards(profile.id) }
+  })
+
+  ipcMain.handle(IPC.portsBind, async (_event, rawProjectKey: unknown, rawRemotePort: unknown) => {
+    const profile = await requireRemoteProfile(parseProjectKey(rawProjectKey))
+    if (!profile) throw new Error('本地工程无需端口转发')
+    const remotePort = parsePort(rawRemotePort)
+    return bindPortForward(profile, remotePort)
+  })
+
+  ipcMain.handle(IPC.portsClose, async (_event, rawProjectKey: unknown, rawRemotePort: unknown) => {
+    const profile = await requireRemoteProfile(parseProjectKey(rawProjectKey))
+    if (!profile) return
+    const remotePort = parsePort(rawRemotePort)
+    closePortForward(profile, remotePort)
+  })
 }
 
 async function requireHostProfile(rawHostProfileId: unknown): Promise<HostProfile> {
@@ -100,5 +124,13 @@ async function requireRemoteProfile(projectKey: string): Promise<HostProfile | u
 
 function parseProjectKey(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error('无效的工程标识')
+  return value
+}
+
+/** 端口 1–65535。 */
+function parsePort(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new Error('无效的端口号')
+  }
   return value
 }

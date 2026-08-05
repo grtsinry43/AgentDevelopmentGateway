@@ -111,13 +111,17 @@ async function openProjectIntoWindow(key: string, sourceWebContentsId: number): 
   const bounds = source ? source.getBounds() : undefined
 
   // 解析完成后再替换,避免目标不可用时把当前窗口关掉。
+  // 抑制要保持到新窗口建好:source.close() 的 closed 事件是异步的,提前复位会让旧窗口
+  // 的 closed 误判为「最后一个工程窗口关闭」而闪出 Launcher。
   setSuppressLastClosed(true)
-  source?.close()
-  setSuppressLastClosed(false)
-
-  await touchProject(project.key)
-  await openProjectWindow(project, bounds ? { bounds } : undefined)
-  await announceProjects()
+  try {
+    source?.close()
+    await touchProject(project.key)
+    await openProjectWindow(project, bounds ? { bounds } : undefined)
+    await announceProjects()
+  } finally {
+    setSuppressLastClosed(false)
+  }
   if (getLauncher()) closeLauncher()
 }
 

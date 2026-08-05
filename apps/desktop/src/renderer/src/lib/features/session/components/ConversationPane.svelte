@@ -181,15 +181,26 @@
 		composerHeight = Math.min(maxHeight, Math.max(112, composerHeight - delta));
 	}
 
+	/** 合并并发的滚底请求:流式期间每个块都触发一次,同一时间只跑一个循环。 */
+	let pendingScrollToBottom = false;
+
 	async function scrollToBottomWhenStable(): Promise<void> {
-		if (!transcript) return;
-		// 虚拟列表分批测量:内容高度会在几帧内逐次增长。循环滚到底直到高度稳定,
-		// 配合虚拟器的 anchorTo:'end' 保证落点就是最新一条(而非估计高度的中间)。
-		for (let attempt = 0; attempt < 10; attempt += 1) {
-			const target = transcript.scrollHeight;
-			transcript.scrollTop = target;
-			await new Promise((resolve) => requestAnimationFrame(resolve));
-			if (Math.abs(transcript.scrollHeight - target) < 2) return;
+		if (!transcript || pendingScrollToBottom) return;
+		pendingScrollToBottom = true;
+		try {
+			// 虚拟列表分批测量:内容高度会在几帧内逐次增长。循环滚到底直到高度稳定,
+			// 配合虚拟器的 anchorTo:'end' 保证落点就是最新一条(而非估计高度的中间)。
+			for (let attempt = 0; attempt < 10; attempt += 1) {
+				// 用户已滚离底部:立刻放弃,不再把视图往底部拽 —— 否则这个循环会跟用户的
+				// 滚动互相打架,表现为「滚几次又回到原地 / 位置乱跳」。
+				if (!pinnedToBottom) return;
+				const target = transcript.scrollHeight;
+				transcript.scrollTop = target;
+				await new Promise((resolve) => requestAnimationFrame(resolve));
+				if (Math.abs(transcript.scrollHeight - target) < 2) return;
+			}
+		} finally {
+			pendingScrollToBottom = false;
 		}
 	}
 
