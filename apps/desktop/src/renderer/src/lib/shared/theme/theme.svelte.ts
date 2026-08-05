@@ -7,7 +7,7 @@
  */
 
 import { pushBus } from '$lib/shared/bridge/events';
-import { systemInfo } from '$lib/shared/bridge/desktop';
+import { desktop, systemInfo } from '$lib/shared/bridge/desktop';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
@@ -33,6 +33,8 @@ class ThemeManager {
 	set(preference: ThemePreference): void {
 		this.preference = preference;
 		localStorage.setItem(STORAGE_KEY, preference);
+		// 广播给主进程 → 所有窗口:让每个窗口的 theme.preference 保持一致。
+		void desktop.system.setThemePreference(preference);
 	}
 
 	/** 在 light / dark 之间切换。从 'system' 出发时切到与当前相反的显式值。 */
@@ -67,8 +69,12 @@ export function startThemeSync(manager: ThemeManager = theme): void {
 	// 两条来源都只写 systemDark,不读它 —— 否则又是 effect 自我失效
 	// (参见 shared/keymap 里踩过的坑)。
 	$effect(() => {
-		const unsubscribe = pushBus.on('theme.changed', (event) => {
+		const unsubscribeTheme = pushBus.on('theme.changed', (event) => {
 			manager.systemDark = event.isDark;
+		});
+		// 用户在任意窗口改偏好 → 主进程广播 → 本窗口同步。
+		const unsubscribePreference = pushBus.on('theme.preference_changed', (event) => {
+			manager.preference = event.preference;
 		});
 
 		const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -78,7 +84,8 @@ export function startThemeSync(manager: ThemeManager = theme): void {
 		media.addEventListener('change', onMediaChange);
 
 		return () => {
-			unsubscribe();
+			unsubscribeTheme();
+			unsubscribePreference();
 			media.removeEventListener('change', onMediaChange);
 		};
 	});

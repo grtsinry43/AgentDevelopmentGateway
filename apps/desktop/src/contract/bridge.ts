@@ -90,6 +90,7 @@ export type WindowIdentity =
 export const IPC = {
 	// SystemInfo 不在此列:它随窗口创建注入,不走 IPC(见 main/windows/chrome.ts)
 	systemOpenExternal: 'system:openExternal',
+	systemSetThemePreference: 'system:setThemePreference',
 
 	projectsList: 'projects:list',
 	projectsPickDirectory: 'projects:pickDirectory',
@@ -218,6 +219,8 @@ export const PUSH_CHANNEL = 'gateway:push';
 export type PushEvent =
 	/** 系统主题变化(nativeTheme 权威值,比渲染进程的 matchMedia 可靠)。 */
 	| { kind: 'theme.changed'; isDark: boolean }
+	/** 用户主题偏好变化:由发起窗口广播,让所有窗口保持一致。 */
+	| { kind: 'theme.preference_changed'; preference: 'light' | 'dark' | 'system' }
 	/**
 	 * 最近工程列表已变更,附带新列表。
 	 * 多窗口场景必需:在 A 窗口新建了工程,Launcher 或其他窗口要立刻反映,
@@ -476,6 +479,8 @@ export interface DesktopBridge {
 
 	system: {
 		openExternal(url: string): Promise<void>;
+		/** 设置主题偏好(广播给所有窗口保持同步)。 */
+		setThemePreference(preference: 'light' | 'dark' | 'system'): Promise<void>;
 	};
 
 	projects: {

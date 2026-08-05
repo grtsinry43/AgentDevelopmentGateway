@@ -82,7 +82,9 @@ const bridge: DesktopBridge = {
   },
 
   system: {
-    openExternal: (url: string) => ipcRenderer.invoke(IPC.systemOpenExternal, url)
+    openExternal: (url: string) => ipcRenderer.invoke(IPC.systemOpenExternal, url),
+    setThemePreference: (preference: 'light' | 'dark' | 'system') =>
+      ipcRenderer.invoke(IPC.systemSetThemePreference, preference)
   },
 
   projects: {

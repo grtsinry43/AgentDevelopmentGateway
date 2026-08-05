@@ -23,6 +23,15 @@ export function registerSystemHandlers(): void {
   nativeTheme.on('updated', () => {
     broadcast({ kind: 'theme.changed', isDark: nativeTheme.shouldUseDarkColors })
   })
+
+  // 用户主题偏好变化:发起窗口设置后广播,让所有窗口的 theme.preference 同步。
+  ipcMain.handle(IPC.systemSetThemePreference, (_event, rawPreference: unknown) => {
+    const preference =
+      rawPreference === 'light' || rawPreference === 'dark' || rawPreference === 'system'
+        ? rawPreference
+        : 'system'
+    broadcast({ kind: 'theme.preference_changed', preference })
+  })
 }
 
 export function registerWindowHandlers(): void {

@@ -3,7 +3,7 @@
 	 * 设置窗口。左侧类目导航 + 右侧内容(IDE 风格)。
 	 * 偏好以独立窗口承载,不做模态弹窗。
 	 */
-	import { startThemeSync } from '$lib/shared/theme/theme.svelte';
+	import { startThemeSync, theme } from '$lib/shared/theme/theme.svelte';
 	import { settings } from '$lib/shared/settings/settings.svelte';
 	import ProviderProfilesPanel from '$lib/shared/settings/ProviderProfilesPanel.svelte';
 	import Checkbox from '$lib/ui/primitives/Checkbox.svelte';
@@ -47,6 +47,33 @@
 		<main class="min-h-0 flex-1 overflow-y-auto p-5">
 			{#if category === 'general'}
 				<div class="flex flex-col gap-6">
+					<div class="flex flex-col gap-1.5">
+						<span class="text-xs text-muted">外观</span>
+						<p class="text-2xs text-faint">
+							跟随系统时使用 macOS/Windows 的深浅色设置;手动选择后所有窗口保持一致。
+						</p>
+						<div class="flex rounded-default border border-line p-0.5">
+							{#each [
+								{ value: 'system', label: '跟随系统' },
+								{ value: 'light', label: '浅色' },
+								{ value: 'dark', label: '深色' }
+							] as const as option (option.value)}
+								<button
+									type="button"
+									class={[
+										'flex h-6 flex-1 items-center justify-center rounded-[2px] text-xs transition-colors',
+										theme.preference === option.value
+											? 'bg-surface-active text-strong'
+											: 'text-muted hover:text-strong'
+									]}
+									onclick={() => theme.set(option.value)}
+								>
+									{option.label}
+								</button>
+							{/each}
+						</div>
+					</div>
+
 					<div class="flex flex-col gap-1.5">
 						<span class="text-xs text-muted">代码块长行策略</span>
 						<p class="text-2xs text-faint">
