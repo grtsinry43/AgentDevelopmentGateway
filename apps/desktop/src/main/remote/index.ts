@@ -6,6 +6,7 @@
  * 连接本身的生命周期在 electron-free 的 manager.ts。
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { ServerStatus } from '@agent-gateway/shared'
 import { app } from 'electron'
@@ -83,8 +84,11 @@ export function loadArtifactSource(): RemoteArtifactSource {
   }
 }
 
-const socketDir = `/tmp/agw-ssh-${process.getuid?.() ?? process.pid}`
-const sshContext = { socketDir, askpassPath: join(app.getPath('userData'), 'ssh-askpass.sh') }
+const sshScratchDir = join(tmpdir(), `agw-ssh-${process.getuid?.() ?? process.pid}`)
+const sshContext = {
+  socketDir: sshScratchDir,
+  askpassPath: join(sshScratchDir, process.platform === 'win32' ? 'ssh-askpass.cmd' : 'ssh-askpass.sh')
+}
 
 let manager: RemoteConnectionManager | undefined
 

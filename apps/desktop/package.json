@@ -5,12 +5,13 @@
 	"main": "./out/main/index.js",
 	"scripts": {
 		"build": "electron-vite build",
-		"dev": "electron-vite dev",
+		"dev": "node scripts/with-electron-env.mjs electron-vite dev",
 		"lint": "eslint .",
-		"preview": "electron-vite preview",
+		"preview": "node scripts/with-electron-env.mjs electron-vite preview",
 		"typecheck": "tsc -p tsconfig.node.json --noEmit && svelte-check --tsconfig ./tsconfig.web.json",
 		"bundle:server": "pnpm --filter @agent-gateway/server... build && pnpm --filter @agent-gateway/server exec node scripts/bundle-local.mjs",
-		"pack:mac": "pnpm bundle:server && pnpm build && electron-builder --mac dmg"
+		"pack:mac": "pnpm bundle:server && pnpm build && node scripts/with-electron-env.mjs electron-builder --mac dmg",
+		"pack:win": "pnpm bundle:server && pnpm build && node scripts/with-electron-env.mjs electron-builder --win nsis"
 	},
 	"dependencies": {
 		"@agent-gateway/core": "workspace:*",
@@ -102,6 +103,16 @@
 			"category": "public.app-category.developer-tools",
 			"icon": "build/icon.icns",
 			"identity": null
+		},
+		"win": {
+			"target": [
+				"nsis"
+			]
+		},
+		"nsis": {
+			"oneClick": false,
+			"perMachine": false,
+			"allowToChangeInstallationDirectory": true
 		},
 		"dmg": {
 			"sign": false

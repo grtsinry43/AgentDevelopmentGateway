@@ -88,10 +88,11 @@ function baseArgs(context: SshContext, endpoint: SshEndpoint, tool: 'ssh' | 'scp
   return args
 }
 
-function sshEnvironment(endpoint: SshEndpoint): NodeJS.ProcessEnv {
+function sshEnvironment(context: SshContext, endpoint: SshEndpoint): NodeJS.ProcessEnv {
   if (!endpoint.password) return process.env
   return {
     ...process.env,
+    SSH_ASKPASS: context.askpassPath,
     SSH_ASKPASS_REQUIRE: 'force',
     AGENT_GATEWAY_SSH_PASSWORD: endpoint.password
   }
@@ -99,12 +100,13 @@ function sshEnvironment(endpoint: SshEndpoint): NodeJS.ProcessEnv {
 
 /** 密码经环境变量交给 askpass 助手,不落盘、不进命令行(ps 可见)。 */
 export function writeAskpassHelper(context: SshContext, askpassPath: string): void {
-  writeFileSync(
-    askpassPath,
-    '#!/bin/sh\nprintf %s "$AGENT_GATEWAY_SSH_PASSWORD"\n',
-    { mode: 0o700 }
-  )
-  chmodSync(askpassPath, 0o700)
+  mkdirSync(context.socketDir, { recursive: true, mode: 0o700 })
+  const source =
+    process.platform === 'win32'
+      ? '@echo off\r\n<nul set /p=%AGENT_GATEWAY_SSH_PASSWORD%\r\n'
+      : '#!/bin/sh\nprintf %s "$AGENT_GATEWAY_SSH_PASSWORD"\n'
+  writeFileSync(askpassPath, source, { mode: 0o700 })
+  if (process.platform !== 'win32') chmodSync(askpassPath, 0o700)
 }
 
 function spawnCapture(
@@ -185,7 +187,7 @@ export async function ensureMaster(context: SshContext, endpoint: SshEndpoint): 
       'ControlPersist=30m',
       destination(endpoint)
     ],
-    { env: sshEnvironment(endpoint) }
+    { env: sshEnvironment(context, endpoint) }
   )
   if (result.code !== 0) throw classifySshFailure(result)
 }
@@ -199,7 +201,7 @@ export function runRemote(
   return spawnCapture(
     'ssh',
     [...baseArgs(context, endpoint), destination(endpoint), 'sh', '-s'],
-    { env: sshEnvironment(endpoint), input: script }
+    { env: sshEnvironment(context, endpoint), input: script }
   )
 }
 

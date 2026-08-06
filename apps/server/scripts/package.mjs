@@ -43,7 +43,10 @@ import { build as esbuild } from 'esbuild'
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SUPPORTED_TARGETS = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64']
-const NATIVE_PACKAGES = ['better-sqlite3', 'node-pty', 'fsevents']
+const REQUIRED_NATIVE_PACKAGES = ['better-sqlite3', 'node-pty']
+const OPTIONAL_NATIVE_PACKAGES = ['fsevents']
+const NATIVE_PACKAGES = [...REQUIRED_NATIVE_PACKAGES, ...OPTIONAL_NATIVE_PACKAGES]
+const EXTERNAL_NATIVE_PACKAGES = NATIVE_PACKAGES
 /**
  * claude-agent-sdk 不能内联:它运行时用 createRequire 解析按平台的可选依赖
  * @anthropic-ai/claude-agent-sdk-<os>-<arch>(原生 CLI 二进制)与 ajv 等未打包的
@@ -82,7 +85,7 @@ await esbuild({
   target: 'node22',
   format: 'esm',
   outfile: join(sharedStaging, 'server.js'),
-  external: [...NATIVE_PACKAGES, SDK_PACKAGE, 'bufferutil', 'utf-8-validate'],
+  external: [...EXTERNAL_NATIVE_PACKAGES, SDK_PACKAGE, 'bufferutil', 'utf-8-validate'],
   banner: {
     js: "import { createRequire as __agentGatewayCreateRequire } from 'node:module'\nconst require = __agentGatewayCreateRequire(import.meta.url)"
   },
@@ -92,7 +95,12 @@ await esbuild({
 // 2. 原样复制原生包(含全平台 prebuilds),并校验每个目标平台的 prebuild 确实存在。
 const requireFromServer = createRequire(join(SERVER_ROOT, 'package.json'))
 for (const name of NATIVE_PACKAGES) {
-  const packageDirectory = realpathSync(dirname(requireFromServer.resolve(`${name}/package.json`)))
+  const resolvedPackage = tryResolvePackage(requireFromServer, name)
+  if (!resolvedPackage) {
+    if (OPTIONAL_NATIVE_PACKAGES.includes(name)) continue
+    fail(`${name} 未安装;请先运行 pnpm install`)
+  }
+  const packageDirectory = realpathSync(dirname(resolvedPackage))
   cpSync(packageDirectory, join(sharedStaging, 'node_modules', name), {
     recursive: true,
     dereference: true
@@ -271,9 +279,12 @@ async function stageSdkForTarget(targetRoot, target, version) {
     if (!existsSync(scratchModules)) fail(`pnpm 未能安装 ${SDK_PACKAGE}@${version}`)
     for (const entry of readdirSync(scratchModules)) {
       // hoisted 布局下 .pnpm 是虚拟 store 的冗余副本,跳过;顶层条目是到 .pnpm 的符号链接。
-      // Node cpSync 不会物化嵌套目录符号链接,改用 cp -RL(跟随全部符号链接)。
+      // dereference:true 物化符号链接,避免产物引用临时 staging 目录。
       if (entry === '.pnpm' || entry === '.bin' || entry.startsWith('.')) continue
-      run('cp', ['-RL', join(scratchModules, entry), join(targetRoot, 'node_modules', entry)])
+      cpSync(join(scratchModules, entry), join(targetRoot, 'node_modules', entry), {
+        recursive: true,
+        dereference: true
+      })
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
@@ -320,11 +331,14 @@ async function hashFile(path) {
 }
 
 function run(command, args, options = {}) {
+  const invocation = commandInvocation(command, args)
   // COPYFILE_DISABLE:macOS 的 bsdtar 会把 xattr 写成扩展头,GNU tar 解包时刷警告。
-  const result = spawnSync(command, args, {
+  const result = spawnSync(invocation.command, invocation.args, {
     stdio: options.quiet ? 'pipe' : 'inherit',
-    env: { ...process.env, COPYFILE_DISABLE: '1' }
+    env: { ...process.env, COPYFILE_DISABLE: '1' },
+    shell: invocation.shell
   })
+  if (result.error) fail(`命令启动失败: ${command} ${args.join(' ')}\n${result.error.message}`)
   if (result.status !== 0) {
     if (options.quiet) {
       const tail = (result.stderr?.toString() ?? result.stdout?.toString() ?? '')
@@ -335,6 +349,25 @@ function run(command, args, options = {}) {
       fail(`命令失败: ${command} ${args.join(' ')}\n${tail}`)
     }
     fail(`命令失败: ${command} ${args.join(' ')}`)
+  }
+}
+
+function commandInvocation(command, args) {
+  if (command === 'pnpm' && process.env.npm_execpath) {
+    return { command: process.execPath, args: [process.env.npm_execpath, ...args], shell: false }
+  }
+  return {
+    command: process.platform === 'win32' && command === 'pnpm' ? 'pnpm.cmd' : command,
+    args,
+    shell: process.platform === 'win32' && command === 'pnpm'
+  }
+}
+
+function tryResolvePackage(requireFrom, name) {
+  try {
+    return requireFrom.resolve(`${name}/package.json`)
+  } catch {
+    return undefined
   }
 }
 
