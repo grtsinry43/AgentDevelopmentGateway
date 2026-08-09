@@ -23,6 +23,10 @@ interface ProjectWatcher {
   references: number
 }
 
+interface FseventsModule {
+  watch(root: string, onEvent: (path: string) => void): () => void
+}
+
 const INVALIDATION_DEBOUNCE_MS = 75
 
 export class GitWatchHub {
@@ -102,9 +106,9 @@ export class GitWatchHub {
     projectId: string,
     changed: () => void,
     failed: (error: unknown) => void
-  ): Promise<{ stop: () => Promise<void> } | undefined> {
+  ): Promise<{ stop: () => void | Promise<void> } | undefined> {
     try {
-      const fsevents = await import('fsevents')
+      const fsevents = await importOptionalModule<FseventsModule>('fsevents')
       const stop = fsevents.watch(root, (path: string) => {
         if (isIgnoredWorktreePath(root, path, this.filePolicy)) return
         changed()
@@ -150,6 +154,13 @@ export class GitWatchHub {
       subscriber.queue.close()
     }
   }
+}
+
+async function importOptionalModule<T>(specifier: string): Promise<T> {
+  const dynamicImport = new Function('specifier', 'return import(specifier)') as (
+    specifier: string
+  ) => Promise<unknown>
+  return (await dynamicImport(specifier)) as T
 }
 
 function isIgnoredWorktreePath(

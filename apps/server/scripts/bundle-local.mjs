@@ -11,7 +11,10 @@ import { spawnSync } from 'node:child_process'
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = join(SERVER_ROOT, 'out', 'bundle')
-const NATIVE_PACKAGES = ['better-sqlite3', 'node-pty', 'fsevents']
+const REQUIRED_NATIVE_PACKAGES = ['better-sqlite3', 'node-pty']
+const OPTIONAL_NATIVE_PACKAGES = process.platform === 'darwin' ? ['fsevents'] : []
+const EXTERNAL_NATIVE_PACKAGES = [...REQUIRED_NATIVE_PACKAGES, 'fsevents']
+const BUNDLED_NATIVE_PACKAGES = [...REQUIRED_NATIVE_PACKAGES, ...OPTIONAL_NATIVE_PACKAGES]
 const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 const TARGET = `${process.platform}-${process.arch}`
 
@@ -25,7 +28,7 @@ await build({
   target: 'node22',
   format: 'esm',
   outfile: join(OUT, 'server.mjs'),
-  external: [...NATIVE_PACKAGES, SDK_PACKAGE, 'bufferutil', 'utf-8-validate'],
+  external: [...EXTERNAL_NATIVE_PACKAGES, SDK_PACKAGE, 'bufferutil', 'utf-8-validate'],
   banner: {
     js: "import { createRequire as __agentGatewayCreateRequire } from 'node:module'\nconst require = __agentGatewayCreateRequire(import.meta.url)"
   },
@@ -33,7 +36,7 @@ await build({
 })
 
 const requireFromServer = createRequire(join(SERVER_ROOT, 'package.json'))
-for (const name of NATIVE_PACKAGES) {
+for (const name of BUNDLED_NATIVE_PACKAGES) {
   const packageDirectory = realpathSync(dirname(requireFromServer.resolve(`${name}/package.json`)))
   cpSync(packageDirectory, join(OUT, 'node_modules', name), { recursive: true, dereference: true })
 }
@@ -68,13 +71,16 @@ try {
     )}\n`
   )
   writeFileSync(join(scratch, '.npmrc'), 'node-linker=hoisted\n')
-  const installed = spawnSync('pnpm', ['--dir', scratch, 'install', '--lockfile=false'], { stdio: 'inherit' })
+  const installed = spawnSyncPnpm(['--dir', scratch, 'install', '--lockfile=false'])
+  if (installed.error) throw installed.error
   if (installed.status !== 0) throw new Error('pnpm install 失败')
   const scratchModules = join(scratch, 'node_modules')
   for (const entry of readdirSync(scratchModules)) {
     if (entry === '.pnpm' || entry === '.bin' || entry.startsWith('.')) continue
-    const result = spawnSync('cp', ['-RL', join(scratchModules, entry), join(OUT, 'node_modules', entry)])
-    if (result.status !== 0) throw new Error(`cp -RL ${entry} 失败`)
+    cpSync(join(scratchModules, entry), join(OUT, 'node_modules', entry), {
+      recursive: true,
+      dereference: true
+    })
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true })
@@ -86,3 +92,13 @@ await writeFileSync(
 )
 
 console.log(`✓ ${join(OUT, 'server.mjs')} (+ node_modules, target ${TARGET})`)
+
+function spawnSyncPnpm(args) {
+  if (process.env.npm_execpath) {
+    return spawnSync(process.execPath, [process.env.npm_execpath, ...args], { stdio: 'inherit' })
+  }
+  return spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args, {
+    stdio: 'inherit',
+    shell: process.platform === 'win32'
+  })
+}
