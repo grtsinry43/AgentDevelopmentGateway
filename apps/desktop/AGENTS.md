@@ -39,6 +39,13 @@
 - Resolve the server client per window (`event.sender → projectKey → connection`); a project window maps to exactly one host. Stream registries receive the client per call, not at construction.
 - Tunnels and control connections are disposable; the remote server outlives the client. Never kill the remote server from desktop code.
 
+## Electron binary
+
+- Electron 43+ no longer downloads its binary in a package lifecycle script. `electron-vite` still requires `path.txt` + `dist`.
+- `dev` / `preview` / `pack:mac` / `pack:win` run `scripts/ensure-electron.mjs` first. Plain `pnpm install` and CI lint/typecheck do not.
+- `ensure-electron.mjs` downloads from `ELECTRON_MIRROR` (npmmirror by default for networks without GitHub access; empty it to use upstream). `pack:*` additionally run `scripts/with-electron-env.mjs` around `electron-builder`, which needs the same mirror for its own download.
+- Escape hatch: `SKIP_ELECTRON_DOWNLOAD=1`. Manual: `pnpm --filter @agent-gateway/desktop ensure-electron`.
+
 ## Verification
 
 - Run `pnpm --filter @agent-gateway/desktop lint`.

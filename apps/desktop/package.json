@@ -5,13 +5,14 @@
 	"main": "./out/main/index.js",
 	"scripts": {
 		"build": "electron-vite build",
-		"dev": "node scripts/with-electron-env.mjs electron-vite dev",
+		"ensure-electron": "node ./scripts/ensure-electron.mjs",
+		"dev": "node ./scripts/ensure-electron.mjs && electron-vite dev",
 		"lint": "eslint .",
-		"preview": "node scripts/with-electron-env.mjs electron-vite preview",
+		"preview": "node ./scripts/ensure-electron.mjs && electron-vite preview",
 		"typecheck": "tsc -p tsconfig.node.json --noEmit && svelte-check --tsconfig ./tsconfig.web.json",
 		"bundle:server": "pnpm --filter @agent-gateway/server... build && pnpm --filter @agent-gateway/server exec node scripts/bundle-local.mjs",
-		"pack:mac": "pnpm bundle:server && pnpm build && node scripts/with-electron-env.mjs electron-builder --mac dmg",
-		"pack:win": "pnpm bundle:server && pnpm build && node scripts/with-electron-env.mjs electron-builder --win nsis"
+		"pack:mac": "node ./scripts/ensure-electron.mjs && pnpm bundle:server && pnpm build && node ./scripts/with-electron-env.mjs electron-builder --mac dmg",
+		"pack:win": "node ./scripts/ensure-electron.mjs && pnpm bundle:server && pnpm build && node ./scripts/with-electron-env.mjs electron-builder --win nsis"
 	},
 	"dependencies": {
 		"@agent-gateway/core": "workspace:*",
